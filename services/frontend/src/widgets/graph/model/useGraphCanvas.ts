@@ -5,7 +5,7 @@ import type { ZoomBehavior } from "d3-zoom";
 import type { GraphCache, GraphLink, GraphNode, NodePosition } from "@/entities/wiki";
 import { GRAPH_CENTER, GRAPH_ZOOM, linkKey } from "@/entities/graph/lib/graph";
 import { readStoredGraphCache, writeStoredGraphCache } from "./graphCache";
-import { drawGraphFrame } from "../lib/graphDrawing";
+import { drawGraphFrame, preloadRawNodeIcon } from "../lib/graphDrawing";
 import { canvasToGraphPosition, clampGraphPan, clampGraphPosition, clampGraphZoom, graphToCanvasPosition } from "../lib/graphGeometry";
 import {
   FIXED_NODE_SIZE,
@@ -24,11 +24,13 @@ const GRAPH_CACHE_DEBOUNCE_MS = 700;
 /** graph cache signature의 레이아웃 버전 prefix */
 const GRAPH_LAYOUT_VERSION = "d3-layout-v1";
 
-export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNodePreview }: {
+export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNodePreview, onSelectNode }: {
   nodes: GraphNode[];
   links: GraphLink[];
   focusedNodeId: string | null;
   onOpenNodePreview: (node: GraphNode) => void;
+  /** 캔버스 내부 선택(단일 클릭 포함)이 바뀔 때 호출한다. 선택은 ref로만 관리되므로 이 콜백이 유일한 React 통로다. */
+  onSelectNode?: (nodeId: string | null) => void;
 }) {
   const graphSignature = useMemo(
     () => {
@@ -78,6 +80,11 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   const simulationRef = useRef<GraphSimulation | null>(null);
   const zoomBehaviorRef = useRef<ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
   const selectedNodeIdRef = useRef<string | null>(null);
+  // setSelectedNode는 useCallback([])으로 고정돼 있어 알림 콜백을 ref로 받는다.
+  const onSelectNodeRef = useRef(onSelectNode);
+  useEffect(() => {
+    onSelectNodeRef.current = onSelectNode;
+  }, [onSelectNode]);
   const hoveredNodeIdRef = useRef<string | null>(null);
   const nodeHoverAmountsRef = useRef<Record<string, number>>({});
   const externalFocusedNodeIdRef = useRef<string | null>(focusedNodeId);
@@ -142,6 +149,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     applyViewState(nextPan, nextZoom);
     setVisibleNodeCount(nodes.length);
     const externalId = externalFocusedNodeIdRef.current;
+    if (selectedNodeIdRef.current !== externalId) onSelectNodeRef.current?.(externalId);
     selectedNodeIdRef.current = externalId;
     hoveredNodeIdRef.current = externalId;
     nodeHoverAmountsRef.current = externalId ? { [externalId]: nodeHoverAmountsRef.current[externalId] ?? 1 } : {};
@@ -161,6 +169,11 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
       select(canvas).call(behavior.transform, panToTransform(nextPan, nextZoom, canvas));
     }
   }
+
+  // raw 노드 아이콘 로드 완료 시 재드로우. 캐시 좌표로 곧바로 안정되는 경로에서도 폴백이 남지 않는다.
+  useEffect(() => {
+    preloadRawNodeIcon(() => drawGraphRef.current());
+  }, []);
 
   useEffect(() => {
     externalFocusedNodeIdRef.current = focusedNodeId;
@@ -282,6 +295,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     if (selectedNodeIdRef.current === nodeId) return;
     selectedNodeIdRef.current = nodeId;
     hoveredNodeIdRef.current = nodeId;
+    onSelectNodeRef.current?.(nodeId);
     drawGraphRef.current();
   }, []);
 

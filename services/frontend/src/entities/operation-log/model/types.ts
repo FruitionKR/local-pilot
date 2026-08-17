@@ -2,6 +2,17 @@
 
 export type OperationType = "document_edit" | "ingest" | "lint" | "restore";
 
+/** document-svc OperationStatus 열거값. 목록 status 필터에 그대로 쓴다. */
+export type OperationStatus =
+  | "processing"
+  | "applying"
+  | "notify_pending"
+  | "rebuilding"
+  | "succeeded"
+  | "partially_succeeded"
+  | "failed"
+  | "conflict";
+
 export interface OperationLogItem {
   operation_id: string;
   operation_type: OperationType;
@@ -50,4 +61,18 @@ export interface OperationChange {
 
 export interface OperationLogDetail extends OperationLogItem {
   changes: OperationChange[];
+}
+
+export interface RestorePreviewResponse {
+  operation_id: string;
+  delete_count: number;
+  restore_count: number;
+  rebuild_count: number;
+  preview_token: string;
+}
+
+export interface RestoreExecuteResponse {
+  operation_id: string;
+  restored_from: string;
+  status: "succeeded" | "rebuilding" | "notify_pending" | "queued";
 }

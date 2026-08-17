@@ -326,6 +326,11 @@
   height: 36px;
 }
 
+/* select 자산은 아트가 뷰박스를 꽉 채운다. 36 캔버스 아트와 시각 크기를 맞추기 위한 인셋 */
+.sidebar-menu-item.is-active .sidebar-menu-icon {
+  padding: 9px;
+}
+
 /* 검색 토글 열림 상태 (Figma 시안엔 없음 — 기존 활성 배경 규칙 준용) */
 .sidebar-menu-item.is-open {
   color: var(--ink);
@@ -942,4 +947,161 @@
 
 .folder-context-menu button.danger {
   color: #c2372f;
+}
+
+/* 그래프 뷰에서 문서 트리 대신 놓이는 위키 액션 패널 */
+.graph-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.graph-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  color: var(--ink);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.graph-action:hover:not(:disabled),
+.graph-action:focus-visible:not(:disabled) {
+  background: #3f3f3f;
+  border-color: #5a5a5a;
+}
+
+.graph-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Ingest / Lint 버튼 아래에 놓이는 진행 중 위키 작업 목록 */
+.graph-active-work {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.graph-active-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.graph-active-kind {
+  flex: none;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.graph-active-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 로그 뷰에서 문서 트리 대신 놓이는 최신순 작업 목록 */
+.log-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+
+/* 라벨·시각·요약을 고정 격자에 담아 요약 길이와 무관하게 행 높이를 같게 만든다 */
+.log-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label   time"
+    "summary summary";
+  align-items: center;
+  gap: 4px 8px;
+  padding: 10px 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.log-entry-label {
+  grid-area: label;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.log-entry-time {
+  grid-area: time;
+  color: var(--subdued);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-entry-summary {
+  grid-area: summary;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-entry:hover,
+.log-entry:focus-visible {
+  color: var(--ink);
+  background: var(--soft);
+}
+
+.log-entry.is-active {
+  color: var(--ink);
+  background: var(--soft);
+  border-color: var(--line);
+}
+
+.log-entries-message {
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.log-entries-more {
+  margin-top: 8px;
+  padding: 8px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.log-entries-more:hover:not(:disabled),
+.log-entries-more:focus-visible {
+  color: var(--ink);
+  background: var(--soft);
 }

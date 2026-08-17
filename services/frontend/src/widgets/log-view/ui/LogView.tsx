@@ -3,25 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import {
   fetchOperationLogDetail,
-  fetchOperationLogs,
+  fetchRestorePreview,
+  restoreOperation,
+  OPERATION_TYPE_LABELS,
   type OperationChange,
-  type OperationLogDetail,
-  type OperationLogItem,
-  type OperationType
+  type OperationLogDetail
 } from "@/entities/operation-log";
+import retryIcon from "../../../../svg/log/retry.svg";
 import { publishNotice } from "@/features/document-notifications";
-import { requestWikiLint } from "@/features/document-notifications/api/wikiLint";
 import { cx } from "@/shared/lib/classNames";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { formatRelativeTime } from "@/shared/lib/time";
+import { SvgIcon } from "@/shared/ui/SvgIcon";
 import styles from "./LogView.module.css";
-
-const OPERATION_TYPE_LABELS: Record<OperationType, string> = {
-  ingest: "위키 페이지 생성",
-  document_edit: "문서 AI 편집",
-  lint: "위키 다듬기",
-  restore: "복구"
-};
 
 const STATUS_LABELS: Record<string, string> = {
   processing: "처리 중",
@@ -51,6 +45,9 @@ function ChangeDiff({ change }: { change: OperationChange }) {
       ) : (
         change.hunks.map((hunk, hunkIndex) => (
           <div key={hunkIndex} className={styles["hunk"]}>
+            <div className={styles["hunk-header"]}>
+              {`@@ -${hunk.old_start},${hunk.old_lines} +${hunk.new_start},${hunk.new_lines} @@`}
+            </div>
             {hunk.lines.map((line, lineIndex) => (
               <div
                 key={lineIndex}
@@ -60,15 +57,13 @@ function ChangeDiff({ change }: { change: OperationChange }) {
                   line.type === "DELETE" && styles["is-delete"]
                 )}
               >
-                <span className={styles["diff-gutter"]}>
-                  {line.type === "DELETE" ? line.old_line : line.new_line ?? line.old_line}
-                </span>
+                <span className={styles["diff-gutter"]}>{line.old_line ?? ""}</span>
+                <span className={styles["diff-gutter"]}>{line.new_line ?? ""}</span>
                 <span className={styles["diff-content"]}>
-                  {line.type !== "CONTEXT" && (
-                    <span className={styles["diff-sign"]} aria-hidden>
-                      {line.type === "ADD" ? "+" : "−"}
-                    </span>
-                  )}
+                  {/* CONTEXT 행에도 같은 폭의 부호 칸을 둬야 본문 시작 위치가 어긋나지 않는다. */}
+                  <span className={styles["diff-sign"]} aria-hidden>
+                    {line.type === "ADD" ? "+" : line.type === "DELETE" ? "−" : " "}
+                  </span>
                   {line.content}
                 </span>
               </div>
@@ -80,158 +75,72 @@ function ChangeDiff({ change }: { change: OperationChange }) {
   );
 }
 
-/** 작업 1건 카드. 뷰포트에 들어오면 상세(diff)를 lazy 로드한다. */
-function LogCard({ item }: { item: OperationLogItem }) {
+/** 로그 화면 (Figma 747:6105). 사이드바에서 고른 작업 1건의 상세만 그린다. */
+export function LogView({ operationId }: { operationId: string | null }) {
   const [detail, setDetail] = useState<OperationLogDetail | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
-  const [isVisible, setIsVisible] = useState(false);
-  const cardRef = useRef<HTMLElement | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoredOperationId, setRestoredOperationId] = useState<string | null>(null);
+  // 선택이 바뀌면 이전 작업의 응답을 버린다. 늦게 온 응답이 다른 작업을 덮어쓰지 않게 한다.
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
-    const element = cardRef.current;
-    if (!element) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "120px" }
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!isVisible) return;
-    let cancelled = false;
-    fetchOperationLogDetail(item.operation_id)
+    const requestId = ++requestIdRef.current;
+    setDetail(null);
+    setErrorMessage(null);
+    if (!operationId) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    fetchOperationLogDetail(operationId)
       .then((response) => {
-        if (!cancelled) setDetail(response);
+        if (requestIdRef.current === requestId) setDetail(response);
       })
       .catch((error: unknown) => {
-        if (!cancelled) setDetailError(getErrorMessage(error, "로그 상세를 불러오지 못했습니다."));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isVisible, item.operation_id]);
-
-  const statusLabel = STATUS_LABELS[item.status];
-
-  return (
-    <article className={styles["card"]} ref={cardRef}>
-      <header className={styles["card-header"]}>
-        <h3># {OPERATION_TYPE_LABELS[item.operation_type] ?? item.operation_type}</h3>
-        <p className={styles["card-description"]}>
-          {item.summary && <span>{item.summary}</span>}
-          {statusLabel && (
-            <span className={cx(styles["card-status"], item.status === "failed" && styles["is-failed"])}>
-              {statusLabel}
-            </span>
-          )}
-        </p>
-        <span className={styles["card-time"]}>{formatRelativeTime(item.created_at)}</span>
-      </header>
-      {detailError ? (
-        <p className={styles["card-notice"]}>{detailError}</p>
-      ) : !detail ? (
-        <p className={styles["card-notice"]}>변경 내용 불러오는 중…</p>
-      ) : detail.changes.length === 0 ? (
-        <p className={styles["card-notice"]}>변경된 리소스가 없습니다.</p>
-      ) : (
-        <div className={styles["card-body"]}>
-          {detail.changes.map((change) => (
-            <ChangeDiff key={change.id} change={change} />
-          ))}
-        </div>
-      )}
-    </article>
-  );
-}
-
-/** 로그 화면 (Figma 747:6105). 작업 목록을 먼저 그리고, 카드가 보일 때 diff 상세를 채운다. */
-export function LogView() {
-  const [items, setItems] = useState<OperationLogItem[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isLintChecking, setIsLintChecking] = useState(false);
-
-  // 위키 다듬기 상시 진입점: dry-run으로 검사한 뒤 대상이 있으면 실행 카드를 띄운다.
-  async function handleLintCheck() {
-    if (isLintChecking) return;
-    setIsLintChecking(true);
-    try {
-      const { changedPageCount } = await requestWikiLint(true);
-      if (changedPageCount === 0) {
-        publishNotice({
-          kind: "info",
-          title: "위키 다듬기",
-          message: "지금은 다듬을 페이지가 없습니다."
-        });
-        return;
-      }
-      publishNotice({
-        kind: "info",
-        title: "위키 다듬기",
-        message: `다듬을 페이지가 ${changedPageCount}개 있습니다.`,
-        action: {
-          label: "다듬기",
-          onAction: () => {
-            requestWikiLint(false).catch((error: unknown) => {
-              publishNotice({
-                kind: "failed",
-                title: "위키 다듬기 실패",
-                message: getErrorMessage(error, "위키 다듬기 요청에 실패했습니다.")
-              });
-            });
-          }
+        if (requestIdRef.current === requestId) {
+          setErrorMessage(getErrorMessage(error, "로그 상세를 불러오지 못했습니다."));
         }
+      })
+      .finally(() => {
+        if (requestIdRef.current === requestId) setIsLoading(false);
+      });
+  }, [operationId]);
+
+  const statusLabel = detail ? STATUS_LABELS[detail.status] : undefined;
+  const canRestore = detail != null
+    && detail.operation_type !== "restore"
+    && (detail.status === "succeeded" || detail.status === "partially_succeeded")
+    && restoredOperationId !== detail.operation_id;
+
+  async function handleRestore() {
+    if (!detail || !canRestore || isRestoring) return;
+    setIsRestoring(true);
+    try {
+      const preview = await fetchRestorePreview(detail.operation_id);
+      const affectedCount = preview.delete_count + preview.restore_count + preview.rebuild_count;
+      const confirmed = window.confirm(
+        affectedCount > 0
+          ? `${affectedCount}개 Wiki 페이지에 영향을 줍니다. 이 작업을 롤백할까요?`
+          : "이 작업을 롤백할까요?"
+      );
+      if (!confirmed) return;
+      const result = await restoreOperation(detail.operation_id, preview.preview_token);
+      setRestoredOperationId(detail.operation_id);
+      publishNotice({
+        kind: "completed",
+        title: "롤백 요청 완료",
+        message: result.status === "succeeded" ? "작업을 롤백했습니다." : "롤백 작업을 시작했습니다."
       });
     } catch (error: unknown) {
       publishNotice({
         kind: "failed",
-        title: "위키 다듬기 검사 실패",
-        message: getErrorMessage(error, "위키 다듬기 검사에 실패했습니다.")
+        title: "롤백 실패",
+        message: getErrorMessage(error, "롤백 요청에 실패했습니다.")
       });
     } finally {
-      setIsLintChecking(false);
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchOperationLogs()
-      .then((response) => {
-        if (cancelled) return;
-        setItems(response.logs);
-        setNextCursor(response.next_cursor);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setErrorMessage(getErrorMessage(error, "로그를 불러오지 못했습니다."));
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function handleLoadMore() {
-    if (!nextCursor || isLoadingMore) return;
-    setIsLoadingMore(true);
-    try {
-      const response = await fetchOperationLogs(nextCursor);
-      setItems((prev) => [...prev, ...response.logs]);
-      setNextCursor(response.next_cursor);
-    } catch (error: unknown) {
-      setErrorMessage(getErrorMessage(error, "로그를 불러오지 못했습니다."));
-    } finally {
-      setIsLoadingMore(false);
+      setIsRestoring(false);
     }
   }
 
@@ -242,42 +151,52 @@ export function LogView() {
           <div>
             <h2>
               로그
-              <span className={styles["logs-badge"]}>미리보기</span>
             </h2>
             <p>워크스페이스 활동 기록입니다.</p>
           </div>
-          <button
-            type="button"
-            className={styles["logs-lint-button"]}
-            onClick={() => void handleLintCheck()}
-            disabled={isLintChecking}
-          >
-            {isLintChecking ? "검사 중…" : "위키 다듬기"}
-          </button>
         </header>
 
         {errorMessage ? (
           <p className={styles["logs-message"]} role="alert">{errorMessage}</p>
-        ) : isLoading ? (
+        ) : !operationId ? (
+          <p className={styles["logs-message"]}>왼쪽 목록에서 작업을 선택하세요.</p>
+        ) : isLoading || !detail ? (
           <p className={styles["logs-message"]}>로그 불러오는 중…</p>
-        ) : items.length === 0 ? (
-          <p className={styles["logs-message"]}>아직 기록된 AI 작업이 없습니다.</p>
         ) : (
-          <>
-            {items.map((item) => (
-              <LogCard key={item.operation_id} item={item} />
-            ))}
-            {nextCursor && (
-              <button
-                type="button"
-                className={styles["logs-more"]}
-                onClick={handleLoadMore}
-                disabled={isLoadingMore}
-              >
-                {isLoadingMore ? "불러오는 중…" : "더 보기"}
-              </button>
+          <article className={styles["card"]}>
+            <header className={styles["card-header"]}>
+              <h3># {OPERATION_TYPE_LABELS[detail.operation_type]}</h3>
+              <p className={styles["card-description"]}>
+                {detail.summary && <span>{detail.summary}</span>}
+                {statusLabel && (
+                  <span className={cx(styles["card-status"], detail.status === "failed" && styles["is-failed"])}>
+                    {statusLabel}
+                  </span>
+                )}
+              </p>
+              <span className={styles["card-time"]}>{formatRelativeTime(detail.created_at)}</span>
+              {canRestore && (
+                <button
+                  type="button"
+                  className={styles["rollback-button"]}
+                  onClick={() => void handleRestore()}
+                  disabled={isRestoring}
+                >
+                  <SvgIcon src={retryIcon} className={styles["rollback-icon"]} />
+                  {isRestoring ? "처리 중…" : "Rollback"}
+                </button>
+              )}
+            </header>
+            {detail.changes.length === 0 ? (
+              <p className={styles["card-notice"]}>변경된 리소스가 없습니다.</p>
+            ) : (
+              <div className={styles["card-body"]}>
+                {detail.changes.map((change) => (
+                  <ChangeDiff key={change.id} change={change} />
+                ))}
+              </div>
             )}
-          </>
+          </article>
         )}
       </div>
     </section>

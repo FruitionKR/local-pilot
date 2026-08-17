@@ -28,6 +28,16 @@ export function rawNodeIdToDocumentId(nodeId: string): string | null {
   return nodeId.slice(NODE_PREFIX.raw.length) || null;
 }
 
+/**
+ * 그래프 노드 ID로 연결된 원본 문서 ID를 찾습니다.
+ * concept 노드처럼 문서가 없는 노드거나 미선택이면 null.
+ */
+export function resolveNodeDocumentId(nodes: GraphNode[], nodeId: string | null): string | null {
+  if (!nodeId) return null;
+  if (nodeId.startsWith(NODE_PREFIX.raw)) return rawNodeIdToDocumentId(nodeId);
+  return nodes.find((node) => node.id === nodeId)?.documentId ?? null;
+}
+
 export const GRAPH_WIDTH = 746;
 export const GRAPH_HEIGHT = 568;
 export const GRAPH_CACHE_KEY = "fruition.graph.layout.v8";

@@ -1,9 +1,11 @@
-import { useState, type ChangeEvent as ReactChangeEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { useState, type ChangeEvent as ReactChangeEvent, type ComponentProps, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { cx } from "@/shared/lib/classNames";
 import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project } from "@/entities/tree";
 import { chatBubbleIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import type { RailView } from "@/widgets/rail-navigation/ui/RailNavigation";
 import { ContextMenu } from "./ContextMenu";
+import { GraphSidebarActions } from "./GraphSidebarActions";
+import { LogSidebarEntries } from "./LogSidebarEntries";
 import { ProjectSection } from "./ProjectSection";
 import { SidebarMenuRow } from "./SidebarMenuRow";
 import { SidebarProfile } from "./SidebarProfile";
@@ -24,6 +26,8 @@ export function DocumentSidebar({
   convertContextTarget,
   uploadInputRef,
   activeView,
+  graphActions,
+  logEntries,
   onViewChange,
   onStartChat,
   onUploadToProject,
@@ -58,6 +62,10 @@ export function DocumentSidebar({
   convertContextTarget: { isDisabled: boolean } | null;
   uploadInputRef: RefObject<HTMLInputElement | null>;
   activeView: RailView;
+  /** 그래프 뷰에서 문서 트리 대신 보여줄 위키 액션. */
+  graphActions?: ComponentProps<typeof GraphSidebarActions>;
+  /** 로그 뷰에서 문서 트리 대신 보여줄 최신순 작업 목록. */
+  logEntries?: ComponentProps<typeof LogSidebarEntries>;
   onViewChange: (view: RailView) => void;
   onStartChat: () => void;
   onUploadToProject: (projectId: string) => void;
@@ -129,43 +137,51 @@ export function DocumentSidebar({
       />
 
       <div className={styles["sidebar-content"]}>
-        {projects.map((project, index) => (
-          <ProjectSection
-            key={project.id}
-            project={project}
-            isPrimary={index === 0}
-            useFullSidebarDropZone={Boolean(onlyProject)}
-            onUploadToProject={onUploadToProject}
-            draggedItemId={draggedItemId}
-            selectedItemId={selectedItemId}
-            dropTarget={dropTarget}
-            fileDropTarget={fileDropTarget}
-            editing={editing}
-            onMoveItem={onMoveItem}
-            onDropFiles={onDropFiles}
-            onDragStart={onDragStart}
-            onDragOverItem={onDragOverItem}
-            onFileDragOver={onFileDragOver}
-            onFileDragLeave={onFileDragLeave}
-            onDragEnd={onDragEnd}
-            onContextMenuProject={onContextMenuProject}
-            onContextMenuItem={onContextMenuItem}
-            onSelectGraphNode={onSelectGraphNode}
-            onEditingChange={onEditingChange}
-            onCommitEditing={onCommitEditing}
-            onCancelEditing={onCancelEditing}
-          />
-        ))}
-        {contextMenu && (
-          <ContextMenu
-            contextMenu={contextMenu}
-            convertTarget={convertContextTarget}
-            onRenameContextTarget={onRenameContextTarget}
-            onAddProject={onAddProject}
-            onAddMarkdownFromContext={onAddMarkdownFromContext}
-            onConvertContextTarget={onConvertContextTarget}
-            onDeleteContextTarget={onDeleteContextTarget}
-          />
+        {activeView === "graph" && graphActions ? (
+          <GraphSidebarActions {...graphActions} />
+        ) : activeView === "logs" && logEntries ? (
+          <LogSidebarEntries {...logEntries} />
+        ) : (
+          <>
+            {projects.map((project, index) => (
+              <ProjectSection
+                key={project.id}
+                project={project}
+                isPrimary={index === 0}
+                useFullSidebarDropZone={Boolean(onlyProject)}
+                onUploadToProject={onUploadToProject}
+                draggedItemId={draggedItemId}
+                selectedItemId={selectedItemId}
+                dropTarget={dropTarget}
+                fileDropTarget={fileDropTarget}
+                editing={editing}
+                onMoveItem={onMoveItem}
+                onDropFiles={onDropFiles}
+                onDragStart={onDragStart}
+                onDragOverItem={onDragOverItem}
+                onFileDragOver={onFileDragOver}
+                onFileDragLeave={onFileDragLeave}
+                onDragEnd={onDragEnd}
+                onContextMenuProject={onContextMenuProject}
+                onContextMenuItem={onContextMenuItem}
+                onSelectGraphNode={onSelectGraphNode}
+                onEditingChange={onEditingChange}
+                onCommitEditing={onCommitEditing}
+                onCancelEditing={onCancelEditing}
+              />
+            ))}
+            {contextMenu && (
+              <ContextMenu
+                contextMenu={contextMenu}
+                convertTarget={convertContextTarget}
+                onRenameContextTarget={onRenameContextTarget}
+                onAddProject={onAddProject}
+                onAddMarkdownFromContext={onAddMarkdownFromContext}
+                onConvertContextTarget={onConvertContextTarget}
+                onDeleteContextTarget={onDeleteContextTarget}
+              />
+            )}
+          </>
         )}
       </div>
       <button

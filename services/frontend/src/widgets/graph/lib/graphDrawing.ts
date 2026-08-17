@@ -242,12 +242,19 @@ function drawSelectedNodeMarker(context: CanvasRenderingContext2D, x: number, y:
   context.fill();
 }
 
-function getRawNodeImage() {
-  if (typeof window === "undefined") return null;
-  if (!rawNodeImage) {
-    rawNodeImage = new window.Image();
-    rawNodeImage.src = RAW_NODE_ICON_SRC;
-  }
+/**
+ * raw 노드 아이콘을 미리 로드한다. 로드가 끝나면 onReady로 재드로우를 요청해
+ * 시뮬레이션이 이미 안정된 뒤에도 폴백 벡터로 남지 않게 한다.
+ */
+export function preloadRawNodeIcon(onReady: () => void) {
+  if (typeof window === "undefined" || rawNodeImage) return;
 
-  return rawNodeImage.complete ? rawNodeImage : null;
+  const image = new window.Image();
+  rawNodeImage = image;
+  image.onload = onReady;
+  image.src = RAW_NODE_ICON_SRC;
+}
+
+function getRawNodeImage() {
+  return rawNodeImage?.complete ? rawNodeImage : null;
 }

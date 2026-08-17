@@ -3,6 +3,7 @@ package fruition.core.document.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentEditState;
+import fruition.core.document.domain.DocumentProcessingState;
 import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.dto.DocumentBlocksResponse;
 import fruition.core.document.dto.DocumentContentSaveResponse;
@@ -403,6 +404,90 @@ class DocumentServiceBlocksTest {
         assertThat(response.documents()).singleElement()
                 .extracting(DocumentListResponse.DocumentItem::editable)
                 .isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("업로드만 되고 ingest가 시작되지 않은 문서는 processing_state를 내려보내지 않는다")
+    void findAll_uploadedWithoutPipelineRun_hasNoProcessingState() {
+        stubOwnedWorkspace();
+        Document document = sourceDocument("doc_uploaded");
+        document.updateStatus(fruition.core.document.domain.DocumentStatus.uploaded, null, null, null);
+        stubSingleVisibleDocument(document);
+
+        DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, null);
+
+        assertThat(response.documents()).singleElement()
+                .extracting(DocumentListResponse.DocumentItem::processingState)
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("ingest가 시작됐지만 pipeline run ID가 아직 없으면 processing_state는 starting이다")
+    void findAll_processingWithoutPipelineRun_isStarting() {
+        stubOwnedWorkspace();
+        // 생성자 기본 status가 processing이다. ingest 요청은 나갔지만 run ID는 아직 없는 상태.
+        stubSingleVisibleDocument(sourceDocument("doc_starting"));
+
+        DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, null);
+
+        assertThat(response.documents()).singleElement()
+                .extracting(DocumentListResponse.DocumentItem::processingState)
+                .isEqualTo(DocumentProcessingState.starting);
+    }
+
+    @Test
+    @DisplayName("heartbeat가 최근이면 processing_state는 running이다")
+    void findAll_recentHeartbeat_isRunning() {
+        stubOwnedWorkspace();
+        Document document = sourceDocument("doc_running");
+        document.markPipelineStarted("run_running", Instant.now());
+        stubSingleVisibleDocument(document);
+
+        DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, null);
+
+        assertThat(response.documents()).singleElement()
+                .extracting(DocumentListResponse.DocumentItem::processingState)
+                .isEqualTo(DocumentProcessingState.running);
+    }
+
+    @Test
+    @DisplayName("heartbeat가 60초 넘게 끊기면 processing_state는 stalled다")
+    void findAll_staleHeartbeat_isStalled() {
+        stubOwnedWorkspace();
+        Document document = sourceDocument("doc_stalled");
+        document.markPipelineStarted("run_stalled", Instant.now().minusSeconds(120));
+        stubSingleVisibleDocument(document);
+
+        DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, null);
+
+        assertThat(response.documents()).singleElement()
+                .extracting(DocumentListResponse.DocumentItem::processingState)
+                .isEqualTo(DocumentProcessingState.stalled);
+    }
+
+    @Test
+    @DisplayName("처리에 실패한 문서는 processing_state가 failed다")
+    void findAll_failedDocument_isFailed() {
+        stubOwnedWorkspace();
+        Document document = sourceDocument("doc_failed");
+        document.markProcessingFailed("추출 실패", Instant.now());
+        stubSingleVisibleDocument(document);
+
+        DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, null);
+
+        assertThat(response.documents()).singleElement()
+                .extracting(DocumentListResponse.DocumentItem::processingState)
+                .isEqualTo(DocumentProcessingState.failed);
+    }
+
+    private Document sourceDocument(String documentId) {
+        return new Document(documentId, WORKSPACE_ID, USER_ID, "자료.pdf", "application/pdf", 20,
+                "sources/documents/" + documentId + "/original", "source-hash");
+    }
+
+    private void stubSingleVisibleDocument(Document document) {
+        when(documentRepository.findVisibleByWorkspaceId(WORKSPACE_ID)).thenReturn(List.of(document));
+        when(editStateRepository.findAllById(List.of(document.getId()))).thenReturn(List.of());
     }
 
     @Test
