@@ -11,7 +11,6 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
 )
-from app.core.llm_env import provider_api_endpoint, provider_base_url
 
 
 DEFAULT_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "document_evaluator.system.md"
@@ -49,7 +48,6 @@ def build_optional_document_evaluator() -> DocumentEvaluatorPort | None:
     return ChatCompletionsDocumentEvaluator(
         client=ChatCompletionsJsonClient(
             ChatClientConfig(
-                endpoint=provider_api_endpoint(provider_base_url("openai"), "openai"),
                 api_key=api_key,
                 model="gpt-5-nano",
                 temperature=None,

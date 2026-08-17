@@ -5,10 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.core.llm_env import (
-    api_key_from_env,
-    chat_completions_endpoint,
-)
+from app.core.llm_env import api_key_from_env
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
 from app.modules.wiki_schema.application.ports import SchemaOrganizerPort
 from app.modules.wiki_schema.domain.entities import SchemaFragments, SchemaOrganizerCandidate
@@ -44,7 +41,6 @@ class ChatCompletionsSchemaOrganizer(SchemaOrganizerPort):
 
 
 def build_schema_organizer() -> SchemaOrganizerPort:
-    endpoint = _endpoint()
     api_key = _api_key()
     if not api_key:
         raise RuntimeError("Set OPENAI_API_KEY.")
@@ -53,7 +49,6 @@ def build_schema_organizer() -> SchemaOrganizerPort:
     return ChatCompletionsSchemaOrganizer(
         ChatCompletionsJsonClient(
             ChatClientConfig(
-                endpoint=endpoint,
                 api_key=api_key,
                 model=model,
                 temperature=None,
@@ -96,12 +91,6 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item).strip() for item in value if str(item).strip()]
     return [str(value).strip()] if str(value).strip() else []
-
-
-def _endpoint() -> str:
-    return chat_completions_endpoint(
-        provider="openai",
-    )
 
 
 def _api_key() -> str | None:

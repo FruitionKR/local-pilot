@@ -7,7 +7,6 @@ from unittest.mock import patch
 from app.modules.wiki_schema.infrastructure.chat_completions_schema_organizer import (
     ChatCompletionsSchemaOrganizer,
     _api_key,
-    _endpoint,
 )
 
 
@@ -44,21 +43,6 @@ class ChatCompletionsSchemaOrganizerTest(unittest.TestCase):
         payload = json.loads(user_prompt)
         self.assertEqual(payload["raw_markdown"], "답변은 한국어로 해줘.")
         self.assertIn("global_markdown", payload["target_sections"])
-
-    def test_uses_fixed_openai_provider(self) -> None:
-        env_keys = [
-            "WIKI_SCHEMA_LLM_ENDPOINT",
-            "QUERY_LLM_ENDPOINT",
-            "LLM_ENDPOINT",
-            "WIKI_SCHEMA_LLM_BASE_URL",
-            "QUERY_LLM_BASE_URL",
-            "LLM_BASE_URL",
-            "LLM_MODEL",
-        ]
-        with patch.dict(os.environ, {key: "" for key in env_keys}, clear=False):
-            endpoint = _endpoint()
-
-        self.assertEqual(endpoint, "https://api.openai.com/v1/chat/completions")
 
     def test_api_key_is_none_when_no_shared_or_override_key_exists(self) -> None:
         env_keys = [

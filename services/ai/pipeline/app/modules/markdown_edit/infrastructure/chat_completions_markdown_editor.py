@@ -8,7 +8,6 @@ from typing import Any
 
 from app.core.llm_env import (
     api_key_from_env,
-    chat_completions_endpoint,
     float_env,
     int_env,
     optional_int_env,
@@ -332,7 +331,6 @@ def build_markdown_editor(
     return ChatCompletionsMarkdownEditor(
         ChatCompletionsJsonClient(
             ChatClientConfig(
-                endpoint=_endpoint(resolved_provider),
                 api_key=api_key,
                 model=resolved_model,
                 temperature=None,
@@ -514,12 +512,6 @@ def _contract_string(
         failures.append(f"{field} must be a string")
         return ""
     return value
-
-
-def _endpoint(provider: str | None = None) -> str:
-    return chat_completions_endpoint(
-        provider=provider,
-    )
 
 
 def _api_key(provider: str | None = None) -> str | None:

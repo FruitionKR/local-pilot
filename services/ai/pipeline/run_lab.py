@@ -80,8 +80,6 @@ from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_o
 from app.core.llm_env import (
     SUPPORTED_LLM_PROVIDERS,
     provider_api_key_env,
-    provider_api_endpoint,
-    provider_base_url,
     resolve_llm_selection,
     resolve_llm_provider_defaults,
 )
@@ -196,10 +194,6 @@ def read_prompt(path_like: str) -> str:
     return prompt_path.read_text(encoding="utf-8")
 
 
-def resolve_endpoint(args: PipelineRunCommand) -> str:
-    return provider_api_endpoint(provider_base_url(args.provider), args.provider)
-
-
 def load_api_client(args: PipelineRunCommand) -> ChatCompletionsJsonClient:
     api_key_env = provider_api_key_env(args.provider)
     api_key = os.environ.get(api_key_env)
@@ -209,7 +203,6 @@ def load_api_client(args: PipelineRunCommand) -> ChatCompletionsJsonClient:
         raise SystemExit("Missing model. Pass --model")
     return ChatCompletionsJsonClient(
         ChatClientConfig(
-            endpoint=resolve_endpoint(args),
             api_key=api_key,
             model=args.model,
             temperature=None,

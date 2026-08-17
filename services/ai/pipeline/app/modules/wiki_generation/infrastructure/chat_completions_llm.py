@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
+
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+from langsmith import traceable, tracing_context
 
 from app.core.langsmith_tracing import langsmith_tracing_enabled
 from app.core.llm_env import inference_profile, resolve_llm_selection
@@ -39,31 +43,55 @@ from app.modules.wiki_generation.infrastructure.json_output_parser import (
     strip_json_fence,
 )
 
-try:
-    from langsmith import traceable
-except ImportError:  # pragma: no cover - optional tracing dependency
-    traceable = None
 
 @dataclass
 class ChatClientConfig:
-    endpoint: str
     api_key: str
     model: str
-    temperature: float | None = 0.2
+    temperature: float | None = None
     timeout_seconds: int = 180
     max_tokens: int | None = None
+    max_retries: int = 2
     json_mode: bool = False
     provider: str | None = None
 
 
 class ChatCompletionsJsonClient:
-    """Small OpenAI-compatible chat-completions JSON client using stdlib only."""
+    """Provider별 LangChain chat model을 공통 JSON 계약으로 노출한다."""
 
     def __init__(self, config: ChatClientConfig) -> None:
         self.config = config
         self.provider, self.config.model = resolve_llm_selection(config.provider, config.model)
         self.prompt_log_dir = os.environ.get("LLM_PROMPT_LOG_DIR", "").strip()
         self._request_index = 0
+        self._model = self._build_model()
+
+    def _build_model(self) -> Any:
+        options: dict[str, object] = {
+            "model": self.config.model,
+            "api_key": self.config.api_key,
+            "temperature": self.config.temperature,
+            "timeout": self.config.timeout_seconds,
+            "max_tokens": self.config.max_tokens,
+            "max_retries": self.config.max_retries,
+        }
+        profile = inference_profile(self.provider, self.config.model)
+        if self.provider == "openai":
+            options.update(profile)
+            model = ChatOpenAI(**options)
+            if self.config.json_mode:
+                return model.bind(response_format={"type": "json_object"})
+            return model
+        if self.provider == "gemini":
+            effort = profile.get("reasoning_effort")
+            if effort is not None:
+                options["thinking_level"] = effort
+            if self.config.json_mode:
+                options["response_mime_type"] = "application/json"
+            return ChatGoogleGenerativeAI(**options)
+        if self.config.max_tokens is None:
+            options["max_tokens"] = 4096
+        return ChatAnthropic(**options)
 
     def _write_prompt_log(self, body: JsonDict, content: str | None = None, error: str | None = None) -> None:
         if not self.prompt_log_dir:
@@ -88,34 +116,47 @@ class ChatCompletionsJsonClient:
         *,
         trusted_identifiers: tuple[str, ...] = (),
     ) -> str:
-        body: JsonDict = {
+        system_content = with_llm_security_boundary(system_prompt)
+        if self.provider == "claude" and self.config.json_mode:
+            system_content = (
+                f"{system_content}\n\n"
+                "Return only one valid JSON object without Markdown fences."
+            )
+        user_content = redact_numeric_personal_data(
+            user_prompt,
+            trusted_identifiers=trusted_identifiers,
+        )
+        messages: list[BaseMessage] = [
+            SystemMessage(content=system_content),
+            HumanMessage(content=user_content),
+        ]
+        request_log: JsonDict = {
+            "provider": self.provider,
             "model": self.config.model,
             "messages": [
-                {"role": "system", "content": with_llm_security_boundary(system_prompt)},
-                {
-                    "role": "user",
-                    "content": redact_numeric_personal_data(
-                        user_prompt,
-                        trusted_identifiers=trusted_identifiers,
-                    ),
-                },
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
             ],
+            "json_mode": self.config.json_mode,
         }
-        body.update(inference_profile(self.provider, self.config.model))
-        if self.config.max_tokens is not None:
-            body["max_tokens"] = self.config.max_tokens
-        if self.config.json_mode:
-            body["response_format"] = {"type": "json_object"}
-
-        return self._complete_text_with_optional_trace(body, trusted_identifiers)
+        return self._complete_text_with_optional_trace(
+            messages,
+            request_log,
+            trusted_identifiers,
+        )
 
     def _complete_text_with_optional_trace(
         self,
-        body: JsonDict,
+        messages: list[BaseMessage],
+        request_log: JsonDict,
         trusted_identifiers: tuple[str, ...],
     ) -> str:
-        if traceable is None or not langsmith_tracing_enabled():
-            return self._send_chat_completion(body, trusted_identifiers)
+        if not langsmith_tracing_enabled():
+            return self._send_chat_completion(
+                messages,
+                request_log,
+                trusted_identifiers,
+            )
         traced = traceable(
             name=f"{self.provider}_chat_completions",
             run_type="llm",
@@ -125,93 +166,45 @@ class ChatCompletionsJsonClient:
                 "json_mode": self.config.json_mode,
             },
         )(self._send_chat_completion)
-        return traced(body, trusted_identifiers)
+        return traced(messages, request_log, trusted_identifiers)
 
     def _send_chat_completion(
         self,
-        body: JsonDict,
+        messages: list[BaseMessage],
+        request_log: JsonDict,
         trusted_identifiers: tuple[str, ...],
     ) -> str:
-        request_body = (
-            self._anthropic_request_body(body)
-            if self.provider == "claude"
-            else body
-        )
-        req = urllib.request.Request(
-            self.config.endpoint,
-            data=json.dumps(request_body).encode("utf-8"),
-            headers=self._request_headers(),
-            method="POST",
-        )
         try:
-            with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            detail = redact_numeric_personal_data(
-                e.read().decode("utf-8", errors="replace")
+            # LangChain 내부 trace는 마스킹 전 provider 응답을 기록할 수 있으므로,
+            # 이 호출만 끄고 바깥의 sanitized wrapper trace만 남긴다.
+            with tracing_context(enabled=False):
+                response = self._model.invoke(messages)
+        except Exception as exc:
+            detail = redact_numeric_personal_data(str(exc))
+            status_code = getattr(exc, "status_code", None)
+            if status_code is None:
+                status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            prefix = (
+                f"LLM API HTTP {status_code}"
+                if isinstance(status_code, int)
+                else "LLM API transport or response error"
             )
-            self._write_prompt_log(body, error=f"LLM API HTTP {e.code}: {detail}")
-            raise RuntimeError(f"LLM API HTTP {e.code}: {detail}") from e
-        except (OSError, ValueError) as e:
-            self._write_prompt_log(body, error=f"LLM API transport or response error: {e}")
-            raise RuntimeError(f"LLM API transport or response error: {e}") from e
+            error = f"{prefix}: {detail}"
+            self._write_prompt_log(request_log, error=error)
+            raise RuntimeError(error) from exc
 
         try:
             content = redact_numeric_personal_data(
-                self._response_content(payload),
+                response.text,
                 trusted_identifiers=trusted_identifiers,
             )
-        except Exception as e:
-            detail = redact_numeric_personal_data(str(payload))
-            self._write_prompt_log(body, error=f"Unexpected chat-completions response: {detail}")
-            raise RuntimeError(f"Unexpected chat-completions response: {detail}") from e
-        self._write_prompt_log(body, content=content)
+        except Exception as exc:
+            detail = redact_numeric_personal_data(str(response))
+            error = f"Unexpected chat-completions response: {detail}"
+            self._write_prompt_log(request_log, error=error)
+            raise RuntimeError(error) from exc
+        self._write_prompt_log(request_log, content=content)
         return content
-
-    def _request_headers(self) -> dict[str, str]:
-        if self.provider == "claude":
-            return {
-                "Content-Type": "application/json",
-                "x-api-key": self.config.api_key,
-                "anthropic-version": "2023-06-01",
-            }
-        return {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.config.api_key}",
-        }
-
-    def _anthropic_request_body(self, body: JsonDict) -> JsonDict:
-        messages = list(body["messages"])
-        system_prompt = "\n\n".join(
-            str(message["content"])
-            for message in messages
-            if message.get("role") == "system"
-        )
-        if self.config.json_mode:
-            system_prompt = (
-                f"{system_prompt}\n\n"
-                "Return only one valid JSON object without Markdown fences."
-            )
-        request_body: JsonDict = {
-            "model": body["model"],
-            "system": system_prompt,
-            "messages": [
-                message
-                for message in messages
-                if message.get("role") in {"user", "assistant"}
-            ],
-            "max_tokens": body.get("max_tokens") or 4096,
-        }
-        return request_body
-
-    def _response_content(self, payload: JsonDict) -> str:
-        if self.provider != "claude":
-            return _content_text(payload["choices"][0]["message"]["content"])
-        return "".join(
-            _content_text(block.get("text"))
-            for block in payload["content"]
-            if block.get("type") == "text"
-        )
 
     def complete_json(
         self,
@@ -329,16 +322,6 @@ class GenericChatCompletionsSourceAccumulator:
 
 # Backwards-compatible aliases.
 ApiSemanticExtractor = GenericChatCompletionsExtractor
-
-
-def _content_text(value: object) -> str:
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        return "".join(_content_text(item) for item in value)
-    if isinstance(value, dict):
-        return str(value.get("text") or value.get("content") or "")
-    return str(value or "")
 ApiConceptPageGenerator = GenericChatCompletionsConceptPageGenerator
 ApiConceptResolver = GenericChatCompletionsConceptResolver
 ApiSectionPolisher = GenericChatCompletionsSectionPolisher

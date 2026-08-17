@@ -8,7 +8,6 @@ from run_lab import (
     parse_args,
     pipeline_command_from_cli_args,
     resolve_api_defaults,
-    resolve_endpoint,
     run_pipeline,
 )
 
@@ -68,24 +67,6 @@ def test_api_defaults_validate_and_preserve_request_snapshot() -> None:
     assert resolved.model == "gemini-3.1-flash-lite"
     assert command.provider == "gemini"
     assert command.model == "gemini-3.1-flash-lite"
-    assert resolve_endpoint(resolved) == (
-        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-    )
-
-
-def test_claude_uses_messages_endpoint() -> None:
-    command = PipelineRunCommand(
-        run_id=None,
-        input="input.md",
-        input_name="input.md",
-        out="runs/cli",
-        user_id="local-user",
-        workspace_id="local-workspace",
-        provider="claude",
-        model="claude-sonnet-5",
-    )
-
-    assert resolve_endpoint(command) == "https://api.anthropic.com/v1/messages"
 
 
 def test_api_debug_and_log_metadata_exclude_provider_endpoint(tmp_path: Path) -> None:

@@ -11,11 +11,6 @@ SUPPORTED_LLM_MODELS = {
     "gemini": "gemini-3.1-flash-lite",
     "claude": "claude-sonnet-5",
 }
-_PROVIDER_BASE_URLS = {
-    "openai": "https://api.openai.com/v1",
-    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
-    "claude": "https://api.anthropic.com/v1",
-}
 _PROVIDER_API_KEY_ENVS = {
     "openai": "OPENAI_API_KEY",
     "gemini": "GEMINI_API_KEY",
@@ -26,7 +21,6 @@ _PROVIDER_API_KEY_ENVS = {
 @dataclass(frozen=True)
 class LlmProviderDefaults:
     provider: str
-    base_url: str
     api_key_env: str
     api_key: str | None
     model: str | None
@@ -55,10 +49,6 @@ def resolve_llm_provider(provider: str | None = None) -> str:
     return resolved
 
 
-def provider_base_url(provider: str | None = None) -> str:
-    return _PROVIDER_BASE_URLS[resolve_llm_provider(provider)]
-
-
 def provider_api_key_env(provider: str | None = None) -> str:
     return _PROVIDER_API_KEY_ENVS[resolve_llm_provider(provider)]
 
@@ -72,18 +62,9 @@ def inference_profile(provider: str, model: str) -> dict[str, str]:
     return {}
 
 
-def provider_api_endpoint(
-    base_url: str,
-    provider: str | None = None,
-) -> str:
-    suffix = "/messages" if resolve_llm_provider(provider) == "claude" else "/chat/completions"
-    return base_url.rstrip("/") + suffix
-
-
 def resolve_llm_provider_defaults(
     *,
     provider: str | None = None,
-    base_url: str | None = None,
     api_key_env: str | None = None,
     api_key: str | None = None,
     model: str | None = None,
@@ -92,23 +73,15 @@ def resolve_llm_provider_defaults(
     resolved_key_env = provider_api_key_env(resolved_provider)
     if api_key_env and api_key_env != resolved_key_env:
         raise ValueError(f"API key env is fixed to {resolved_key_env}")
-    if base_url and base_url != provider_base_url(resolved_provider):
-        raise ValueError("Provider base URL is fixed")
     if model is not None:
         _, model = resolve_llm_selection(resolved_provider, model)
     resolved_key = api_key or os.environ.get(resolved_key_env)
     return LlmProviderDefaults(
         provider=resolved_provider,
-        base_url=provider_base_url(resolved_provider),
         api_key_env=resolved_key_env,
         api_key=resolved_key,
         model=model,
     )
-
-
-def chat_completions_endpoint(*, provider: str | None = None) -> str:
-    return provider_api_endpoint(provider_base_url(provider), provider)
-
 
 def api_key_from_env(
     *,

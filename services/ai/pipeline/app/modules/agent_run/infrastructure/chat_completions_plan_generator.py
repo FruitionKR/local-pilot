@@ -5,7 +5,6 @@ from typing import Any
 
 from app.core.llm_env import (
     api_key_from_env,
-    chat_completions_endpoint,
     int_env,
     provider_api_key_env,
 )
@@ -145,15 +144,13 @@ def build_plan_generator(*, provider: str, model: str) -> ChatCompletionsPlanGen
     api_key = api_key_from_env(provider=provider)
     if not api_key:
         raise RuntimeError(f"Set {provider_api_key_env(provider)}.")
-    endpoint = chat_completions_endpoint(provider=provider)
     prompt_path = Path(os.environ.get("AGENT_PLAN_SYSTEM_PROMPT", str(DEFAULT_PLAN_PROMPT)))
     return ChatCompletionsPlanGenerator(
         ChatCompletionsJsonClient(
             ChatClientConfig(
-                endpoint=endpoint,
                 api_key=api_key,
                 model=model,
-                temperature=0.0,
+                temperature=None if provider == "claude" else 0.0,
                 timeout_seconds=int_env("AGENT_PLAN_LLM_TIMEOUT_SECONDS", 180),
                 max_tokens=None,
                 json_mode=True,

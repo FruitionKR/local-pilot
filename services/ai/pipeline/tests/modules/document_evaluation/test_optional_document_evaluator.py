@@ -33,10 +33,6 @@ class OptionalDocumentEvaluatorTest(unittest.TestCase):
         assert evaluator is not None
         self.assertEqual(evaluator._client.provider, "openai")  # type: ignore[attr-defined]
         self.assertEqual(evaluator._client.config.model, "gpt-5-nano")  # type: ignore[attr-defined]
-        self.assertEqual(  # type: ignore[attr-defined]
-            evaluator._client.config.endpoint,
-            "https://api.openai.com/v1/chat/completions",
-        )
 
 
 if __name__ == "__main__":
