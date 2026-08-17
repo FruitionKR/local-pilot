@@ -86,9 +86,9 @@ chmod +x scripts/dev-up.sh
 
 1. `scripts/bootstrap.sh`로 로컬 환경 파일과 프론트엔드 의존성 준비
 2. Docker daemon 확인, 가능한 경우 Colima 시작
-3. `infra/docker-compose.dev.yml`로 PostgreSQL과 MinIO 시작
+3. `infra/compose.infra.yml`로 PostgreSQL과 MinIO 시작
 4. Java 21 경로 탐색 후 `backend/./gradlew bootRun` 실행 및 `http://localhost:8080/actuator/health` 응답 확인
-5. backend Flyway 완료 후 `infra/docker-compose.pipeline.yml`의 pipeline API 시작 및 `http://localhost:8000/health` 응답 확인
+5. backend Flyway 완료 후 `infra/compose.ai.yml`의 pipeline API 시작 및 `http://localhost:8000/health` 응답 확인
 6. `frontend/npm run dev` 실행 및 `http://localhost:3000` 응답 확인
 
 backend를 pipeline API보다 먼저 시작하는 이유는 공용 DB 스키마를 Flyway가 먼저 생성해야 하기 때문입니다. pipeline API의 startup schema 초기화가 먼저 실행되면 빈 DB에서도 Flyway V1과 테이블 생성이 충돌할 수 있습니다.
@@ -102,13 +102,13 @@ backend를 pipeline API보다 먼저 시작하는 이유는 공용 DB 스키마�
 ### 1. 인프라 시작
 
 ```sh
-docker compose --env-file infra/.env -f infra/docker-compose.dev.yml up -d
+docker compose --env-file infra/.env -f infra/compose.infra.yml up -d
 ```
 
 상태 확인:
 
 ```sh
-docker compose -f infra/docker-compose.dev.yml ps
+docker compose -f infra/compose.infra.yml ps
 ```
 
 `fruition-postgresql-dev`가 `healthy` 상태가 되면 백엔드를 실행할 수 있습니다.
@@ -170,13 +170,13 @@ http://localhost:3000
 인프라 컨테이너를 중지하려면 저장소 루트에서 아래 명령을 실행합니다.
 
 ```sh
-docker compose -f infra/docker-compose.dev.yml down
+docker compose -f infra/compose.infra.yml down
 ```
 
 로컬 데이터베이스와 객체 스토리지 볼륨까지 삭제하려면 `-v`를 추가합니다.
 
 ```sh
-docker compose -f infra/docker-compose.dev.yml down -v
+docker compose -f infra/compose.infra.yml down -v
 ```
 
 ## 전체 종료 스크립트
@@ -191,7 +191,7 @@ docker compose -f infra/docker-compose.dev.yml down -v
 
 1. `3000` 포트의 Next.js 프로세스 종료
 2. `8080` 포트의 Spring Boot 프로세스 종료
-3. `8000` 포트 사용 프로세스와 `infra/docker-compose.dev.yml`, `infra/docker-compose.pipeline.yml`의 PostgreSQL, MinIO, pipeline API 컨테이너 종료
+3. `8000` 포트 사용 프로세스와 `infra/compose.infra.yml`, `infra/compose.ai.yml`의 PostgreSQL, MinIO, pipeline API 컨테이너 종료
 
 로컬 데이터베이스와 객체 스토리지 볼륨까지 삭제하려면 `--volumes` 옵션을 사용합니다.
 

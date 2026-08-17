@@ -174,7 +174,7 @@ LLM_MODEL=gpt-4.1-mini
 로컬에서 pipeline까지 함께 실행한다.
 
 ```sh
-docker compose --env-file infra/.env -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml up -d --build
+docker compose --env-file infra/.env -f infra/compose.infra.yml -f infra/compose.ai.yml up -d --build
 ```
 
 Spring backend는 호스트 기준 `localhost:8000`으로 pipeline을 호출한다.

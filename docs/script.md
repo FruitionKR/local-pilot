@@ -1,6 +1,6 @@
-# 로컬 구동·데모 절차
+# 실행 스크립트·로컬 데모 절차
 
-로컬 전체 스택 구동과 데모 시나리오 요약. 상세 절차·문제 해결은 원문 참조.
+프로젝트 스크립트의 역할, 로컬 스택 구동 순서와 데모 시나리오를 정리한다. 상세 문제 해결은 원문을 참조한다.
 
 > 원문: docs/backlog/local-runbook.md
 
@@ -55,27 +55,60 @@ cd services/ai/pipeline
 
 `document_restoration` 테스트까지 실행하려면 추가로 `requirements-document-restoration.txt`를 설치합니다.
 
-## 2. 구동 순서
+## 2. 실행 스크립트
 
-### 2-1. 인프라 (PostgreSQL·Kafka·Redis·MinIO)
+일반적인 로컬 개발은 루트 디렉터리에서 `dev-up.sh`와 `dev-down.sh`를 사용한다.
+
+| 스크립트 | 역할 | 유지되는 항목 |
+|---|---|---|
+| `scripts/bootstrap.sh` | 필수 도구와 프론트엔드 의존성을 준비한다. `dev-up.sh`가 자동 호출한다. | 해당 없음 |
+| `scripts/dev-up.sh` | 공용 인프라, 호스트 백엔드, AI API·워커, 프론트엔드를 순서대로 시작한다. | 실행 중인 supervisor가 전체 호스트 프로세스를 관리한다. |
+| `scripts/dev-down.sh` | 이 프로젝트가 등록한 supervisor와 Compose 컨테이너를 종료한다. | 기본값은 로컬 볼륨을 유지한다. |
+| `scripts/front-up.sh` / `front-down.sh` | 프론트엔드만 시작하거나 종료한다. | 백엔드와 Compose 서비스는 유지한다. |
+| `scripts/back-up.sh` / `back-down.sh` | 공용 인프라와 호스트 백엔드를 시작하거나 백엔드만 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
+| `scripts/ai-up.sh` / `ai-down.sh` | 백엔드 기동 후 AI image 하나로 Pipeline API와 워커 전체를 시작하거나 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
+
+전체 로컬 환경을 시작한다.
 
 ```sh
-docker compose --env-file infra/.env -f infra/docker-compose.dev.yml up -d
-docker compose -f infra/docker-compose.dev.yml ps
+./scripts/dev-up.sh
+```
+
+`dev-up.sh`는 현재 터미널에서 계속 실행된다. 다른 터미널에서 다음 명령으로 종료한다.
+
+```sh
+./scripts/dev-down.sh
+```
+
+PDF 변환기 `markitdown`은 선택 서비스이므로 `dev-up.sh`에 포함되지 않는다. PDF 업로드를 검증할 때 별도로 시작한다.
+
+```sh
+docker compose -f infra/compose.converter.yml up -d
+```
+
+up 스크립트는 `.runtime/`에 supervisor PID를 등록한다. down 스크립트는 등록된 supervisor만 종료하며, 같은 포트를 사용하는 다른 프로젝트 프로세스는 종료하지 않는다. 이미 다른 프로세스가 필요한 포트를 사용 중이면 up 스크립트는 즉시 실패한다.
+
+## 3. 상세 구동 순서
+
+### 3-1. 인프라 (PostgreSQL·Kafka·Redis·MinIO)
+
+```sh
+docker compose --env-file infra/.env -f infra/compose.infra.yml up -d
+docker compose -f infra/compose.infra.yml ps
 ```
 
 `fruition-postgresql-dev`가 `healthy`가 되면 다음 단계 진행.
 
-배포 이미지 단위 검증은 dev·pipeline·converter·deploy override를 함께 구성한다.
+배포 이미지 단위 검증은 공용 인프라·AI·변환기·컨테이너 통합 override를 함께 구성한다.
 
 ```sh
 docker compose --env-file infra/.env \
-  -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
-  -f infra/docker-compose.converter.yml -f infra/docker-compose.deploy.yml \
+  -f infra/compose.infra.yml -f infra/compose.ai.yml \
+  -f infra/compose.converter.yml -f infra/compose.containerized.yml \
   up -d --build
 ```
 
-### 2-2. 백엔드 (document-svc :8080 → access-svc :8081)
+### 3-2. 백엔드 (document-svc :8080 → access-svc :8081)
 
 스크립트 사용(인프라 기동 포함, Flyway 소유자인 document-svc를 먼저 시작).
 
@@ -98,12 +131,12 @@ curl http://localhost:8080/actuator/health   # document-svc {"status":"UP"}
 curl http://localhost:8081/actuator/health   # access-svc  {"status":"UP"}
 ```
 
-### 2-3. ai-svc (converter → pipeline-api·워커)
+### 3-3. ai-svc (converter → pipeline-api·워커)
 
 PDF→Markdown 변환기(markitdown, :8010).
 
 ```sh
-docker compose -f infra/docker-compose.converter.yml up -d
+docker compose -f infra/compose.converter.yml up -d
 curl http://localhost:8010/health
 ```
 
@@ -111,14 +144,14 @@ pipeline-api(:8000)와 워커(ingest/query/agent/maintenance task worker, edit-e
 
 ```sh
 docker compose --env-file infra/.env \
-  -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
+  -f infra/compose.infra.yml -f infra/compose.ai.yml \
   up -d pipeline-api ingest-worker query-task-worker agent-task-worker \
   maintenance-task-worker edit-event-consumer pipeline-agent-worker
 curl http://localhost:8000/health
 ```
 
-pipeline-api를 처음 빌드하거나 관련 코드·의존성이 바뀐 경우에만 `./scripts/ai-up.sh`를 사용한다.
-기존 image를 재사용할 때는 위 compose 명령에서 `pipeline-api`만 `up -d`한다.
+`./scripts/ai-up.sh`는 pipeline image를 한 번 빌드한 뒤 pipeline-api와 전체 워커를 같은 image로 시작한다.
+기존 image를 재사용할 때는 위 compose 명령을 `--build` 없이 실행한다.
 
 ### 안정적 통합 재검증 규칙
 
@@ -149,22 +182,22 @@ AI image를 처음 만들거나 AI 코드·의존성이 바뀐 경우에만 위 
 `--build`를 추가한다.
 기존 image로 재검증할 때는 `--build` 없이 `up -d`를 사용한다.
 
-### 2-3-1. 기존 AI 데이터 maintenance cutover
+### 3-3-1. 기존 AI 데이터 maintenance cutover
 
 신규 빈 환경에는 필요 없다. 기존 `core_db`의 Wiki·Agent·Skill·checkpoint를 옮길 때는 먼저 외부 요청을 차단하고 `pipeline-api`를 내려 lint/restore/reingest/Agent mutation을 막는다. Wiki와 Agent 실행이 모두 terminal 상태가 된 뒤 관련 worker를 내린다.
 
 ```sh
 docker compose --env-file infra/.env \
-  -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
+  -f infra/compose.infra.yml -f infra/compose.ai.yml \
   stop pipeline-api agent-task-worker pipeline-agent-worker
-docker compose --env-file infra/.env -f infra/docker-compose.dev.yml \
+docker compose --env-file infra/.env -f infra/compose.infra.yml \
   exec -T postgresql sh -c \
   'PGPASSWORD="$CORE_DB_MIGRATION_PASSWORD" exec psql -U "$CORE_DB_MIGRATION_USER" -d "$CORE_DB_NAME" -At' <<'SQL'
 select count(*) from pipeline_runs where status not in ('succeeded','failed','notify_pending');
 select count(*) from agent_runs where status not in ('completed','partial_failed','failed','conflicted','rejected','cancelled');
 SQL
 docker compose --env-file infra/.env \
-  -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
+  -f infra/compose.infra.yml -f infra/compose.ai.yml \
   stop ingest-worker
 ```
 
@@ -188,7 +221,7 @@ services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py ro
 
 ```sh
 docker compose --env-file infra/.env \
-  -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
+  -f infra/compose.infra.yml -f infra/compose.ai.yml \
   up -d --build pipeline-api
 ```
 
@@ -198,7 +231,7 @@ docker compose --env-file infra/.env \
 services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py \
   finalize-core-permissions --smoke-tested ingest query lint restore agent
 docker compose --env-file infra/.env \
-  -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
+  -f infra/compose.infra.yml -f infra/compose.ai.yml \
   start ingest-worker
 ```
 
@@ -210,7 +243,7 @@ services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py ro
 
 문서 편집 저장소는 V39가 비어 있는 `document_edit_states`와 `document_content_versions`에 편집 revision을 초기화하는 fresh PostgreSQL cutover다. 기존 Mongo 편집 데이터와 두 PostgreSQL table의 폐기는 대상별 승인 후 수행하며, 기존 편집 상태·write receipt·pending edit event를 import하거나 dual-write하지 않는다. 초기화된 편집 상태의 본문·revision·receipt·content version·asset/reference·적용 감사·outbox를 하나의 core DB transaction으로 기록한다. 결정 근거: [adr/0016](adr/0016-consolidate-document-body-into-postgres.md).
 
-### 2-4. 프론트엔드 (:3000)
+### 3-4. 프론트엔드 (:3000)
 
 ```sh
 ./scripts/front-up.sh
@@ -226,7 +259,7 @@ npm run dev
 
 확인: `curl -I http://localhost:3000` 후 브라우저에서 `http://localhost:3000` 접속.
 
-### 2-5. 로그 확인
+### 3-5. 로그 확인
 
 `dev-up.sh`는 로그를 `logs/`에 남긴다. 컨테이너 로그는 `dev-down.sh`로 컨테이너를 지우면 함께 사라지므로, 재기동 뒤에도 이전 에러를 보려면 이 파일을 본다. `logs/`는 gitignore 대상이다.
 
@@ -244,7 +277,7 @@ grep -iE "error|exception" logs/*.log   # 에러만 확인
 
 워커 로그 수집만 따로 제어하려면 `./scripts/logs-up.sh [start|stop|status]`를 쓴다. 수집을 시작할 때 `workers.log`가 100MB를 넘었으면 `workers.log.1`로 밀고 새로 쌓는다(수집 중에는 회전하지 않는다).
 
-## 3. 데모 시나리오
+## 4. 데모 시나리오
 
 1. 로그인 — `http://localhost:3000` 접속, 이메일 가입/로그인. 인증 코드는 `infra/.env`의 `AUTH_EMAIL_DEV_FIXED_CODE` 값 입력. (OAuth 키 설정 시 소셜 로그인도 가능)
 2. 워크스페이스 — 워크스페이스 생성 후 진입.
@@ -254,7 +287,7 @@ grep -iE "error|exception" logs/*.log   # 에러만 확인
 6. Agent/Lint/Restore — 요청이 즉시 202를 반환하고 각 run 완료 후에만 결과가 반영되는지 확인.
 7. 병렬 ingest — 같은 workspace의 서로 다른 문서를 동시에 올려 병렬 처리되고 동일 slug Concept가 하나만 남는지 확인.
 
-## 4. 종료·초기화
+## 5. 종료·초기화
 
 앱 프로세스와 인프라·pipeline 컨테이너 일괄 종료.
 
@@ -265,13 +298,15 @@ grep -iE "error|exception" logs/*.log   # 에러만 확인
 converter 종료.
 
 ```sh
-docker compose -f infra/docker-compose.converter.yml down
+docker compose -f infra/compose.converter.yml down
 ```
 
-데이터까지 초기화(DB·MinIO·pipeline 산출물 삭제, 재현 환경 초기화 시에만).
+데이터까지 초기화(DB·MinIO·pipeline 산출물과 이 project의 orphan 볼륨 삭제, 재현 환경 초기화 시에만).
 
 ```sh
 ./scripts/dev-down.sh --volumes
 ```
 
 개별 종료 스크립트: `scripts/front-down.sh`, `scripts/back-down.sh`, `scripts/ai-down.sh`.
+호스트 앱 종료 스크립트는 `.runtime/`에 등록된 supervisor만 종료한다. 다른 프로젝트가 같은 포트를 사용 중이면 종료하지 않는다.
+`scripts/ai-down.sh`는 pipeline-api와 전체 워커를 함께 종료한다.

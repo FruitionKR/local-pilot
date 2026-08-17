@@ -24,7 +24,7 @@ description: 커밋을 생성하거나 준비할 때 반드시 사용. 커밋 �
   - 서비스 경계·통신·인가·배포 변경 → `docs/architecture.md`
   - API 계약 변경 → `docs/api.md`
   - 저장소·테이블·소유권 변경 → `docs/data-model.md`
-  - 구동·데모 절차 변경 → `docs/demo-script.md`
+  - 구동·데모 절차 변경 → `docs/script.md`
   - 중요한 아키텍처 결정 추가/변경 → `docs/adr/NNNN-<kebab-제목>.md`
 - 문서 내용과 무관한 커밋은 문서를 건드리지 않는다.
 

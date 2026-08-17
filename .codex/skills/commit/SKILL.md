@@ -24,7 +24,7 @@ Stop before commit if real secrets are found.
   - Service boundary, communication, authorization, or deployment changes -> `docs/architecture.md`
   - API contract changes -> `docs/api.md`
   - Storage, table, or ownership changes -> `docs/data-model.md`
-  - Run or demo procedure changes -> `docs/demo-script.md`
+  - Run or demo procedure changes -> `docs/script.md`
   - Significant architecture decisions -> `docs/adr/NNNN-<kebab-title>.md`
 - Do not touch docs for commits that leave documented behavior unchanged.
 - When feature work reveals a related unresolved requirement, tell the user before committing what remains and why the current changes do not resolve it. Do not silently ignore it or expand implementation scope without approval.

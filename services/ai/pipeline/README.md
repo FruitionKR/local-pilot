@@ -9,7 +9,7 @@ Spring 백엔드가 업로드한 Markdown/text 문서를 받아 LLM Wiki 산출�
 저장소 루트에서 실행합니다.
 
 ```bash
-docker compose --env-file infra/.env -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml up -d --build
+docker compose --env-file infra/.env -f infra/compose.infra.yml -f infra/compose.ai.yml up -d --build
 ```
 
 호스트에서는 `http://localhost:8000`, 같은 compose 네트워크 안에서는 `http://pipeline-api:8000`으로 접근합니다.

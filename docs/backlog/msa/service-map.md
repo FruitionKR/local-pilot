@@ -48,7 +48,7 @@
 | `fruition.{document,wiki,wikischema,wikimaintenance,chat,query,agent,aihistory}` | `fruition.core.{…}` |
 | `fruition.util` | `fruition.shared.util` |
 
-갱신된 참조: `scripts/*.sh`, `infra/docker-compose.{pipeline,converter}.yml`,
+갱신된 참조: `scripts/*.sh`, `infra/compose.{ai,converter}.yml`,
 `.github/workflows/tests.yml`, `services/backend/build.gradle`(infra/.env 상대경로), `.gitignore`.
 
 **미갱신**: `docs/` 아래 79개 문서가 구 경로(`llmPipeline/`, `backend/`)를 언급한다.

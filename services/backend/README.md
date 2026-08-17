@@ -28,7 +28,7 @@ Spring Boot 기반 문서 업로드 및 처리 백엔드 서버입니다.
 
 ```bash
 cd infra
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f compose.infra.yml up -d
 ```
 
 컨테이너가 정상 기동되면 다음 서비스가 활성화됩니다.
@@ -54,13 +54,13 @@ cd backend
 
 ```bash
 # infra/ 디렉토리에서 실행
-docker compose -f docker-compose.dev.yml down
+docker compose -f compose.infra.yml down
 ```
 
 볼륨까지 초기화하려면:
 
 ```bash
-docker compose -f docker-compose.dev.yml down -v
+docker compose -f compose.infra.yml down -v
 ```
 
 ---
@@ -78,8 +78,8 @@ DB 스키마는 **Flyway가 단일 소스로 관리**합니다. 앱은 기동 �
 
 ```bash
 # infra/ 디렉토리에서
-docker compose -f docker-compose.dev.yml down -v   # postgres 볼륨 삭제
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f compose.infra.yml down -v   # postgres 볼륨 삭제
+docker compose -f compose.infra.yml up -d
 
 # backend/ 디렉토리에서
 ./gradlew bootRun   # 빈 DB에 Flyway가 V1부터 자동 적용
@@ -117,7 +117,7 @@ cd backend
 **적용 이력 직접 조회 (psql):**
 
 ```bash
-docker compose -f infra/docker-compose.dev.yml exec -T postgresql \
+docker compose -f infra/compose.infra.yml exec -T postgresql \
   psql -U fruition -d fruition_mvp \
   -c "SELECT installed_rank, version, description, success, installed_on FROM flyway_schema_history ORDER BY installed_rank;"
 ```
@@ -441,7 +441,7 @@ docker logs fruition-minio-init-dev
 **포트 충돌**
 
 로컬에서 PostgreSQL이나 MinIO가 이미 실행 중이라면 포트가 충돌합니다.
-기존 프로세스를 종료하거나 `infra/docker-compose.dev.yml`의 포트 매핑을 변경하세요.
+기존 프로세스를 종료하거나 `infra/compose.infra.yml`의 포트 매핑을 변경하세요.
 
 **FastAPI 처리 요청 실패**
 

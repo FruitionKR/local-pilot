@@ -22,10 +22,10 @@ access-svc·document-svc는 Gradle 멀티프로젝트라 빌드 컨텍스트가 
 ```bash
 cd infra
 docker compose --env-file .env \
-  -f docker-compose.dev.yml \        # postgres·redis·kafka·minio
-  -f docker-compose.pipeline.yml \   # pipeline-api·ingest-worker
-  -f docker-compose.converter.yml \
-  -f docker-compose.deploy.yml \     # access-svc·document-svc
+  -f compose.infra.yml \        # postgres·redis·kafka·minio
+  -f compose.ai.yml \           # pipeline-api·ingest-worker
+  -f compose.converter.yml \
+  -f compose.containerized.yml \     # access-svc·document-svc
   up -d --build
 # document-svc 다중 인스턴스: --scale document-svc=2 (published 포트 제거 + LB)
 ```

@@ -11,7 +11,7 @@
 - 위 기준 commit의 실제 코드·테스트·설정
 
 이 문서는 현행 문서가 아니라 구현 작업용 backlog다. 구현 후 실제 구조는
-`docs/architecture.md`, `docs/data-model.md`, `docs/demo-script.md`와 정식 ADR에 반영한다.
+`docs/architecture.md`, `docs/data-model.md`, `docs/script.md`와 정식 ADR에 반영한다.
 
 ## 1. 목표와 완료 조건
 
@@ -322,7 +322,7 @@ runtime dual read 없이 서비스가 중지된 offline schema 준비/import/검
 운영 구성:
 
 - `.github/workflows/tests.yml`, `.github/workflows/web-services.yml`
-- `infra/.env.example`, `infra/docker-compose.dev.yml`, `infra/docker-compose.deploy.yml`
+- `infra/.env.example`, `infra/compose.infra.yml`, `infra/compose.containerized.yml`
 - `infra/terraform/README.md`, `infra/terraform/secrets.tf`
 - `k8s/README.md`, `k8s/base/configmap.yaml`, `k8s/base/kafka.yaml`, `k8s/base/mongodb.yaml`
 - frontend의 Mongo canonical 설명 주석
@@ -350,7 +350,7 @@ rg -n -i 'mongo(db)?|spring-data-mongodb' \
 - `docs/architecture.md`: document service 저장소·transaction·outbox 구조 수정
 - `docs/data-model.md`: `document_edit_states`, `document_edit_writes`,
   `document_edit_outbox` 소유권과 핵심 제약 수정
-- `docs/demo-script.md`: Mongo 기동·환경 변수·초기화 절차 제거
+- `docs/script.md`: Mongo 기동·환경 변수·초기화 절차 제거
 - API 계약이 유지되면 `docs/api.md`는 불필요하게 수정하지 않는다.
 
 검증 명령:
@@ -360,8 +360,8 @@ cd services/backend
 ./gradlew :document-svc:test
 
 cd ../..
-docker compose -f infra/docker-compose.dev.yml config
-docker compose -f infra/docker-compose.deploy.yml config
+docker compose -f infra/compose.infra.yml config
+docker compose -f infra/compose.containerized.yml config
 kubectl kustomize k8s/base >/dev/null
 git diff --check
 ```

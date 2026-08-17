@@ -73,18 +73,18 @@
 
 ### feat: Kafka 도입·backend 컨테이너화·배포 compose
 
-- `docker-compose.dev.yml`에 Kafka(KRaft 단일 브로커, apache/kafka:3.9) + topic 초기화
+- `compose.infra.yml`에 Kafka(KRaft 단일 브로커, apache/kafka:3.9) + topic 초기화
   (`ai.ingest.command` partitions 12) 추가. 컨테이너는 `kafka:19092`, 호스트는
   `localhost:9092`로 접속(이중 리스너).
-- `docker-compose.pipeline.yml`에 `ingest-worker` 서비스 추가(pipeline 이미지 공용,
+- `compose.ai.yml`에 `ingest-worker` 서비스 추가(pipeline 이미지 공용,
   command만 교체).
 - `services/backend/Dockerfile` 신설(gradle 멀티스테이지→JRE) +
-  `docker-compose.deploy.yml`로 backend까지 컨테이너 실행하는 배포 단위 검증 구성.
+  `compose.containerized.yml`로 backend까지 컨테이너 실행하는 배포 단위 검증 구성.
 - `.env.example`에 `KAFKA_BOOTSTRAP_SERVERS`·`INGEST_COMMAND_TOPIC` 추가.
 
 ### feat: Redis 도입·내부 포트 루프백 제한
 
-- `docker-compose.dev.yml`에 `redis:7-alpine` 서비스 추가(healthcheck 포함). backend의
+- `compose.infra.yml`에 `redis:7-alpine` 서비스 추가(healthcheck 포함). backend의
   공유 store(OAuth 교환 코드, query run 상태·SSE 중계)가 사용한다. AWS에서는
   ElastiCache로 대체한다.
 - pipeline(:8000)·converter(:8010) 포트 바인딩을 `127.0.0.1`로 제한해 호스트 외부에서
@@ -113,7 +113,7 @@
 
 ### fix: Pipeline LLM 환경변수 전달 단일화
 
-- `docker-compose.pipeline.yml`에서 legacy `UPSTAGE_*` 전달을 제거하고 모든 provider가 `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`만 사용하도록 통일
+- `compose.ai.yml`에서 legacy `UPSTAGE_*` 전달을 제거하고 모든 provider가 `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`만 사용하도록 통일
 - `infra/.env.example`과 `infra/.env.pipeline.example`을 같은 계약으로 갱신하고 Compose 설정 렌더링 검증 통과
 
 ## 2026-07-24
@@ -122,7 +122,7 @@
 
 **변경된 내용**
 
-- `docker-compose.pipeline.yml`의 pipeline-api 환경변수에 `LLM_API_KEY/LLM_BASE_URL/LLM_MODEL`을 추가 전달하고, `LLM_PROVIDER`를 `${LLM_PROVIDER:-upstage}`로 일반화했다. `UPSTAGE_MODEL/UPSTAGE_BASE_URL`의 강제 기본값(solar-pro2 / upstage v1)을 제거해 빈 값 pass-through로 바꿨다.
+- `compose.ai.yml`의 pipeline-api 환경변수에 `LLM_API_KEY/LLM_BASE_URL/LLM_MODEL`을 추가 전달하고, `LLM_PROVIDER`를 `${LLM_PROVIDER:-upstage}`로 일반화했다. `UPSTAGE_MODEL/UPSTAGE_BASE_URL`의 강제 기본값(solar-pro2 / upstage v1)을 제거해 빈 값 pass-through로 바꿨다.
 
 **배경**
 
@@ -220,11 +220,11 @@
 **변경된 것**
 
 - `infra/.env.example`에 `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `LANGSMITH_ENDPOINT`, `QUERY_EVALUATOR_MODE`, `QUERY_EVALUATOR_MAX_ATTEMPTS` 예시를 추가했습니다.
-- `infra/docker-compose.pipeline.yml`에서 LangSmith와 query evaluator 환경변수를 pipeline container로 전달하도록 추가했습니다.
+- `infra/compose.ai.yml`에서 LangSmith와 query evaluator 환경변수를 pipeline container로 전달하도록 추가했습니다.
 
 **검증**
 
-- `docker compose --env-file infra/.env -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml up -d --build pipeline-api`로 pipeline container 재빌드 확인.
+- `docker compose --env-file infra/.env -f infra/compose.infra.yml -f infra/compose.ai.yml up -d --build pipeline-api`로 pipeline container 재빌드 확인.
 - 컨테이너 내부에서 `LANGSMITH_TRACING=true`, `QUERY_EVALUATOR_MODE=llm`, `QUERY_EVALUATOR_MAX_ATTEMPTS=2` 반영 확인.
 
 ## 2026-06-28
@@ -237,8 +237,8 @@ Query evaluator, web search 보강, 내부 근거 관련도 기준을 로컬 pip
 
 **변경된 것**
 
-- `infra/docker-compose.pipeline.yml` — `QUERY_EVALUATOR_MODE`, `QUERY_WEB_SEARCH_MODE`, `QUERY_WEB_SEARCH_MAX_RESULTS`, `QUERY_WEB_SEARCH_TIMEOUT_SECONDS`, `QUERY_MIN_INTERNAL_RELEVANCE_SCORE` 환경변수 추가
-- `infra/docker-compose.pipeline.yml` — `TAVILY_API_KEY`를 외부 환경변수로 주입할 수 있게 추가
+- `infra/compose.ai.yml` — `QUERY_EVALUATOR_MODE`, `QUERY_WEB_SEARCH_MODE`, `QUERY_WEB_SEARCH_MAX_RESULTS`, `QUERY_WEB_SEARCH_TIMEOUT_SECONDS`, `QUERY_MIN_INTERNAL_RELEVANCE_SCORE` 환경변수 추가
+- `infra/compose.ai.yml` — `TAVILY_API_KEY`를 외부 환경변수로 주입할 수 있게 추가
 
 **검증**
 
@@ -276,11 +276,11 @@ Query evaluator, web search 보강, 내부 근거 관련도 기준을 로컬 pip
 
 채팅 질의와 문서 업로드 후 처리는 Spring 백엔드가 `localhost:8000`의 pipeline API를 호출해야 합니다. 기존 `scripts/dev-up.sh`는 PostgreSQL, MinIO, 백엔드, 프론트엔드만 실행해 `POST /api/query`가 503으로 실패하고 업로드 문서가 `processing`에 머물 수 있었습니다.
 
-또한 `infra/docker-compose.pipeline.yml`로 실행했던 `pipeline-api` 컨테이너가 중지 상태로 남으면, 기본 `scripts/dev-up.sh` 실행 시 Docker Compose가 orphan container 경고를 출력했습니다.
+또한 `infra/compose.ai.yml`로 실행했던 `pipeline-api` 컨테이너가 중지 상태로 남으면, 기본 `scripts/dev-up.sh` 실행 시 Docker Compose가 orphan container 경고를 출력했습니다.
 
 **변경된 것**
 
-- `scripts/dev-up.sh` — `infra/docker-compose.dev.yml`와 `infra/docker-compose.pipeline.yml`을 함께 실행하고 `http://localhost:8000/health`까지 확인하도록 변경
+- `scripts/dev-up.sh` — `infra/compose.infra.yml`와 `infra/compose.ai.yml`을 함께 실행하고 `http://localhost:8000/health`까지 확인하도록 변경
 - `scripts/dev-up.sh` — `fruition-mvp-dev` project의 중지된 `pipeline-api` 컨테이너만 `docker compose up` 전에 정리하도록 추가
 - `scripts/dev-down.sh` — pipeline API compose 파일과 `8000` 포트 종료를 포함하도록 변경
 - `docs/local-runbook.md` — 자동 실행/종료 스크립트가 pipeline API를 포함한다는 내용으로 갱신
@@ -365,7 +365,7 @@ Query evaluator, web search 보강, 내부 근거 관련도 기준을 로컬 pip
 
 **추가된 것**
 
-- `infra/docker-compose.dev.yml` — PostgreSQL 16 + MinIO 컨테이너 구성
+- `infra/compose.infra.yml` — PostgreSQL 16 + MinIO 컨테이너 구성
 - `infra/minio-init` — 버킷 자동 생성 컨테이너 (`fruition-storage`)
 - `infra/.env` / `infra/.env.example` — 환경변수 단일 관리
 - `backend/build.gradle` — `bootRun` 태스크에서 `infra/.env` 자동 로드
