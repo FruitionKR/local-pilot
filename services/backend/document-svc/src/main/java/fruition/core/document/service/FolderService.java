@@ -265,8 +265,10 @@ public class FolderService {
             ));
         }
         for (Document document : documentsByFolder.getOrDefault(parentFolderId, List.of())) {
+            // 문서의 name은 파일명이다. 화면이 확장자로 종류를 가리므로 display_name을 쓰면
+            // Markdown 문서가 아닌 것으로 취급된다. 사람이 붙인 이름은 document.display_name에 있다.
             items.add(DocumentTreeResponse.Item.document(
-                    document.getId(), document.getDisplayName(), document.getSortOrder(),
+                    document.getId(), document.getFilename(), document.getSortOrder(),
                     document.getCurrentVersion(), itemsById.get(document.getId())));
         }
         items.sort(Comparator.comparingLong(DocumentTreeResponse.Item::sortOrder)

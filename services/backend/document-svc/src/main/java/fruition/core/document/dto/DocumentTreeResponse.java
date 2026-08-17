@@ -19,7 +19,9 @@ public record DocumentTreeResponse(
             @Schema(description = "폴더면 UUID, 문서면 doc_ 접두 ID")
             String id,
 
-            @Schema(description = "화면에 보여줄 이름", example = "설계")
+            @Schema(description = "트리에 보여줄 이름. 폴더는 폴더 이름, 문서는 확장자를 포함한 파일명이다. "
+                    + "문서가 사람에게 보이는 제목은 document.display_name에 있다.",
+                    example = "설계")
             String name,
 
             @JsonProperty("sort_order")

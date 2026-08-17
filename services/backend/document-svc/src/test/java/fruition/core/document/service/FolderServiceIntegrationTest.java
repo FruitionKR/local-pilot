@@ -174,6 +174,23 @@ class FolderServiceIntegrationTest {
         assertThat(item.document()).isEqualTo(fromList);
     }
 
+    /**
+     * 화면은 name의 확장자로 Markdown 문서인지 가린다. display_name(확장자 없음)을 주면
+     * 모든 노트가 편집 불가로 취급된다. 사람에게 보일 제목은 document.display_name에 있다.
+     */
+    @Test
+    void tree_documentNameIsFilenameNotDisplayName() {
+        insertDocumentInFolder("doc_naming", "회의록.md", "EDITABLE", null, 0);
+
+        DocumentTreeResponse tree = folderService.tree(workspaceId, userId);
+
+        DocumentTreeResponse.Item item = tree.items().stream()
+                .filter(candidate -> "doc_naming".equals(candidate.id()))
+                .findFirst().orElseThrow();
+        assertThat(item.name()).isEqualTo("회의록.md");
+        assertThat(item.document().displayName()).isEqualTo("회의록");
+    }
+
     /** 폴더에는 문서 메타가 없다. 키 자체가 빠져야 화면이 종류를 헷갈리지 않는다. */
     @Test
     void tree_folderItemHasNoDocumentMetadata() {
