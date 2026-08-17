@@ -4,6 +4,7 @@ import fruition.shared.idempotency.IdempotencyService;
 import fruition.core.document.domain.Document;
 import fruition.core.document.domain.Folder;
 import fruition.core.document.dto.BreadcrumbResponse;
+import fruition.core.document.dto.DocumentListResponse;
 import fruition.core.document.dto.DocumentTreeResponse;
 import fruition.core.document.dto.FolderChildrenResponse;
 import fruition.core.document.dto.FolderCreateRequest;
@@ -32,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class FolderService {
@@ -43,17 +45,20 @@ public class FolderService {
     private final DocumentRepository documentRepository;
     private final IdempotencyService idempotencyService;
     private final SiblingReorderer siblingReorderer;
+    private final DocumentItemAssembler documentItemAssembler;
 
     public FolderService(WorkspaceAccessGuard workspaceAccessGuard,
                          FolderRepository folderRepository,
                          DocumentRepository documentRepository,
                          IdempotencyService idempotencyService,
-                         SiblingReorderer siblingReorderer) {
+                         SiblingReorderer siblingReorderer,
+                         DocumentItemAssembler documentItemAssembler) {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.folderRepository = folderRepository;
         this.documentRepository = documentRepository;
         this.idempotencyService = idempotencyService;
         this.siblingReorderer = siblingReorderer;
+        this.documentItemAssembler = documentItemAssembler;
     }
 
     @Transactional
@@ -223,19 +228,25 @@ public class FolderService {
         }
 
         Map<UUID, List<Document>> documentsByFolder = new HashMap<>();
-        for (Document document : documentRepository.findVisibleByWorkspaceId(workspaceId)) {
+        List<Document> documents = documentRepository.findVisibleByWorkspaceId(workspaceId);
+        for (Document document : documents) {
             documentsByFolder.computeIfAbsent(document.getFolderId(), ignored -> new ArrayList<>())
                     .add(document);
         }
+        // 화면이 계층과 문서 상태를 함께 쓰므로 목록 조회와 같은 항목을 실어 보낸다.
+        Map<String, DocumentListResponse.DocumentItem> itemsById = documentItemAssembler.assemble(documents)
+                .stream()
+                .collect(Collectors.toMap(DocumentListResponse.DocumentItem::id, item -> item));
 
         return new DocumentTreeResponse(
-                buildTreeItems(null, foldersByParent, documentsByFolder, new HashSet<>()));
+                buildTreeItems(null, foldersByParent, documentsByFolder, itemsById, new HashSet<>()));
     }
 
     private List<DocumentTreeResponse.Item> buildTreeItems(
             UUID parentFolderId,
             Map<UUID, List<Folder>> foldersByParent,
             Map<UUID, List<Document>> documentsByFolder,
+            Map<String, DocumentListResponse.DocumentItem> itemsById,
             Set<UUID> ancestorFolderIds
     ) {
         List<DocumentTreeResponse.Item> items = new ArrayList<>();
@@ -250,13 +261,15 @@ public class FolderService {
                     folder.getName(),
                     folder.getSortOrder(),
                     folder.getCurrentVersion(),
-                    buildTreeItems(folder.getId(), foldersByParent, documentsByFolder, nextAncestors)
+                    buildTreeItems(folder.getId(), foldersByParent, documentsByFolder, itemsById, nextAncestors)
             ));
         }
         for (Document document : documentsByFolder.getOrDefault(parentFolderId, List.of())) {
+            // 문서의 name은 파일명이다. 화면이 확장자로 종류를 가리므로 display_name을 쓰면
+            // Markdown 문서가 아닌 것으로 취급된다. 사람이 붙인 이름은 document.display_name에 있다.
             items.add(DocumentTreeResponse.Item.document(
-                    document.getId(), document.getDisplayName(), document.getSortOrder(),
-                    document.getCurrentVersion()));
+                    document.getId(), document.getFilename(), document.getSortOrder(),
+                    document.getCurrentVersion(), itemsById.get(document.getId())));
         }
         items.sort(Comparator.comparingLong(DocumentTreeResponse.Item::sortOrder)
                 .thenComparing(DocumentTreeResponse.Item::id));

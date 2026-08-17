@@ -19,7 +19,9 @@ public record DocumentTreeResponse(
             @Schema(description = "폴더면 UUID, 문서면 doc_ 접두 ID")
             String id,
 
-            @Schema(description = "화면에 보여줄 이름", example = "설계")
+            @Schema(description = "트리에 보여줄 이름. 폴더는 폴더 이름, 문서는 확장자를 포함한 파일명이다. "
+                    + "문서가 사람에게 보이는 제목은 document.display_name에 있다.",
+                    example = "설계")
             String name,
 
             @JsonProperty("sort_order")
@@ -36,7 +38,12 @@ public record DocumentTreeResponse(
 
             @JsonInclude(JsonInclude.Include.NON_NULL)
             @Schema(description = "하위 항목. 문서 항목에는 키 자체가 없다.")
-            List<Item> children
+            List<Item> children,
+
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            @Schema(description = "문서 메타데이터. 목록 조회가 주는 것과 같은 항목이다. "
+                    + "폴더 항목에는 키 자체가 없다.")
+            DocumentListResponse.DocumentItem document
     ) {
         public static Item folder(
                 String id,
@@ -45,11 +52,12 @@ public record DocumentTreeResponse(
                 long currentVersion,
                 List<Item> children
         ) {
-            return new Item("folder", id, name, sortOrder, currentVersion, !children.isEmpty(), children);
+            return new Item("folder", id, name, sortOrder, currentVersion, !children.isEmpty(), children, null);
         }
 
-        public static Item document(String id, String name, long sortOrder, long currentVersion) {
-            return new Item("document", id, name, sortOrder, currentVersion, false, null);
+        public static Item document(String id, String name, long sortOrder, long currentVersion,
+                                    DocumentListResponse.DocumentItem document) {
+            return new Item("document", id, name, sortOrder, currentVersion, false, null, document);
         }
     }
 }

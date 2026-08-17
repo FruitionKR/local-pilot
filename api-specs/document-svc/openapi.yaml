@@ -4983,6 +4983,9 @@ components:
           format: int64
           description: 낙관적 잠금 버전. 이동·이름변경 요청의 base_version으로 쓴다.
           example: 1
+        document:
+          $ref: "#/components/schemas/DocumentItem"
+          description: 문서 메타데이터. 목록 조회가 주는 것과 같은 항목이다. 폴더 항목에는 키 자체가 없다.
         has_children:
           type: boolean
           description: 하위 항목이 있는지 여부
@@ -4992,7 +4995,7 @@ components:
           description: "폴더면 UUID, 문서면 doc_ 접두 ID"
         name:
           type: string
-          description: 화면에 보여줄 이름
+          description: "트리에 보여줄 이름. 폴더는 폴더 이름, 문서는 확장자를 포함한 파일명이다. 문서가 사람에게 보이는 제목은 document.display_name에 있다."
           example: 설계
         sort_order:
           type: integer

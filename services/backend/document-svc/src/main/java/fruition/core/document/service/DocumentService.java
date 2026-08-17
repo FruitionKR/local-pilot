@@ -7,7 +7,6 @@ import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentAsset;
 import fruition.core.document.repository.DocumentAssetRepository;
 import fruition.core.document.domain.DocumentEditState;
-import fruition.core.document.domain.DocumentProcessingState;
 import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.domain.DocumentStatus;
 import fruition.shared.idempotency.IdempotencyService;
@@ -104,7 +103,6 @@ public class DocumentService {
     private static final int MAX_SAVE_ATTEMPTS = 3;
 
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
-    private static final int STALLED_THRESHOLD_SECONDS = 60;
     private static final String INITIAL_NOTE_FILENAME = "새 노트.md";
     private static final String CONVERT_PLACEHOLDER_MARKDOWN = "PDF 변환 중...\n";
 
@@ -120,6 +118,7 @@ public class DocumentService {
     private final TransactionTemplate transactionTemplate;
     private final DocumentEditStateInitializer editStateInitializer;
     private final DocumentEditStateRepository editStateRepository;
+    private final DocumentItemAssembler documentItemAssembler;
     private final PostgresDocumentEditStore postgresDocumentEditStore;
     private final DocumentContentVersionRepository contentVersionRepository;
     private final MarkdownDiffService markdownDiffService;
@@ -145,6 +144,7 @@ public class DocumentService {
                            TransactionTemplate transactionTemplate,
                            DocumentEditStateInitializer editStateInitializer,
                            DocumentEditStateRepository editStateRepository,
+                           DocumentItemAssembler documentItemAssembler,
                            PostgresDocumentEditStore postgresDocumentEditStore,
                            DocumentContentVersionRepository contentVersionRepository,
                            MarkdownDiffService markdownDiffService,
@@ -169,6 +169,7 @@ public class DocumentService {
         this.transactionTemplate = transactionTemplate;
         this.editStateInitializer = editStateInitializer;
         this.editStateRepository = editStateRepository;
+        this.documentItemAssembler = documentItemAssembler;
         this.postgresDocumentEditStore = postgresDocumentEditStore;
         this.contentVersionRepository = contentVersionRepository;
         this.markdownDiffService = markdownDiffService;
@@ -1043,39 +1044,8 @@ public class DocumentService {
         List<Document> documents = query == null || query.isBlank()
                 ? documentRepository.findVisibleByWorkspaceId(workspaceId)
                 : documentRepository.searchVisibleByWorkspaceId(workspaceId, query.trim());
-        Set<String> editableDocumentIds = editStateRepository.findAllById(
-                        documents.stream().map(Document::getId).toList()).stream()
-                .map(DocumentEditState::getDocumentId)
-                .collect(Collectors.toSet());
 
-        List<DocumentListResponse.DocumentItem> items = documents.stream()
-                .map(doc -> new DocumentListResponse.DocumentItem(
-                        doc.getId(),
-                        doc.getFilename(),
-                        doc.getMimeType(),
-                        doc.getByteSize(),
-                        doc.getStatus(),
-                        doc.getSourceUri(),
-                        doc.getExtractedTextUri(),
-                        doc.getUploadedAt(),
-                        doc.getProcessedAt(),
-                        doc.getErrorMessage(),
-                        doc.getPipelineRunId(),
-                        resolveProcessingState(doc),
-                        doc.getProcessingStage(),
-                        areaOf(doc),
-                        itemKindOf(doc),
-                        doc.getDisplayName(),
-                        fileTypeOf(doc),
-                        doc.getDocumentRole(),
-                        isEditable(doc, editableDocumentIds.contains(doc.getId())),
-                        doc.getCurrentVersion(),
-                        doc.getSourceDocumentId(),
-                        doc.getUpdatedAt(),
-                        needsReingest(doc)
-                ))
-                .toList();
-        return new DocumentListResponse(items);
+        return new DocumentListResponse(documentItemAssembler.assemble(documents));
     }
 
     @Transactional(readOnly = true)
@@ -1127,12 +1097,12 @@ public class DocumentService {
                 doc.getErrorMessage(),
                 wikiPages,
                 doc.getPipelineRunId(),
-                resolveProcessingState(doc),
+                DocumentItemAssembler.resolveProcessingState(doc),
                 doc.getProcessingStage(),
                 doc.getDisplayName(),
-                fileTypeOf(doc),
+                DocumentItemAssembler.fileTypeOf(doc),
                 doc.getDocumentRole(),
-                isEditable(doc, editState.isPresent()),
+                DocumentItemAssembler.isEditable(doc, editState.isPresent()),
                 doc.getCurrentVersion(),
                 editRevision,
                 doc.getSourceDocumentId(),
@@ -1140,54 +1110,6 @@ public class DocumentService {
                 editState.map(DocumentEditState::getMarkdown).orElse(null),
                 editLockService.getStatus(doc.getId())
         );
-    }
-
-    private String areaOf(Document document) {
-        return document.getDocumentRole() == DocumentRole.EDITABLE ? "pages" : "sources";
-    }
-
-    private String itemKindOf(Document document) {
-        return document.getDocumentRole() == DocumentRole.EDITABLE ? "page" : "source_file";
-    }
-
-    /**
-     * 마지막 ingest 스냅샷(content_hash)과 현재 편집본(current_content_hash)이 다르면 재분석이 필요하다.
-     * 처리 중이면 이미 재분석이 진행 중이므로 제외한다. 실패(failed)는 기존 오류 표시가 담당한다.
-     */
-    private boolean needsReingest(Document document) {
-        return document.getDocumentRole() == DocumentRole.EDITABLE
-                && document.getStatus() != DocumentStatus.processing
-                && document.getCurrentContentHash() != null
-                && document.getContentHash() != null
-                && !document.getCurrentContentHash().equals(document.getContentHash());
-    }
-
-    private boolean isEditable(Document document, boolean hasEditState) {
-        boolean canInitializeEditState = isMarkdown(document)
-                && document.getSourceUri() != null
-                && !document.getSourceUri().isBlank();
-        return document.getDeletedAt() == null
-                && document.getDocumentRole() == DocumentRole.EDITABLE
-                && (hasEditState || canInitializeEditState)
-                && (isMarkdown(document) || document.getStatus() == DocumentStatus.completed);
-    }
-
-    private boolean isMarkdown(Document document) {
-        String mimeType = document.getMimeType();
-        String filename = document.getFilename().toLowerCase(java.util.Locale.ROOT);
-        return "text/markdown".equals(mimeType)
-                || "text/x-markdown".equals(mimeType)
-                || filename.endsWith(".md")
-                || filename.endsWith(".markdown");
-    }
-
-    private String fileTypeOf(Document document) {
-        int extensionIndex = document.getFilename().lastIndexOf('.');
-        if (extensionIndex >= 0 && extensionIndex < document.getFilename().length() - 1) {
-            return document.getFilename().substring(extensionIndex + 1)
-                    .toLowerCase(java.util.Locale.ROOT);
-        }
-        return document.getMimeType();
     }
 
     public DocumentContentSaveResponse saveContent(
@@ -1994,15 +1916,6 @@ public class DocumentService {
         return dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
     }
 
-    private DocumentProcessingState resolveProcessingState(Document doc) {
-        if (doc.getStatus() == DocumentStatus.completed) return DocumentProcessingState.completed;
-        if (doc.getStatus() == DocumentStatus.failed) return DocumentProcessingState.failed;
-        if (doc.getPipelineRunId() == null) return DocumentProcessingState.starting;
-        if (doc.getProcessingUpdatedAt() == null) return DocumentProcessingState.starting;
-        boolean stalled = doc.getProcessingUpdatedAt()
-                .isBefore(Instant.now().minusSeconds(STALLED_THRESHOLD_SECONDS));
-        return stalled ? DocumentProcessingState.stalled : DocumentProcessingState.running;
-    }
 
     private String sha256(byte[] data) {
         try {
