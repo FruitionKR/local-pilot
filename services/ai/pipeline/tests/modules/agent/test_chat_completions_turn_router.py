@@ -247,8 +247,11 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
                 self.assertEqual(route.action, "chat_answer")
 
     def test_conversational_processing_request_is_not_promoted_to_chat_answer(self) -> None:
-        messages = CONVERSATION_ROUTING_MESSAGES
-        self.assertEqual(len(GROUNDED_ROUTING_MESSAGES) + len(messages), 100)
+        self.assertEqual(len(GROUNDED_ROUTING_MESSAGES) + len(CONVERSATION_ROUTING_MESSAGES), 100)
+        messages = CONVERSATION_ROUTING_MESSAGES + (
+            "Find a better title for this documentary",
+            "Use a groundbreaking Wiki title",
+        )
         responses = [route_response("conversation_reply") for _ in messages]
         for response in responses:
             response["edit_goal"] = None

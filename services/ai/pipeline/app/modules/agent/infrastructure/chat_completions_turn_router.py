@@ -82,23 +82,23 @@ CONVERSATION_REFINEMENT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 GROUNDED_RETRIEVAL_PATTERN = re.compile(
-    r"(?:내부\s*문서|워크스페이스|위키|wiki|workspace|document).{0,40}"
-    r"(?:기준|근거|찾아|검색|조회|search|find|retrieve|ground)|"
-    r"(?:기준|근거|찾아|검색|조회|search|find|retrieve|ground).{0,40}"
-    r"(?:내부\s*문서|워크스페이스|위키|wiki|workspace|document)",
+    r"(?:내부\s*문서|워크스페이스|위키|(?a:\b(?:wiki|workspace|document)\b)).{0,40}"
+    r"(?:기준|근거|찾아|검색|조회|(?a:\b(?:search|find|retrieve|ground)\b))|"
+    r"(?:기준|근거|찾아|검색|조회|(?a:\b(?:search|find|retrieve|ground)\b)).{0,40}"
+    r"(?:내부\s*문서|워크스페이스|위키|(?a:\b(?:wiki|workspace|document)\b))",
     re.IGNORECASE,
 )
 TECHNICAL_PROCESS_QUESTION_PATTERN = re.compile(
-    r"(?:위키|wiki|워크스페이스|workspace|ingest|pipeline|query|lint|agent|skill).{0,40}"
+    r"(?:위키|워크스페이스|(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)).{0,40}"
     r"(?:어떤\s*단계로.{0,20}(?:동작|작동|진행|처리)|"
     r"어떻게.{0,20}(?:동작|작동))"
     r"(?:해|하나요|합니까|돼|되나요|됩니까)(?:\?+)?$|"
     r"how\s+(?:does|do)\s+(?:the\s+)?"
-    r"(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill).{0,30}\bwork(?:\?+)?$|"
+    r"(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b).{0,30}\bwork(?:\?+)?$|"
     r"what\s+are\s+the\s+stages\s+of\s+(?:the\s+)?"
-    r"(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)(?:\?+)?$|"
+    r"(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)(?:\?+)?$|"
     r"what\s+is\s+the\s+process\s+(?:of|for)\s+(?:the\s+)?"
-    r"(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)(?:\s+\w+){0,3}(?:\?+)?$",
+    r"(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)(?:\s+\w+){0,3}(?:\?+)?$",
     re.IGNORECASE,
 )
 ALLOWED_ACTIONS = {
