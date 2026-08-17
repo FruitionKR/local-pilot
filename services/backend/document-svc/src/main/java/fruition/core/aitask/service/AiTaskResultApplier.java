@@ -1,6 +1,7 @@
 package fruition.core.aitask.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import fruition.core.chat.service.ChatEvidenceRecorder;
 import fruition.core.chat.service.ChatTurnRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +42,7 @@ public class AiTaskResultApplier {
     private static final Logger log = LoggerFactory.getLogger(AiTaskResultApplier.class);
 
     private final ChatTurnRecorder chatTurnRecorder;
+    private final ChatEvidenceRecorder chatEvidenceRecorder;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final QueryService queryService;
@@ -61,8 +63,10 @@ public class AiTaskResultApplier {
                                RestoreApplier restoreApplier,
                                RestoreOperationLifecycle restoreLifecycle,
                                DocumentService documentService,
-                               ChatTurnRecorder chatTurnRecorder) {
+                               ChatTurnRecorder chatTurnRecorder,
+                               ChatEvidenceRecorder chatEvidenceRecorder) {
         this.chatTurnRecorder = chatTurnRecorder;
+        this.chatEvidenceRecorder = chatEvidenceRecorder;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.queryService = queryService;
@@ -234,6 +238,7 @@ public class AiTaskResultApplier {
                 JsonNode payload = event.path("payload");
                 chatTurnRecorder.completeAgentTurn(assistantMessageId,
                         payload.path("action").asText(null), agentMessageContent(payload));
+                recordAgentChatEvidence(assistantMessageId, payload);
             } else {
                 chatTurnRecorder.markFailed(assistantMessageId, describeAgentError(errorCode));
             }
@@ -260,6 +265,22 @@ public class AiTaskResultApplier {
     /** 화면·SSE로 나갈 문구. 내부 코드가 그대로 사용자에게 보이지 않게 한다. */
     public static String describeAgentError(String errorCode) {
         return AGENT_ERROR_MESSAGE.getOrDefault(errorCode, errorCode);
+    }
+
+    /**
+     * AI가 질의로 판정한 턴은 답변과 함께 근거가 온다. 질의 경로와 같은 자리에 남겨야
+     * 새로고침한 뒤에도 근거가 보인다. 편집·Skill 갈래에는 chat이 없어 아무것도 하지 않는다.
+     *
+     * <p>해석 실패는 호출부(recordAgentChatMessage)가 이미 삼킨다. DB에 쓰기 전이라 트랜잭션도
+     * 멀쩡해 답변은 그대로 남는다. 여기서 또 잡지 않는다.
+     */
+    private void recordAgentChatEvidence(String assistantMessageId, JsonNode payload) {
+        JsonNode chat = payload.path("chat");
+        if (!chat.isObject()) {
+            return;
+        }
+        chatEvidenceRecorder.record(assistantMessageId,
+                objectMapper.convertValue(chat, PipelineQueryResponse.class));
     }
 
     /** 갈래별 기본 말풍선 문구. 편집 결과 본문은 미리보기에서 보므로 여기서는 무엇을 했는지만 알린다. */

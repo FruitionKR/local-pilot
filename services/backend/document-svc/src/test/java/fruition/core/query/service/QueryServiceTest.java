@@ -1,5 +1,6 @@
 package fruition.core.query.service;
 
+import fruition.core.chat.service.ChatEvidenceRecorder;
 import fruition.core.chat.service.ChatTurnRecorder;
 import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.domain.ChatMessageReference;
@@ -10,6 +11,8 @@ import fruition.core.chat.repository.ChatMessageReferenceRepository;
 import fruition.core.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.core.chat.repository.ChatMessageRepository;
 import fruition.core.chat.repository.ChatSessionRepository;
+import fruition.core.document.domain.Document;
+import fruition.core.document.repository.DocumentRepository;
 import fruition.core.query.dto.QueryResponse;
 import fruition.core.query.exception.PipelineQueryException;
 import fruition.core.query.repository.PipelineQueryRequester;
@@ -23,6 +26,7 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,14 +54,25 @@ class QueryServiceTest {
     @Mock ChatMessageRelatedPageRepository relatedPageRepository;
     @Mock ChatSessionRepository chatSessionRepository;
     @Mock ChatTurnRecorder chatTurnRecorder;
+    @Mock DocumentRepository documentRepository;
 
     QueryService queryService;
 
     @BeforeEach
     void setUp() {
+        // 근거 저장은 recorder 로 옮겼지만 규칙은 그대로다. 실제 구현을 물려 기존 검증을 유지한다.
         queryService = new QueryService(
-                pipelineQueryRequester, chatMessageRepository, referenceRepository, relatedPageRepository,
-                chatSessionRepository, chatTurnRecorder);
+                pipelineQueryRequester, chatMessageRepository,
+                chatSessionRepository, chatTurnRecorder,
+                new ChatEvidenceRecorder(chatMessageRepository, referenceRepository, relatedPageRepository,
+                        documentRepository));
+        // 기본은 근거가 가리키는 문서가 모두 이 워크스페이스에 있는 상황이다. 어긋나는 경우는 별도 테스트에서 만든다.
+        lenient().when(documentRepository.findAllById(any())).thenAnswer(invocation -> {
+            Iterable<?> documentIds = invocation.getArgument(0);
+            List<Document> found = new ArrayList<>();
+            documentIds.forEach(documentId -> found.add(documentInWorkspace(String.valueOf(documentId), WORKSPACE_ID)));
+            return found;
+        });
         lenient().when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(chatMessageRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
@@ -161,6 +177,145 @@ class QueryServiceTest {
         verify(referenceRepository).saveAll(refCaptor.capture());
         assertThat(refCaptor.getValue()).hasSize(1);
         assertThat(refCaptor.getValue().get(0).getDocumentId()).isEqualTo(DOCUMENT_ID);
+    }
+
+    /**
+     * document_id에는 documents FK가 걸려 있다. 없는 문서를 가리키는 근거를 그대로 넣으면 flush에서
+     * 터져 답변까지 되돌아간다. 통합 입구에서는 그 롤백이 결과 반영 전체를 무르고 재시도를 부른다.
+     */
+    @Test
+    @DisplayName("근거가 없는 문서를 가리키면 그 근거만 빼고 저장한다")
+    void query_evidenceForMissingDocument_isSkipped() {
+        List<PipelineQueryResponse.EvidenceSnippet> evidence = List.of(
+                new PipelineQueryResponse.EvidenceSnippet(
+                        1, DOCUMENT_ID, List.of("B0001"), List.of(
+                        new PipelineQueryResponse.SourceRef(DOCUMENT_ID, "B0001")), "남아 있는 문서"),
+                new PipelineQueryResponse.EvidenceSnippet(
+                        2, "doc_deleted99", List.of("B0002"), List.of(
+                        new PipelineQueryResponse.SourceRef("doc_deleted99", "B0002")), "사라진 문서")
+        );
+        // 삭제된 문서는 조회에서 빠진다. when()으로 다시 스텁하면 setUp의 answer가 먼저 불리므로 doReturn을 쓴다.
+        doReturn(List.of(documentInWorkspace(DOCUMENT_ID, WORKSPACE_ID)))
+                .when(documentRepository).findAllById(any());
+        PipelineQueryResponse response = responseWithEvidence(evidence);
+        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
+                eq(true), anyList()))
+                .thenReturn(response);
+
+        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "질문",
+                "openai", "gpt-5-nano", true);
+
+        // 응답에는 그대로 실어 보낸다. 저장만 걸러 낸다.
+        assertThat(result.evidenceSnippets()).containsExactlyElementsOf(evidence);
+        ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
+        verify(referenceRepository).saveAll(refCaptor.capture());
+        assertThat(refCaptor.getValue()).hasSize(1);
+        assertThat(refCaptor.getValue().get(0).getDocumentId()).isEqualTo(DOCUMENT_ID);
+    }
+
+    private static Document documentInWorkspace(String documentId, String workspaceId) {
+        Document document = org.mockito.Mockito.mock(Document.class);
+        lenient().when(document.getId()).thenReturn(documentId);
+        lenient().when(document.getWorkspaceId()).thenReturn(workspaceId);
+        return document;
+    }
+
+    /** 삭제된 문서는 화면에서 열 수 없다. 눌러도 아무 일이 없는 근거를 남기지 않는다. */
+    @Test
+    @DisplayName("근거가 삭제된 문서를 가리키면 저장하지 않는다")
+    void query_evidenceForDeletedDocument_isSkipped() {
+        List<PipelineQueryResponse.EvidenceSnippet> evidence = List.of(
+                new PipelineQueryResponse.EvidenceSnippet(
+                        1, DOCUMENT_ID, List.of("B0001"), List.of(
+                        new PipelineQueryResponse.SourceRef(DOCUMENT_ID, "B0001")), "삭제된 문서")
+        );
+        Document deleted = documentInWorkspace(DOCUMENT_ID, WORKSPACE_ID);
+        lenient().when(deleted.getDeletedAt()).thenReturn(java.time.Instant.parse("2026-08-01T00:00:00Z"));
+        doReturn(List.of(deleted)).when(documentRepository).findAllById(any());
+        PipelineQueryResponse response = responseWithEvidence(evidence);
+        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
+                eq(true), anyList()))
+                .thenReturn(response);
+
+        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+
+        ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
+        verify(referenceRepository).saveAll(refCaptor.capture());
+        assertThat(refCaptor.getValue()).isEmpty();
+    }
+
+    /**
+     * 근거가 다른 워크스페이스 문서를 가리키면 화면에서 열리지 않는 근거가 되고, 그 문서 제목이
+     * 근거 목록으로 새어 나간다. 대화가 속한 워크스페이스의 문서만 남긴다.
+     */
+    @Test
+    @DisplayName("근거가 다른 워크스페이스 문서를 가리키면 저장하지 않는다")
+    void query_evidenceFromOtherWorkspace_isSkipped() {
+        List<PipelineQueryResponse.EvidenceSnippet> evidence = List.of(
+                new PipelineQueryResponse.EvidenceSnippet(
+                        1, DOCUMENT_ID, List.of("B0001"), List.of(
+                        new PipelineQueryResponse.SourceRef(DOCUMENT_ID, "B0001")), "남의 워크스페이스 문서")
+        );
+        doReturn(List.of(documentInWorkspace(DOCUMENT_ID, "ws_other999")))
+                .when(documentRepository).findAllById(any());
+        PipelineQueryResponse response = responseWithEvidence(evidence);
+        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
+                eq(true), anyList()))
+                .thenReturn(response);
+
+        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+
+        ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
+        verify(referenceRepository).saveAll(refCaptor.capture());
+        assertThat(refCaptor.getValue()).isEmpty();
+    }
+
+    /**
+     * pipeline 쪽 제목 컬럼은 text라 길이 상한이 없는데 여기 컬럼은 varchar(255)다. 그대로 넣으면
+     * flush에서 터져 답변까지 되돌아가고 컨슈머가 같은 메시지를 계속 재시도한다.
+     */
+    @Test
+    @DisplayName("관련 페이지 제목이 컬럼 길이를 넘으면 잘라서 저장한다")
+    void query_longRelatedPageTitle_isTruncated() {
+        String longTitle = "제".repeat(400);
+        PipelineQueryResponse response = new PipelineQueryResponse(
+                "답변", null,
+                List.of(new PipelineQueryResponse.RelatedPage(
+                        "wiki_1", "concept", longTitle, "slug", 0.9, "seed_source", 0)),
+                List.of(), null, List.of(), false, false, 0, null);
+        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
+                eq(true), anyList()))
+                .thenReturn(response);
+
+        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+
+        ArgumentCaptor<List<ChatMessageRelatedPage>> pageCaptor = ArgumentCaptor.forClass(List.class);
+        verify(relatedPageRepository).saveAll(pageCaptor.capture());
+        assertThat(pageCaptor.getValue().get(0).getTitle()).hasSize(255);
+    }
+
+    /** 경계에 서로게이트 쌍이 걸리면 반쪽만 남아 UTF-8 인코딩이 불가능한 문자열이 된다. */
+    @Test
+    @DisplayName("자르는 경계가 서로게이트 쌍 한가운데면 한 글자 덜 남긴다")
+    void query_titleTruncationDoesNotSplitSurrogatePair() {
+        // 254자 뒤에 emoji(서로게이트 쌍)를 두어 255번째 char가 high surrogate가 되게 한다.
+        String longTitle = "제".repeat(254) + "😀".repeat(10);
+        PipelineQueryResponse response = new PipelineQueryResponse(
+                "답변", null,
+                List.of(new PipelineQueryResponse.RelatedPage(
+                        "wiki_1", "concept", longTitle, "slug", 0.9, "seed_source", 0)),
+                List.of(), null, List.of(), false, false, 0, null);
+        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
+                eq(true), anyList()))
+                .thenReturn(response);
+
+        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+
+        ArgumentCaptor<List<ChatMessageRelatedPage>> pageCaptor = ArgumentCaptor.forClass(List.class);
+        verify(relatedPageRepository).saveAll(pageCaptor.capture());
+        String saved = pageCaptor.getValue().get(0).getTitle();
+        assertThat(saved).hasSize(254);
+        assertThat(Character.isHighSurrogate(saved.charAt(saved.length() - 1))).isFalse();
     }
 
     @Test

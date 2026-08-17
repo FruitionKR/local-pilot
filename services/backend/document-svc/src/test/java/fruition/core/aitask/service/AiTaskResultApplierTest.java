@@ -11,6 +11,7 @@ import fruition.core.aihistory.service.OperationIngestService;
 import fruition.core.aihistory.service.RestoreApplier;
 import fruition.core.aihistory.service.RestoreOperationLifecycle;
 import fruition.core.document.service.DocumentService;
+import fruition.core.query.repository.PipelineQueryResponse;
 import fruition.core.query.service.QueryService;
 import fruition.core.wikimaintenance.service.WikiMaintenanceService;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,6 +54,7 @@ class AiTaskResultApplierTest {
     @Mock RestoreOperationLifecycle restoreLifecycle;
     @Mock DocumentService documentService;
     @Mock fruition.core.chat.service.ChatTurnRecorder chatTurnRecorder;
+    @Mock fruition.core.chat.service.ChatEvidenceRecorder chatEvidenceRecorder;
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private AiTaskResultApplier applier;
@@ -61,7 +63,8 @@ class AiTaskResultApplierTest {
     void setUp() {
         applier = new AiTaskResultApplier(jdbcTemplate, objectMapper, queryService,
                 operationIngestService, lintOperationStarter, wikiMaintenanceService,
-                operationLogRepository, restoreApplier, restoreLifecycle, documentService, chatTurnRecorder);
+                operationLogRepository, restoreApplier, restoreLifecycle, documentService, chatTurnRecorder,
+                chatEvidenceRecorder);
     }
 
     @Test
@@ -196,6 +199,92 @@ class AiTaskResultApplierTest {
         verify(chatTurnRecorder).completeAgentTurn(eq("chat_assistant_1"), eq("markdown_create"),
                 content.capture());
         assertThat(content.getValue()).isNotBlank();
+    }
+
+    /**
+     * AI가 질의로 판정한 턴은 답변과 함께 근거가 온다. 질의 경로와 같은 자리에 남기지 않으면
+     * 새로고침한 뒤 근거가 사라져, 같은 답변이 어느 입구로 들어왔는지에 따라 달라 보인다.
+     */
+    @Test
+    void chatAnswerAgentResultStoresEvidenceLikeQueryPath() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-evidence:succeeded","run_id":"run-evidence","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "message_context":{"assistant_message_id":"chat_assistant_1"}},
+                 "payload":{"action":"chat_answer","chat":{"answer":"답변",
+                 "related_pages":[{"id":"wiki_1","page_type":"concept","title":"제목","slug":"slug",
+                 "relevance_score":0.9,"role":"seed_source","depth":0}],
+                 "evidence_snippets":[{"rank":1,"source_document_id":"doc-1",
+                 "source_block_ids":["B0001"],"source_refs":[],"text":"근거 문장"}],
+                 "graph_context":{"nodes":[],"edges":[]},"traversal_paths":[],
+                 "web_search_requested":false,"web_search_executed":false,"result_count":1}}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-evidence:succeeded"),
+                eq("run-evidence"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-evidence")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", null, null, null));
+        when(jdbcTemplate.update(contains("SET status = 'ready'"), any(), any(), eq("run-evidence")))
+                .thenReturn(1);
+
+        applier.applyAgent(event);
+
+        ArgumentCaptor<PipelineQueryResponse> captured = ArgumentCaptor.forClass(PipelineQueryResponse.class);
+        verify(chatEvidenceRecorder).record(eq("chat_assistant_1"), captured.capture());
+        assertThat(captured.getValue().relatedPages()).hasSize(1);
+        assertThat(captured.getValue().evidenceSnippets()).hasSize(1);
+    }
+
+    /**
+     * pipeline이 보낸 값의 타입이 어긋나면 해석에서 예외가 난다. 근거를 붙이면서 이 경로가 생겼으므로,
+     * 기존 채팅 기록 안전망이 근거 해석 실패까지 덮는지 못박아 둔다. 근거는 포기해도 답변은 남아야 한다.
+     */
+    @Test
+    void chatAnswerWithUnreadableEvidencePayloadStillAppliesResult() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-badchat:succeeded","run_id":"run-badchat","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "message_context":{"assistant_message_id":"chat_assistant_3"}},
+                 "payload":{"action":"chat_answer","chat":{"answer":"답변",
+                 "related_pages":[{"id":"wiki_1","page_type":"concept","title":"제목","slug":"slug",
+                 "relevance_score":0.9,"role":"seed_source","depth":"깊이가 숫자가 아님"}],
+                 "evidence_snippets":[]}}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-badchat:succeeded"),
+                eq("run-badchat"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-badchat")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", null, null, null));
+        when(jdbcTemplate.update(contains("SET status = 'ready'"), any(), any(), eq("run-badchat")))
+                .thenReturn(1);
+
+        AiTaskResultApplier.AgentApplyResult result = applier.applyAgent(event);
+
+        // 답변은 남고 근거만 포기한다.
+        assertThat(result.applied()).isTrue();
+        assertThat(result.error()).isNull();
+        verify(chatTurnRecorder).completeAgentTurn(eq("chat_assistant_3"), any(), any());
+        verify(chatEvidenceRecorder, never()).record(anyString(), any());
+    }
+
+    /** 편집 갈래에는 chat이 없다. 근거 저장을 시도하면 안 된다. */
+    @Test
+    void markdownEditAgentResultDoesNotRecordEvidence() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-noevidence:succeeded","run_id":"run-noevidence","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "document_id":"doc-1","base_version":1,"apply_operation_id":"op-1",
+                 "message_context":{"assistant_message_id":"chat_assistant_2"}},
+                 "payload":{"action":"markdown_create","generated_markdown":{"markdown":"# 제목"}}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-noevidence:succeeded"),
+                eq("run-noevidence"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-noevidence")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
+        when(jdbcTemplate.update(contains("SET status = 'ready'"), any(), any(), eq("run-noevidence")))
+                .thenReturn(1);
+
+        applier.applyAgent(event);
+
+        verify(chatEvidenceRecorder, never()).record(anyString(), any());
     }
 
     @Test
