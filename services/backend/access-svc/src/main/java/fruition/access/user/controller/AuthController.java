@@ -1,5 +1,7 @@
 package fruition.access.user.controller;
 
+import fruition.access.user.dto.EmailAvailabilityRequest;
+import fruition.access.user.dto.EmailAvailabilityResponse;
 import fruition.access.user.dto.EmailVerificationRequest;
 import fruition.access.user.dto.EmailVerificationResponse;
 import fruition.access.user.dto.LoginRequest;
@@ -47,6 +49,19 @@ public class AuthController {
         this.userService = userService;
         this.authService = authService;
         this.emailVerificationService = emailVerificationService;
+    }
+
+    @Operation(summary = "회원가입 이메일 중복 확인", description = "이메일로 신규 가입할 수 있는지 확인합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "가입 가능 여부",
+            content = @Content(schema = @Schema(implementation = EmailAvailabilityResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/email-availability")
+    public ResponseEntity<EmailAvailabilityResponse> checkEmailAvailability(
+            @Valid @RequestBody EmailAvailabilityRequest request) {
+        return ResponseEntity.ok(userService.checkEmailAvailability(request));
     }
 
     @Operation(summary = "이메일 인증번호 발급", description = "회원가입/비밀번호 재설정을 위한 인증번호를 발급합니다.")

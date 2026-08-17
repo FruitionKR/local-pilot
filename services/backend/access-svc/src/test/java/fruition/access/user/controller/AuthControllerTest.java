@@ -8,6 +8,8 @@ import fruition.access.security.oauth.service.CustomOAuth2UserService;
 import fruition.access.security.oauth.handler.OAuth2AuthenticationFailureHandler;
 import fruition.access.security.oauth.handler.OAuth2AuthenticationSuccessHandler;
 import fruition.access.security.oauth.OAuthExchangeCodeStore;
+import fruition.access.user.dto.EmailAvailabilityRequest;
+import fruition.access.user.dto.EmailAvailabilityResponse;
 import fruition.access.user.dto.EmailVerificationRequest;
 import fruition.access.user.dto.EmailVerificationResponse;
 import fruition.access.user.dto.LoginRequest;
@@ -60,6 +62,28 @@ class AuthControllerTest {
     @MockBean CustomOAuth2UserService customOAuth2UserService;
     // OAuthExchangeCodeStore가 Redis에 의존하므로 web slice에는 mock template을 채운다.
     @MockBean org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+
+    @Test
+    void checkEmailAvailability_existingEmail_returnsFalse() throws Exception {
+        when(userService.checkEmailAvailability(any())).thenReturn(new EmailAvailabilityResponse(false));
+
+        mockMvc.perform(post("/api/auth/email-availability")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new EmailAvailabilityRequest("test@example.com"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(false));
+    }
+
+    @Test
+    void checkEmailAvailability_invalidEmail_returns400() throws Exception {
+        mockMvc.perform(post("/api/auth/email-availability")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new EmailAvailabilityRequest("invalid"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
 
     @Test
     void signup_validRequest_returns201() throws Exception {

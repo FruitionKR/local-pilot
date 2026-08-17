@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { requestEmailVerification } from "@/entities/user";
+import { checkEmailAvailability, requestEmailVerification } from "@/entities/user";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useAuthFlow } from "@/views/auth/model/AuthFlowContext";
 import { AuthError, AuthField, AuthSubmitButton } from "@/shared/ui/AuthControls";
@@ -13,7 +13,7 @@ export default function SignupPage() {
   const [nickname, setNickname] = useState(signupDraft?.nickname ?? "");
   const [email, setEmail] = useState(signupDraft?.email ?? "");
   const [password, setPassword] = useState(signupDraft?.password ?? "");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(signupDraft?.verificationRequestError ?? null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleVerificationRequest(event: React.FormEvent) {
@@ -28,20 +28,43 @@ export default function SignupPage() {
     setErrorMessage(null);
     setIsSubmitting(true);
 
+    const normalizedEmail = email.trim().toLowerCase();
     try {
-      const normalizedEmail = email.trim().toLowerCase();
+      const availability = await checkEmailAvailability(normalizedEmail);
+      if (!availability.available) {
+        setErrorMessage("이미 가입된 이메일입니다.");
+        setIsSubmitting(false);
+        return;
+      }
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, "이메일 중복 확인에 실패했습니다."));
+      setIsSubmitting(false);
+      return;
+    }
+
+    const pendingDraft = {
+      nickname: nickname.trim(),
+      email: normalizedEmail,
+      password,
+      verificationId: "",
+      expiresAt: 0
+    };
+    setSignupDraft(pendingDraft);
+    router.push("/signup/verify");
+
+    try {
       const response = await requestEmailVerification(normalizedEmail, "signup");
       setSignupDraft({
-        nickname: nickname.trim(),
-        email: normalizedEmail,
-        password,
+        ...pendingDraft,
         verificationId: response.verification_id,
         expiresAt: Date.now() + response.expires_in * 1000
       });
-      router.push("/signup/verify");
     } catch (error: unknown) {
-      setErrorMessage(getErrorMessage(error, "인증번호 요청에 실패했습니다."));
-      setIsSubmitting(false);
+      setSignupDraft({
+        ...pendingDraft,
+        verificationRequestError: getErrorMessage(error, "인증번호 요청에 실패했습니다.")
+      });
+      router.replace("/signup");
     }
   }
 

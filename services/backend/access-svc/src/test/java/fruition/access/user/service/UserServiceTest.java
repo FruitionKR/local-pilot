@@ -1,5 +1,6 @@
 package fruition.access.user.service;
 
+import fruition.access.user.dto.EmailAvailabilityRequest;
 import fruition.access.user.dto.SignupRequest;
 import fruition.access.user.dto.SignupResponse;
 import fruition.access.user.exception.DuplicateEmailException;
@@ -31,6 +32,22 @@ class UserServiceTest {
     @BeforeEach
     void setUp() {
         userService = new UserService(userRepository, passwordEncoder, workspaceService, emailVerificationService);
+    }
+
+    @Test
+    void checkEmailAvailability_existingOAuthEmail_returnsFalse() {
+        when(userRepository.existsByEmail("test@example.com")).thenReturn(true);
+
+        assertThat(userService.checkEmailAvailability(new EmailAvailabilityRequest(" TEST@example.com ")).available())
+                .isFalse();
+    }
+
+    @Test
+    void checkEmailAvailability_newEmail_returnsTrue() {
+        when(userRepository.existsByEmail("new@example.com")).thenReturn(false);
+
+        assertThat(userService.checkEmailAvailability(new EmailAvailabilityRequest("new@example.com")).available())
+                .isTrue();
     }
 
     @Test

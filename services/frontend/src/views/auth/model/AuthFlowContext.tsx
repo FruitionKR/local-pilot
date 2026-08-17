@@ -8,6 +8,7 @@ type SignupDraft = {
   password: string;
   verificationId: string;
   expiresAt: number;
+  verificationRequestError?: string;
 };
 
 type PasswordResetDraft = {

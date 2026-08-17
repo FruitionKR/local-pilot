@@ -14,6 +14,32 @@ tags:
 - description: 워크스페이스 CRUD API
   name: Workspaces
 paths:
+  /api/auth/email-availability:
+    post:
+      description: 이메일로 신규 가입할 수 있는지 확인합니다.
+      operationId: checkEmailAvailability
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailAvailabilityRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EmailAvailabilityResponse"
+          description: 가입 가능 여부
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 잘못된 요청
+      summary: 회원가입 이메일 중복 확인
+      tags:
+      - Auth
   /api/auth/email-verifications:
     post:
       description: 회원가입/비밀번호 재설정을 위한 인증번호를 발급합니다.
@@ -575,6 +601,24 @@ components:
       required:
       - model
       - provider
+    EmailAvailabilityRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          description: 가입 가능 여부를 확인할 이메일
+          example: user@example.com
+          minLength: 1
+      required:
+      - email
+    EmailAvailabilityResponse:
+      type: object
+      properties:
+        available:
+          type: boolean
+          description: 이메일로 신규 가입할 수 있으면 true
+          example: true
     EmailVerificationRequest:
       type: object
       properties:
