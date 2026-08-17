@@ -133,6 +133,30 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertEqual(route.action, "chat_answer")
         self.assertEqual(len(client.calls), 1)
 
+    def test_factual_process_question_wins_over_previous_clarify(self) -> None:
+        response = route_response("clarify")
+        response["edit_goal"] = None
+        client = SequenceJsonClient([response])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="ingest는 어떤 단계로 동작해?",
+                conversation_context=AgentConversationContext(
+                    recent_messages=(
+                        ConversationMessage(
+                            role="assistant",
+                            content="어떤 작업을 말씀하시나요?",
+                            action="clarify",
+                        ),
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(route.action, "chat_answer")
+        self.assertEqual(len(client.calls), 1)
+
     def test_promotes_persistent_markdown_edit_to_workspace_workflow(self) -> None:
         client = SequenceJsonClient([route_response("markdown_edit")])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]

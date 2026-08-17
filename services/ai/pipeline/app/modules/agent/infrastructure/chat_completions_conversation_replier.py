@@ -1,7 +1,8 @@
 import json
 import os
-from datetime import date
+from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from app.core.llm_env import (
     api_key_from_env,
@@ -23,6 +24,7 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
 DEFAULT_CONVERSATION_REPLY_PROMPT = (
     Path(__file__).resolve().parents[4] / "prompts" / "conversation_reply.system.md"
 )
+PRODUCT_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
 class ChatCompletionsConversationReplier(ConversationReplierPort):
@@ -31,7 +33,7 @@ class ChatCompletionsConversationReplier(ConversationReplierPort):
         self._system_prompt = system_prompt
 
     def reply(self, request: AgentTurnRequest) -> str:
-        current_date = date.today().isoformat()
+        current_date = _current_date()
         conversation = request.conversation_context
         payload = {
             "message": request.message,
@@ -97,3 +99,8 @@ def build_conversation_replier(
         ),
         system_prompt=prompt_path.read_text(encoding="utf-8"),
     )
+
+
+def _current_date(now: datetime | None = None) -> str:
+    instant = now or datetime.now(timezone.utc)
+    return instant.astimezone(PRODUCT_TIMEZONE).date().isoformat()

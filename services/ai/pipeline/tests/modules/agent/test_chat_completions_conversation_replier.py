@@ -1,10 +1,12 @@
 import json
 import unittest
+from datetime import datetime, timezone
 
 from app.modules.agent.domain.entities import AgentConversationContext, AgentTurnRequest
 from app.modules.agent.infrastructure.chat_completions_conversation_replier import (
     DEFAULT_CONVERSATION_REPLY_PROMPT,
     ChatCompletionsConversationReplier,
+    _current_date,
 )
 from app.modules.query.domain.entities import ConversationMessage
 
@@ -25,6 +27,11 @@ class FakeChatClient:
 
 
 class ChatCompletionsConversationReplierTest(unittest.TestCase):
+    def test_uses_korean_product_date_at_utc_day_boundary(self) -> None:
+        utc_time = datetime(2026, 8, 16, 15, 0, tzinfo=timezone.utc)
+
+        self.assertEqual(_current_date(utc_time), "2026-08-17")
+
     def test_prompt_requires_recent_values_instead_of_placeholders(self) -> None:
         prompt = DEFAULT_CONVERSATION_REPLY_PROMPT.read_text(encoding="utf-8")
 
