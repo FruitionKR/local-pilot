@@ -63,3 +63,14 @@ export function applyRequiredAgentSource(
     ...(resolvedApplyOperationId ? { applyOperationId: resolvedApplyOperationId } : {})
   };
 }
+
+export function selectDetachedSaveCandidate(
+  scheduled: PendingNoteSave | null,
+  agentRetry: PendingNoteSave | null
+): PendingNoteSave | null {
+  if (!scheduled) return agentRetry;
+  if (!agentRetry) return scheduled;
+  return scheduled.revision >= agentRetry.revision
+    ? mergePendingNoteSave(agentRetry, scheduled)
+    : mergePendingNoteSave(scheduled, agentRetry);
+}

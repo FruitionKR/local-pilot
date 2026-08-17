@@ -8,7 +8,7 @@ import { HistoryPanel } from "@/features/document-history";
 import { fetchDocumentOriginal, reflectDocumentToWiki } from "@/entities/document";
 import { publishNotice } from "@/features/document-notifications";
 import { fetchWikiPage } from "@/entities/wiki";
-import { fetchNoteDraft } from "@/features/note-editing";
+import { fetchNoteDraft, waitForPendingDocumentSave, type DetachedNoteSaveResult } from "@/features/note-editing";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { buildMarkdownDocumentFilename, getMarkdownDocumentTitle, splitEditableNoteMarkdown } from "@/entities/document/lib/note";
 import { cx } from "@/shared/lib/classNames";
@@ -182,6 +182,18 @@ export function SourcePreviewPanel({
     if (status === "saved" && previousStatus !== "saved") onRefreshDocuments?.();
   }, [onRefreshDocuments]);
 
+  const handleDetachedSaveComplete = useCallback((result: DetachedNoteSaveResult) => {
+    if (result.success) {
+      onRefreshDocuments?.();
+      return;
+    }
+    publishNotice({
+      kind: "failed",
+      title: "노트 저장 실패",
+      message: getErrorMessage(result.error, "문서를 이동하는 동안 편집 내용을 저장하지 못했습니다.")
+    });
+  }, [onRefreshDocuments]);
+
   async function commitTitle() {
     if (!isMarkdownFile || !documentId || !onRenameDocument || isRenaming) return;
     const nextFilename = buildMarkdownDocumentFilename(titleInput, title);
@@ -253,6 +265,8 @@ export function SourcePreviewPanel({
 
     const loadDocument = async () => {
       if (isMarkdownFile) {
+        await waitForPendingDocumentSave(documentId);
+        if (ignore) return;
         const draft = await fetchNoteDraft(documentId);
         if (draft) {
           if (!ignore) {
@@ -447,6 +461,7 @@ export function SourcePreviewPanel({
             sourceMode={sourceMode}
             onMarkdownEditContextChange={handleMarkdownEditContextChange}
             onSaveStatusChange={handleSaveStatusChange}
+            onDetachedSaveComplete={handleDetachedSaveComplete}
             onRegisterSave={registerNoteSave}
           />
         )}

@@ -7,8 +7,14 @@ import {
   mergePendingNoteSave,
   planAgentRetryAfterFailure,
   recoverPendingNoteSaveAfterAgentFailure,
+  selectDetachedSaveCandidate,
   type PendingNoteSave
 } from "./pendingSave";
+import { trackPendingDocumentSave } from "./pendingDocumentSave";
+
+export type DetachedNoteSaveResult =
+  | { success: true }
+  | { success: false; error: unknown };
 
 const AUTOSAVE_DELAY_MS = 800;
 // AI 편집은 에디터에 이미 반영된 뒤라, 저장에 실패하면 사용자가 다시 편집하지 않아도 스스로 다시 보낸다.
@@ -18,11 +24,13 @@ const AGENT_RETRY_BASE_MS = 1000;
 export function useNoteAutosave({
   documentId,
   marker,
-  initialVersion
+  initialVersion,
+  onDetachedSaveComplete
 }: {
   documentId: string;
   marker: string;
   initialVersion: number;
+  onDetachedSaveComplete?: (result: DetachedNoteSaveResult) => void;
 }) {
   const [status, setStatus] = useState<NoteSaveStatus>("saved");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -37,9 +45,12 @@ export function useNoteAutosave({
   const agentRetryRequiredRef = useRef(false);
   const agentRetryApplyOperationIdRef = useRef<string | undefined>(undefined);
   const agentRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const agentRetryCandidateRef = useRef<PendingNoteSave | null>(null);
   const agentRetryAttemptsRef = useRef(0);
   const mountedRef = useRef(true);
   const flushSaveRef = useRef<(candidate: PendingNoteSave) => Promise<boolean>>(async () => false);
+  const onDetachedSaveCompleteRef = useRef(onDetachedSaveComplete);
+  onDetachedSaveCompleteRef.current = onDetachedSaveComplete;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -50,9 +61,13 @@ export function useNoteAutosave({
       if (agentRetryTimerRef.current) clearTimeout(agentRetryTimerRef.current);
       agentRetryTimerRef.current = null;
 
-      // 디바운스 대기 중 다른 문서로 이동해도 마지막 편집분을 잃지 않도록 즉시 저장한다.
-      const scheduled = scheduledSaveRef.current;
+      // 디바운스·AI 재시도 대기 중 이동해도 마지막 편집분을 잃지 않도록 즉시 저장한다.
+      const scheduled = selectDetachedSaveCandidate(
+        scheduledSaveRef.current,
+        agentRetryCandidateRef.current
+      );
       scheduledSaveRef.current = null;
+      agentRetryCandidateRef.current = null;
       if (scheduled && !conflictRef.current) void flushSaveRef.current(scheduled);
     };
   }, []);
@@ -60,6 +75,7 @@ export function useNoteAutosave({
   function cancelAgentRetry() {
     if (agentRetryTimerRef.current) clearTimeout(agentRetryTimerRef.current);
     agentRetryTimerRef.current = null;
+    agentRetryCandidateRef.current = null;
   }
 
   function scheduleAgentRetry(
@@ -74,12 +90,17 @@ export function useNoteAutosave({
       AGENT_RETRY_BASE_MS
     );
     agentRetryAttemptsRef.current = plan.attempts;
-    if (!plan.shouldRetry) return;
+    if (!plan.shouldRetry) {
+      agentRetryCandidateRef.current = null;
+      return;
+    }
     cancelAgentRetry();
+    agentRetryCandidateRef.current = candidate;
     agentRetryTimerRef.current = setTimeout(() => {
       agentRetryTimerRef.current = null;
+      agentRetryCandidateRef.current = null;
       if (conflictRef.current) return;
-      void flushSave(candidate);
+      void trackedFlushSave(candidate);
     }, plan.delayMs);
   }
 
@@ -121,6 +142,8 @@ export function useNoteAutosave({
       }
       if (mountedRef.current) {
         setStatus(saveCandidate.revision === revisionRef.current ? "saved" : "dirty");
+      } else {
+        onDetachedSaveCompleteRef.current?.({ success: true });
       }
       return true;
     } catch (error) {
@@ -139,16 +162,24 @@ export function useNoteAutosave({
       }
       if (mountedRef.current) {
         setErrorMessage(error instanceof Error ? error.message : "노트를 저장하지 못했습니다.");
+      } else {
+        onDetachedSaveCompleteRef.current?.({ success: false, error });
       }
       return false;
     } finally {
       saveInFlightRef.current = false;
       const pending = pendingSaveRef.current;
       pendingSaveRef.current = null;
-      if (pending && !conflictRef.current) void flushSave(pending);
+      if (pending && !conflictRef.current) void trackedFlushSave(pending);
     }
   }
-  flushSaveRef.current = flushSave;
+
+  function trackedFlushSave(candidate: PendingNoteSave): Promise<boolean> {
+    const save = flushSave(candidate);
+    trackPendingDocumentSave(documentId, save);
+    return save;
+  }
+  flushSaveRef.current = trackedFlushSave;
 
   function queueSave(body: string, source?: "agent", applyOperationId?: string) {
     if (conflictRef.current) return;
@@ -170,7 +201,7 @@ export function useNoteAutosave({
     if (source === "agent") {
       timerRef.current = null;
       scheduledSaveRef.current = null;
-      void flushSave(candidate);
+      void trackedFlushSave(candidate);
       return;
     }
     scheduledSaveRef.current = candidate;
@@ -178,7 +209,7 @@ export function useNoteAutosave({
       timerRef.current = null;
       const scheduled = scheduledSaveRef.current;
       scheduledSaveRef.current = null;
-      if (scheduled) void flushSave(scheduled);
+      if (scheduled) void trackedFlushSave(scheduled);
     }, AUTOSAVE_DELAY_MS);
   }
 
@@ -200,7 +231,7 @@ export function useNoteAutosave({
       applyOperationId: saveSource === "agent" ? agentRetryApplyOperationIdRef.current : undefined
     };
     setErrorMessage(null);
-    return flushSave(candidate);
+    return trackedFlushSave(candidate);
   }
 
   return { status, errorMessage, contentVersion, queueSave, saveNow };
