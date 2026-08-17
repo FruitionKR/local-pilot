@@ -24,3 +24,7 @@ export function pickSelectedOperationId(
   if (current && items.some((item) => item.operation_id === current)) return current;
   return items[0]?.operation_id ?? null;
 }
+
+export function collectRestoredOperationIds(items: OperationLogItem[]): ReadonlySet<string> {
+  return new Set(items.flatMap((item) => item.restored_from ? [item.restored_from] : []));
+}

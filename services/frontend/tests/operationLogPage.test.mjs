@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   appendLogPage,
+  collectRestoredOperationIds,
   pickSelectedOperationId
 } from "../src/entities/operation-log/model/operationLogPage.ts";
 import { OPERATION_TYPE_LABELS } from "../src/entities/operation-log/model/operationType.ts";
@@ -55,6 +56,15 @@ test("고른 작업이 목록에서 사라지면 가장 최근 작업으로 되�
 test("목록이 비면 선택이 없다", () => {
   assert.equal(pickSelectedOperationId([], "op1"), null);
   assert.equal(pickSelectedOperationId([], null), null);
+});
+
+test("restore 로그에서 이미 롤백한 원본 작업 ID를 수집한다", () => {
+  const restoredIds = collectRestoredOperationIds([
+    { ...log("restore-1", "restore"), restored_from: "op-1" },
+    { ...log("op-2"), restored_from: null }
+  ]);
+
+  assert.deepEqual([...restoredIds], ["op-1"]);
 });
 
 test("작업 유형 라벨은 AI Edit·Ingest·Lint·Restore 4종이다", () => {

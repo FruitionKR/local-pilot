@@ -8,7 +8,6 @@ export function GraphCanvas({
   links = [],
   focusedNodeId,
   onOpenNodePreview,
-  onSelectNode,
   loading = false,
   errorMessage = null
 }: {
@@ -16,11 +15,10 @@ export function GraphCanvas({
   links: GraphLink[];
   focusedNodeId: string | null;
   onOpenNodePreview: (node: GraphNode) => void;
-  onSelectNode?: (nodeId: string | null) => void;
   loading?: boolean;
   errorMessage?: string | null;
 }) {
-  const { canvasRef, graphCanvasProps } = useGraphCanvas({ nodes, links, focusedNodeId, onOpenNodePreview, onSelectNode });
+  const { canvasRef, graphCanvasProps } = useGraphCanvas({ nodes, links, focusedNodeId, onOpenNodePreview });
 
   return (
     <div className={styles["graph-canvas"]} {...graphCanvasProps} style={{ touchAction: "none" }}>

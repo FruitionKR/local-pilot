@@ -407,7 +407,11 @@ export function HomeWorkspace() {
         activeView === "rules" ? (
           <SchemaWorkspace />
         ) : activeView === "logs" ? (
-          <LogView operationId={operationLogFeed.selectedOperationId} />
+          <LogView
+            operationId={operationLogFeed.selectedOperationId}
+            restoredOperationIds={operationLogFeed.restoredOperationIds}
+            onRestoreComplete={operationLogFeed.refresh}
+          />
         ) : activeView === "settings" ? (
           <SettingsPanel />
         ) : (

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   appendLogPage,
+  collectRestoredOperationIds,
   fetchOperationLogs,
   pickSelectedOperationId,
   type OperationLogItem
@@ -26,6 +27,29 @@ export function useOperationLogFeed(isActive: boolean) {
   // 로그 뷰를 다시 열면 이전 요청의 응답을 버린다.
   const requestIdRef = useRef(0);
 
+  const refresh = useCallback(async (preferredOperationId?: string) => {
+    if (!isActive) return;
+    const requestId = ++requestIdRef.current;
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await fetchOperationLogs({ size: PAGE_SIZE });
+      if (requestIdRef.current !== requestId) return;
+      setItems(response.logs);
+      setNextCursor(response.next_cursor);
+      setSelectedOperationId((current) => pickSelectedOperationId(
+        response.logs,
+        preferredOperationId ?? current
+      ));
+    } catch (error: unknown) {
+      if (requestIdRef.current === requestId) {
+        setErrorMessage(getErrorMessage(error, "로그를 불러오지 못했습니다."));
+      }
+    } finally {
+      if (requestIdRef.current === requestId) setIsLoading(false);
+    }
+  }, [isActive]);
+
   useEffect(() => {
     if (!isActive) {
       // 화면을 떠난 뒤 도착한 목록 응답이 현재 상태를 덮지 못하게 한다.
@@ -34,24 +58,8 @@ export function useOperationLogFeed(isActive: boolean) {
       setIsLoadingMore(false);
       return;
     }
-    const requestId = ++requestIdRef.current;
-    setIsLoading(true);
-    setErrorMessage(null);
-    fetchOperationLogs({ size: PAGE_SIZE })
-      .then((response) => {
-        if (requestIdRef.current !== requestId) return;
-        setItems(response.logs);
-        setNextCursor(response.next_cursor);
-        setSelectedOperationId((current) => pickSelectedOperationId(response.logs, current));
-      })
-      .catch((error: unknown) => {
-        if (requestIdRef.current !== requestId) return;
-        setErrorMessage(getErrorMessage(error, "로그를 불러오지 못했습니다."));
-      })
-      .finally(() => {
-        if (requestIdRef.current === requestId) setIsLoading(false);
-      });
-  }, [isActive]);
+    void refresh();
+  }, [isActive, refresh]);
 
   const selectOperation = useCallback((operationId: string) => {
     setSelectedOperationId(operationId);
@@ -75,6 +83,8 @@ export function useOperationLogFeed(isActive: boolean) {
     }
   }, [isLoadingMore, nextCursor]);
 
+  const restoredOperationIds = useMemo(() => collectRestoredOperationIds(items), [items]);
+
   return {
     items,
     selectedOperationId,
@@ -82,6 +92,8 @@ export function useOperationLogFeed(isActive: boolean) {
     errorMessage,
     isLoading,
     isLoadingMore,
+    restoredOperationIds,
+    refresh,
     onSelect: selectOperation,
     onLoadMore: () => void loadMore()
   };

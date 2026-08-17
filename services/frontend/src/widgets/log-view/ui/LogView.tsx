@@ -76,12 +76,20 @@ function ChangeDiff({ change }: { change: OperationChange }) {
 }
 
 /** 로그 화면 (Figma 747:6105). 사이드바에서 고른 작업 1건의 상세만 그린다. */
-export function LogView({ operationId }: { operationId: string | null }) {
+export function LogView({
+  operationId,
+  restoredOperationIds,
+  onRestoreComplete
+}: {
+  operationId: string | null;
+  restoredOperationIds: ReadonlySet<string>;
+  onRestoreComplete: (operationId: string) => Promise<void>;
+}) {
   const [detail, setDetail] = useState<OperationLogDetail | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [restoredOperationId, setRestoredOperationId] = useState<string | null>(null);
+  const [locallyRestoredOperationIds, setLocallyRestoredOperationIds] = useState<ReadonlySet<string>>(new Set());
   // 선택이 바뀌면 이전 작업의 응답을 버린다. 늦게 온 응답이 다른 작업을 덮어쓰지 않게 한다.
   const requestIdRef = useRef(0);
 
@@ -112,7 +120,8 @@ export function LogView({ operationId }: { operationId: string | null }) {
   const canRestore = detail != null
     && detail.operation_type !== "restore"
     && (detail.status === "succeeded" || detail.status === "partially_succeeded")
-    && restoredOperationId !== detail.operation_id;
+    && !restoredOperationIds.has(detail.operation_id)
+    && !locallyRestoredOperationIds.has(detail.operation_id);
 
   async function handleRestore() {
     if (!detail || !canRestore || isRestoring) return;
@@ -127,12 +136,13 @@ export function LogView({ operationId }: { operationId: string | null }) {
       );
       if (!confirmed) return;
       const result = await restoreOperation(detail.operation_id, preview.preview_token);
-      setRestoredOperationId(detail.operation_id);
+      setLocallyRestoredOperationIds((current) => new Set(current).add(detail.operation_id));
       publishNotice({
         kind: "completed",
         title: "롤백 요청 완료",
         message: result.status === "succeeded" ? "작업을 롤백했습니다." : "롤백 작업을 시작했습니다."
       });
+      await onRestoreComplete(result.operation_id);
     } catch (error: unknown) {
       publishNotice({
         kind: "failed",

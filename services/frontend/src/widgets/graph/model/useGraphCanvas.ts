@@ -24,13 +24,11 @@ const GRAPH_CACHE_DEBOUNCE_MS = 700;
 /** graph cache signature의 레이아웃 버전 prefix */
 const GRAPH_LAYOUT_VERSION = "d3-layout-v1";
 
-export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNodePreview, onSelectNode }: {
+export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNodePreview }: {
   nodes: GraphNode[];
   links: GraphLink[];
   focusedNodeId: string | null;
   onOpenNodePreview: (node: GraphNode) => void;
-  /** 캔버스 내부 선택(단일 클릭 포함)이 바뀔 때 호출한다. 선택은 ref로만 관리되므로 이 콜백이 유일한 React 통로다. */
-  onSelectNode?: (nodeId: string | null) => void;
 }) {
   const graphSignature = useMemo(
     () => {
@@ -80,11 +78,6 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   const simulationRef = useRef<GraphSimulation | null>(null);
   const zoomBehaviorRef = useRef<ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
   const selectedNodeIdRef = useRef<string | null>(null);
-  // setSelectedNode는 useCallback([])으로 고정돼 있어 알림 콜백을 ref로 받는다.
-  const onSelectNodeRef = useRef(onSelectNode);
-  useEffect(() => {
-    onSelectNodeRef.current = onSelectNode;
-  }, [onSelectNode]);
   const hoveredNodeIdRef = useRef<string | null>(null);
   const nodeHoverAmountsRef = useRef<Record<string, number>>({});
   const externalFocusedNodeIdRef = useRef<string | null>(focusedNodeId);
@@ -149,7 +142,6 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     applyViewState(nextPan, nextZoom);
     setVisibleNodeCount(nodes.length);
     const externalId = externalFocusedNodeIdRef.current;
-    if (selectedNodeIdRef.current !== externalId) onSelectNodeRef.current?.(externalId);
     selectedNodeIdRef.current = externalId;
     hoveredNodeIdRef.current = externalId;
     nodeHoverAmountsRef.current = externalId ? { [externalId]: nodeHoverAmountsRef.current[externalId] ?? 1 } : {};
@@ -295,7 +287,6 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     if (selectedNodeIdRef.current === nodeId) return;
     selectedNodeIdRef.current = nodeId;
     hoveredNodeIdRef.current = nodeId;
-    onSelectNodeRef.current?.(nodeId);
     drawGraphRef.current();
   }, []);
 
