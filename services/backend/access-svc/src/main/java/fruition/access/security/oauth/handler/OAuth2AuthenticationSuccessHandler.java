@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -34,6 +35,14 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         String userId = authentication.getName();
         String code = exchangeCodeStore.issue(userId);
         log.info("[OAuth 인증 성공] userId={} redirectUri={}", userId, frontendRedirectUri);
+
+        // OAuth handshake에만 필요한 세션 인증이 이후 JWT API 요청에 섞이면
+        // @AuthenticationPrincipal이 OAuth2User를 String으로 해석하지 못해 null이 된다.
+        SecurityContextHolder.clearContext();
+        var session = request.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
 
         String redirectUrl = UriComponentsBuilder.fromUriString(frontendRedirectUri)
                 .queryParam("code", code)
