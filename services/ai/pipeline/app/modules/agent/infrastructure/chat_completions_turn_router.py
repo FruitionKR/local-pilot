@@ -360,9 +360,14 @@ def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[st
         and CONVERSATION_REFINEMENT_PATTERN.search(request.message)
         and not _requests_grounded_retrieval(request.message)
     ):
+        expected_action = (
+            "markdown_edit"
+            if request.active_markdown_context and request.active_markdown_context.markdown.strip()
+            else "conversation_reply"
+        )
         return [
-            "a conversational format or wording refinement must use "
-            "conversation_reply unless the current message explicitly requests grounded retrieval"
+            "a format or wording refinement must use "
+            f"{expected_action} unless the current message explicitly requests grounded retrieval"
         ]
     return []
 

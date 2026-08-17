@@ -171,7 +171,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertEqual(route.action, "conversation_reply")
         retry_payload = json.loads(client.calls[1][1])
         self.assertIn(
-            "a conversational format or wording refinement",
+            "must use conversation_reply",
             retry_payload["contract_failures"][0],
         )
 
@@ -194,6 +194,23 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
                 self.assertEqual(route.action, "conversation_reply")
                 self.assertEqual(len(client.calls), 2)
+
+    def test_retries_active_markdown_advice_misroute_as_markdown_edit(self) -> None:
+        first = route_response("chat_answer")
+        first["edit_goal"] = None
+        client = SequenceJsonClient([first, route_response("markdown_edit")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="How do I make this wording work?",
+                active_markdown_context=ActiveMarkdownContext(markdown="# Existing title"),
+            )
+        )
+
+        self.assertEqual(route.action, "markdown_edit")
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn("must use markdown_edit", retry_payload["contract_failures"][0])
 
     def test_explicit_grounded_request_wins_over_previous_conversation_action(self) -> None:
         first = route_response("conversation_reply")
