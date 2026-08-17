@@ -157,6 +157,22 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertEqual(route.action, "chat_answer")
         self.assertEqual(len(client.calls), 1)
 
+    def test_conversational_processing_request_is_not_promoted_to_chat_answer(self) -> None:
+        responses = [route_response("conversation_reply") for _ in range(2)]
+        for response in responses:
+            response["edit_goal"] = None
+        client = SequenceJsonClient(responses)
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        for message in (
+            "이 문장을 어떻게 처리하면 자연스러울까?",
+            "How should I process this wording?",
+        ):
+            with self.subTest(message=message):
+                route = router.route(AgentTurnRequest(message=message))
+
+                self.assertEqual(route.action, "conversation_reply")
+
     def test_promotes_persistent_markdown_edit_to_workspace_workflow(self) -> None:
         client = SequenceJsonClient([route_response("markdown_edit")])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]

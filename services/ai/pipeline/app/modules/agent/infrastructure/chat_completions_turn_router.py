@@ -76,8 +76,10 @@ CONVERSATION_REFINEMENT_PATTERN = re.compile(
 GROUNDED_RETRIEVAL_PATTERN = re.compile(
     r"(?:내부\s*문서|워크스페이스|위키|wiki|workspace|document).{0,40}"
     r"(?:기준|근거|찾아|검색|조회|search|find|retrieve|ground)|"
-    r"(?:어떤\s*단계로|어떻게).{0,30}(?:동작|작동|진행|처리)|"
-    r"(?:how|what).{0,40}(?:work|stage|process)",
+    r"어떤\s*단계로.{0,30}(?:동작|작동|진행|처리)|"
+    r"어떻게.{0,30}(?:동작|작동)|"
+    r"how\s+(?:does|do).{0,40}\bwork|"
+    r"what\s+(?:are|is).{0,40}\b(?:stages?|process)",
     re.IGNORECASE,
 )
 ALLOWED_ACTIONS = {
