@@ -4,7 +4,12 @@ from dataclasses import replace
 
 from app.modules.agent.application.ports import AgentTurnRouterPort
 from app.modules.agent.domain.exceptions import AgentConfigurationError
-from app.modules.agent.domain.entities import AgentTurnRequest, AgentTurnResult, PendingSkillProposal
+from app.modules.agent.domain.entities import (
+    AgentTurnRequest,
+    AgentTurnResult,
+    AgentTurnRoute,
+    PendingSkillProposal,
+)
 from app.modules.agent_run.application.ports import AgentRunStarterPort
 from app.modules.agent_run.domain.entities import StartAgentRunRequest
 from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
@@ -211,19 +216,7 @@ class HandleAgentTurnUseCase:
             if self._agent_run_starter is None or not request.workspace_id or not request.user_id:
                 raise AgentConfigurationError("Workspace workflow requires workspace_id and user_id.")
             if inspect_skill_instructions(request.message):
-                return AgentTurnResult(
-                    action="reject",
-                    route=replace(
-                        route,
-                        action="reject",
-                        confidence=1.0,
-                        reason="unsafe mutation request",
-                        edit_goal=None,
-                        selected_skill_id=None,
-                        skill_candidates=(),
-                    ),
-                    message="보안상 위험한 지시나 민감정보를 Workspace에 추가하는 요청은 처리할 수 없습니다.",
-                )
+                return _reject_unsafe_workspace_mutation(route)
             direct_route = self._router.route(
                 replace(
                     request,
@@ -272,6 +265,8 @@ class HandleAgentTurnUseCase:
                         output_language=request.output_language,
                     )
                 ).document.markdown
+                if inspect_skill_instructions(creation_markdown):
+                    return _reject_unsafe_workspace_mutation(route)
             run_id, run_status = self._agent_run_starter.start(
                 StartAgentRunRequest(
                     workspace_id=request.workspace_id,
@@ -483,6 +478,22 @@ def _scope_from_text(message: str) -> SkillScopeType | None:
     if personal == team:
         return None
     return "personal" if personal else "team"
+
+
+def _reject_unsafe_workspace_mutation(route: AgentTurnRoute) -> AgentTurnResult:
+    return AgentTurnResult(
+        action="reject",
+        route=replace(
+            route,
+            action="reject",
+            confidence=1.0,
+            reason="unsafe mutation request",
+            edit_goal=None,
+            selected_skill_id=None,
+            skill_candidates=(),
+        ),
+        message="보안상 위험한 지시나 민감정보를 Workspace에 추가하는 요청은 처리할 수 없습니다.",
+    )
 
 
 def _skill_authoring_message(result: SkillAuthoringResult) -> str:
