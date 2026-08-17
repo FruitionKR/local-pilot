@@ -42,6 +42,47 @@ def route_response(action: str = "markdown_edit") -> dict[str, object]:
 
 
 class ChatCompletionsTurnRouterTest(unittest.TestCase):
+    def test_promotes_persistent_markdown_edit_to_workspace_workflow(self) -> None:
+        client = SequenceJsonClient([route_response("markdown_edit")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(message="현재 문서를 다듬어서 워크스페이스에 저장해줘")
+        )
+
+        self.assertEqual(route.action, "workspace_workflow")
+        self.assertEqual(route.edit_goal, "cleanup")
+
+    def test_routes_document_display_name_change_to_folder_organize_without_llm(self) -> None:
+        client = SequenceJsonClient([route_response("markdown_edit")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(message="E2E 이동 문서의 표시 이름을 승인 문서로 바꿔줘")
+        )
+
+        self.assertEqual(route.action, "folder_organize")
+        self.assertEqual(client.calls, [])
+
+    def test_leaves_markdown_heading_rename_to_llm(self) -> None:
+        client = SequenceJsonClient([route_response("markdown_edit")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="현재 문서의 H1 제목을 바꿔줘"))
+
+        self.assertEqual(route.action, "markdown_edit")
+        self.assertEqual(len(client.calls), 1)
+
+    def test_document_rename_skill_request_keeps_skill_authoring_precedence(self) -> None:
+        client = SequenceJsonClient([route_response("skill_authoring")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(message="문서 표시 이름을 바꾸는 스킬을 만들어줘")
+        )
+
+        self.assertEqual(route.action, "skill_authoring")
+
     def test_accepts_direct_skill_authoring_route(self) -> None:
         client = SequenceJsonClient([route_response("skill_authoring")])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]

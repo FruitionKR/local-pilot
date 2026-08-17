@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
+from app.modules.markdown_edit.domain.entities import MarkdownEditOperation, MarkdownEditTarget
 
 
 @dataclass(frozen=True)
@@ -73,3 +73,16 @@ def markdown_line_range(markdown: str, start_line: int, end_line: int) -> str:
     start_index = line_starts[start_line - 1]
     end_index = separators[end_line - 1].start() if end_line <= len(separators) else len(markdown)
     return markdown[start_index:end_index]
+
+
+def apply_markdown_edit(markdown: str, edit: MarkdownEditOperation) -> str:
+    newline_match = re.search(r"\r\n|\r|\n", markdown)
+    newline = newline_match.group() if newline_match else "\n"
+    lines = re.split(r"\r\n|\r|\n", markdown)
+    replacement = re.split(r"\r\n|\r|\n", edit.replacement_markdown)
+    target = edit.actual_target
+    if edit.operation == "replace":
+        lines[target.start_line - 1:target.end_line] = replacement
+    else:
+        lines[target.end_line:target.end_line] = replacement
+    return newline.join(lines)

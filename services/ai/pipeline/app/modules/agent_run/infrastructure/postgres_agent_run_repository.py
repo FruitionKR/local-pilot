@@ -34,7 +34,12 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
         try:
             with database.connect_ai() as conn:
                 if artifact is not None:
-                    _validate_artifact_metadata("create_document", None, None, None)
+                    _validate_artifact_metadata(
+                        artifact.purpose,
+                        artifact.document_id,
+                        artifact.base_version,
+                        artifact.target,
+                    )
                     _validate_content_hash(artifact.markdown, artifact.content_hash)
                     write_text_object(object_key, artifact.markdown)
                     object_written = True
@@ -63,7 +68,7 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
                         INSERT INTO agent_run_artifacts (
                             id, run_id, workspace_id, user_id, content_hash, purpose, object_key,
                             document_id, base_version, target, expires_at
-                        ) VALUES (%s, %s, %s, %s, %s, 'create_document', %s, NULL, NULL, NULL,
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                                   now() + interval '1 day')
                         """,
                         (
@@ -72,7 +77,11 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
                             run.workspace_id,
                             run.user_id,
                             artifact.content_hash,
+                            artifact.purpose,
                             object_key,
+                            artifact.document_id,
+                            artifact.base_version,
+                            Json(artifact.target) if artifact.target is not None else None,
                         ),
                     )
                 conn.execute(

@@ -322,10 +322,22 @@ components:
           - type: boolean
           - type: 'null'
           title: Allow Web Search
+        base_version:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Base Version
         conversation_context:
           anyOf:
           - $ref: '#/components/schemas/AgentConversationContextRequest'
           - type: 'null'
+        document_id:
+          anyOf:
+          - minLength: 1
+            type: string
+          - type: 'null'
+          title: Document Id
         message:
           maxLength: 1000
           minLength: 1

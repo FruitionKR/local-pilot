@@ -568,7 +568,18 @@ class AgentWorker:
         if operation.target_type == "document" and operation.tool_name == "rename_document":
             current = self._read_tool(context, "get_document_metadata", {"document_id": target_id})
             return _response_name(current) == _response_name(response)
-        parent_id = response.get("parent_folder_id") if operation.target_type == "folder" else response.get("folder_id")
+        expected_name = _response_name(response)
+        if operation.tool_name == "create_document":
+            parent_id = operation.destination_parent_id
+            expected_name = operation.arguments.get("display_name")
+            if isinstance(expected_name, str):
+                expected_name = expected_name.removesuffix(".md")
+        else:
+            parent_id = (
+                response.get("parent_folder_id")
+                if operation.target_type == "folder"
+                else response.get("folder_id")
+            )
         tool_name = "list_root_items" if parent_id is None else "list_folder_children"
         arguments = {} if parent_id is None else {"folder_id": str(parent_id)}
         current = self._read_tool(context, tool_name, arguments)
@@ -576,7 +587,7 @@ class AgentWorker:
         return isinstance(items, list) and any(
             isinstance(item, dict)
             and str(item.get("id")) == target_id
-            and (not _response_name(response) or item.get("name") == _response_name(response))
+            and (not expected_name or item.get("name") == expected_name)
             for item in items
         )
 

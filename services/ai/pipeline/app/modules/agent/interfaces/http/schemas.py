@@ -88,6 +88,8 @@ class AgentTurnRequestBody(BaseModel):
     allow_web_search: bool | None = None
     conversation_context: AgentConversationContextRequest | None = None
     active_markdown_context: ActiveMarkdownContextRequest | None = None
+    document_id: str | None = Field(default=None, min_length=1)
+    base_version: int | None = Field(default=None, ge=0)
     skill_mode: Literal["auto", "explicit", "off"] = "auto"
     skill_id: str | None = Field(default=None, min_length=1)
     skill_draft_sources: list[SkillDraftSourceRunRequest] = Field(default_factory=list)
@@ -125,6 +127,8 @@ class AgentTurnRequestBody(BaseModel):
             allow_web_search=self.allow_web_search,
             conversation_context=self.conversation_context.to_domain() if self.conversation_context else None,
             active_markdown_context=self.active_markdown_context.to_domain() if self.active_markdown_context else None,
+            document_id=self.document_id,
+            base_version=self.base_version,
             skill_mode=self.skill_mode,
             skill_id=self.skill_id,
             skill_draft_sources=tuple(source.to_domain() for source in self.skill_draft_sources),

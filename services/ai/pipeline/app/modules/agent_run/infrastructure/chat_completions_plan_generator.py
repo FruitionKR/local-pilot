@@ -49,6 +49,9 @@ class ChatCompletionsPlanGenerator:
             if allowed_tools is None
             else ALLOWED_PLAN_TOOLS.intersection(allowed_tools)
         )
+        artifact_tools = {artifact.purpose for artifact in content_artifacts}
+        if artifact_tools:
+            allowed_plan_tools = allowed_plan_tools.intersection(artifact_tools)
         payload = {
             "plan_id": plan_id,
             "instruction": instruction,
@@ -73,6 +76,8 @@ class ChatCompletionsPlanGenerator:
             json.dumps(payload, ensure_ascii=False, indent=2),
         )
         plan = normalize_plan_candidate(run_id, plan_id, version, value)
+        if any(operation.tool_name not in allowed_plan_tools for operation in plan.operations):
+            raise ValueError("Agent plan contains a tool outside the trusted mutation scope.")
         _validate_plan_against_hierarchy(plan, hierarchy, content_artifacts)
         return plan
 
@@ -207,7 +212,10 @@ def _validate_plan_against_hierarchy(
             item = items.get(operation.target_id or "")
             if item is None or item.get("type") != operation.target_type:
                 raise ValueError("Agent plan target must exist in the hierarchy snapshot.")
-            if item.get("current_version") != operation.base_version:
+            if (
+                operation.tool_name != "apply_document_edit"
+                and item.get("current_version") != operation.base_version
+            ):
                 raise ValueError("Agent plan base_version must match the hierarchy snapshot.")
             id_key = "folder_id" if operation.target_type == "folder" else "document_id"
             if operation.arguments.get(id_key) != operation.target_id:

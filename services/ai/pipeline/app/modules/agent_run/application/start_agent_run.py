@@ -29,13 +29,17 @@ class StartAgentRunUseCase(AgentRunStarterPort):
             model=model,
         )
         artifact = None
-        if request.creation_markdown is not None:
+        if request.content is not None:
             artifact = StartAgentRunArtifact(
                 id=str(uuid4()),
                 content_hash=(
-                    f"sha256:{hashlib.sha256(request.creation_markdown.encode('utf-8')).hexdigest()}"
+                    f"sha256:{hashlib.sha256(request.content.markdown.encode('utf-8')).hexdigest()}"
                 ),
-                markdown=request.creation_markdown,
+                markdown=request.content.markdown,
+                purpose=request.content.purpose,
+                document_id=request.content.document_id,
+                base_version=request.content.base_version,
+                target=request.content.target,
             )
         saved = self._repository.create_with_planning_job(run, str(uuid4()), artifact)
         return saved.id, saved.status

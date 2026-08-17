@@ -247,6 +247,54 @@ class AgentWorkerTest(unittest.TestCase):
                     expected,
                 )
 
+    def test_create_document_verification_uses_approved_destination_and_display_name(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        gateway = MagicMock()
+        gateway.read.return_value = {
+            "items": [
+                {
+                    "id": "document-created",
+                    "type": "document",
+                    "name": "승인 생성 문서",
+                }
+            ]
+        }
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
+        operation = replace(
+            _approved_plan().operations[0],
+            tool_name="create_document",
+            target_type="document",
+            target_id=None,
+            base_version=None,
+            destination_parent_id="folder-1",
+            arguments={
+                "display_name": "승인 생성 문서",
+                "folder_id": "folder-1",
+                "content_artifact_id": "artifact-1",
+                "content_hash": "sha256:abc",
+            },
+        )
+
+        verified = worker._verify_operation(
+            _executing_context(),
+            operation,
+            {
+                "id": "document-created",
+                "filename": "승인 생성 문서.md",
+                "current_version": 1,
+            },
+        )
+
+        self.assertTrue(verified)
+        gateway.read.assert_called_once_with(
+            "list_folder_children",
+            run_id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            arguments={"folder_id": "folder-1"},
+        )
+
     def test_resolves_approved_dependency_output_without_changing_other_arguments(self) -> None:
         arguments = {
             "document_id": "document-1",

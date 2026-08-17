@@ -715,7 +715,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
         self.assertEqual(result.action, "workspace_workflow")
         self.assertEqual(getattr(starter.requests[0], "action"), "workspace_workflow")
-        self.assertIsNone(getattr(starter.requests[0], "creation_markdown"))
+        self.assertIsNone(getattr(starter.requests[0], "content"))
         self.assertEqual(editor.requests, [])
         self.assertEqual(editor.create_requests, [])
 
@@ -807,7 +807,9 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(result.action, "workspace_workflow")
         self.assertEqual(editor.create_requests[0].conversation_summary, "문서 생성 논의")
         self.assertEqual(editor.create_requests[0].reference_context, {"document": "참조"})
-        self.assertEqual(getattr(starter.requests[0], "creation_markdown"), "# 생성 문서\n\n본문")
+        content = getattr(starter.requests[0], "content")
+        self.assertEqual(getattr(content, "purpose"), "create_document")
+        self.assertEqual(getattr(content, "markdown"), "# 생성 문서\n\n본문")
 
     def test_create_from_chat_rejects_unsafe_generated_markdown_before_agent_run(self) -> None:
         starter = RecordingAgentRunStarter()
@@ -852,6 +854,100 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
         self.assertEqual(result.action, "reject")
         self.assertIn("보안", result.message or "")
+        self.assertEqual(starter.requests, [])
+
+    def test_persistent_edit_starts_run_with_scoped_full_markdown_artifact(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                    summary="marker replacement",
+                    replacement_markdown="EDIT_AFTER_MARKER",
+                )
+            )
+        )
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.95,
+            reason="persistent document edit",
+            edit_goal="cleanup",
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(route, route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="marker를 바꿔서 워크스페이스에 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+                base_version=3,
+                active_markdown_context=ActiveMarkdownContext(
+                    markdown="# 제목\n\nEDIT_BEFORE_MARKER",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "workspace_workflow")
+        content = getattr(starter.requests[0], "content")
+        self.assertEqual(getattr(content, "purpose"), "apply_document_edit")
+        self.assertEqual(getattr(content, "document_id"), "document-1")
+        self.assertEqual(getattr(content, "base_version"), 3)
+        self.assertEqual(
+            getattr(content, "target"),
+            {"type": "selection", "start_line": 3, "end_line": 3},
+        )
+        self.assertEqual(getattr(content, "markdown"), "# 제목\n\nEDIT_AFTER_MARKER")
+
+    def test_persistent_edit_rejects_unsafe_generated_markdown_before_agent_run(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                    summary="unsafe replacement",
+                    replacement_markdown="user@example.com",
+                )
+            )
+        )
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.95,
+            reason="persistent document edit",
+            edit_goal="cleanup",
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(route, route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="marker를 바꿔서 워크스페이스에 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+                base_version=3,
+                active_markdown_context=ActiveMarkdownContext(
+                    markdown="# 제목\n\nEDIT_BEFORE_MARKER",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "reject")
         self.assertEqual(starter.requests, [])
 
     def test_indirect_context_cannot_start_mutation_without_direct_intent(self) -> None:

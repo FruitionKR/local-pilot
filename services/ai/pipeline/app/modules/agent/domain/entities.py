@@ -67,6 +67,8 @@ class AgentTurnRequest:
     user_id: str | None = None
     conversation_context: AgentConversationContext | None = None
     active_markdown_context: ActiveMarkdownContext | None = None
+    document_id: str | None = None
+    base_version: int | None = None
     skill_mode: SkillMode = "auto"
     skill_id: str | None = None
     available_skills: tuple[SkillCandidate, ...] = ()

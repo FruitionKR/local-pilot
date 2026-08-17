@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,17 @@ PENDING_SKILL_FOLLOWUP_PATTERN = re.compile(
     r"(?:AI로\s*)?재생성|다시\s*(?:만들어|작성)|regenerate|"
     r"(?:제목|이름|커맨드|식별자).*(?:바꿔|변경|수정)|"
     r"(?:개인|팀)(?:\s*(?:스킬|skill))?(?:로|으로)?\s*(?:해|바꿔|변경|수정)",
+    re.IGNORECASE,
+)
+DOCUMENT_DISPLAY_NAME_PATTERN = re.compile(
+    r"(?:문서\s*트리|display_name|표시\s*이름|문서(?:\s*파일)?(?:의)?\s*이름).{0,80}"
+    r"(?:바꿔|변경|수정|rename)",
+    re.IGNORECASE,
+)
+PERSISTENT_EDIT_PATTERN = re.compile(
+    r"(?:워크스페이스.{0,20}(?:저장|반영)|영구.{0,20}(?:적용|반영|저장)|"
+    r"(?:저장|반영)(?:해|해줘|해주세요)|승인\s*(?:후|뒤)|"
+    r"(?:persist|save|apply).{0,30}(?:workspace|approval|permanent))",
     re.IGNORECASE,
 )
 ALLOWED_ACTIONS = {
@@ -136,6 +148,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             ],
         }
         route, failures = self._complete_route(payload)
+        route = _promote_persistent_edit(route, request)
         failures.extend(_skill_authoring_failures(route, request))
         if not failures:
             return route
@@ -146,6 +159,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
         }
         retried_route, retry_failures = self._complete_route(retry_payload)
+        retried_route = _promote_persistent_edit(retried_route, request)
         retry_failures.extend(_skill_authoring_failures(retried_route, request))
         if retry_failures:
             raise AgentTurnRouteContractError(retry_failures)
@@ -207,6 +221,16 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
             reason="explicit approval for pending Skill proposal",
         )
     requests_new_skill = _requests_new_skill(lowered)
+    if (
+        not requests_new_skill
+        and DOCUMENT_DISPLAY_NAME_PATTERN.search(request.message)
+        and not re.search(r"(?:h1|heading|본문)", request.message, re.IGNORECASE)
+    ):
+        return AgentTurnRoute(
+            action="folder_organize",
+            confidence=1.0,
+            reason="document display name change",
+        )
     has_template_skill = any("template" in skill.capabilities for skill in request.available_skills)
     if (
         not requests_new_skill
@@ -231,6 +255,21 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
             edit_goal="insert_after",
         )
     return None
+
+
+def _promote_persistent_edit(
+    route: AgentTurnRoute,
+    request: AgentTurnRequest,
+) -> AgentTurnRoute:
+    if route.action not in {"markdown_edit", "workspace_workflow"}:
+        return route
+    if PERSISTENT_EDIT_PATTERN.search(request.message) is None:
+        return route
+    return replace(
+        route,
+        action="workspace_workflow",
+        edit_goal=route.edit_goal or "other",
+    )
 
 
 def _requests_new_skill(message: str) -> bool:

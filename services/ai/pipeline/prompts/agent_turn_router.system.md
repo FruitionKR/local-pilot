@@ -24,6 +24,8 @@ Apply these routing precedences before any general interpretation:
 4. A request to use an existing Skill keeps the requested document or workspace action and may select that Skill; it is not `skill_authoring`.
 
 Route to markdown_edit only for scoped replacement edits such as summarizing, shortening, style change, table conversion, bullet list conversion, checklist conversion, wording cleanup, or translation.
+When the same edit request explicitly asks to save, persist, permanently apply, or apply after approval, route to workspace_workflow and keep the matching edit_goal so the generated edit can be reviewed as a mutation plan.
+Route a request to change a document tree item's display name, file name, or display_name to folder_organize. Route a request to change Markdown H1, heading, title text, or body content to markdown_edit.
 Route ambiguous Korean follow-up phrases such as "그렇게 해줘", "그걸로", "ㅇㅇ", or "아까 말한 대로" to markdown_edit when recent conversation shows an agreed scoped edit for the active Markdown target.
 Use edit_goal "bullet_list" for plain bullet or nested list requests. Use "checklist" only when the user explicitly asks for tasks, TODOs, checkboxes, or a checklist.
 Use "convert_format" for ordered or numbered lists. Use "bullet_list" only for unordered plain bullet or nested bullet lists.
@@ -41,7 +43,7 @@ When one Skill clearly matches, return its id as selected_skill_id. When multipl
 If active Markdown exists but no target exists and the user asks to edit, route to markdown_edit; the application will treat the whole document as the target.
 If no active Markdown exists and the user asks to edit, route to markdown_edit anyway; the application will ask for a document.
 
-`edit_goal` is action-specific. Use the matching edit goal for `markdown_edit`, use `create_from_chat` for `markdown_create`, and use `template_transform` or `insert_after` only for the corresponding `clarify` route. For `chat_answer`, `folder_organize`, `workspace_workflow`, `skill_authoring`, `skill_draft_proposal`, `reject`, and every other `clarify` route, set `edit_goal` to null. Do not fill an unrelated edit goal merely because the field is required.
+`edit_goal` is action-specific. Use the matching edit goal for `markdown_edit` and persistent-edit `workspace_workflow`, use `create_from_chat` for `markdown_create` and create-from-chat `workspace_workflow`, and use `template_transform` or `insert_after` only for the corresponding `clarify` route. For `chat_answer`, `folder_organize`, non-edit `workspace_workflow`, `skill_authoring`, `skill_draft_proposal`, `reject`, and every other `clarify` route, set `edit_goal` to null. Do not fill an unrelated edit goal merely because the field is required.
 
 Required routing examples:
 - message `방금 방식대로 Skill로 만들어줘` -> `{"action":"skill_draft_proposal","confidence":1.0,"edit_goal":null,"selected_skill_id":null,"skill_candidates":[],"reason":"completed work will become a Skill draft"}`

@@ -2768,6 +2768,11 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 모두 생략하며, 적용할 대상이 없어 AI는 답변·되물음만 낸다. 셋은 함께 있거나 함께 없어야 하고
 하나만 오면 `400`이다.
 
+열린 문서에서 저장·반영을 명시한 편집 요청은 전체 Markdown을 다시 보안 검사한 뒤
+`workspace_workflow` AgentRun으로 전환한다. 이때 편집 대상 문서와 기준 버전을 계획에 고정하고,
+사용자가 그 계획을 승인해야 실제 문서에 반영한다. 저장을 명시하지 않은 편집 요청은 기존처럼
+`markdown_edit` 미리보기만 반환한다.
+
 #### 3. Auth 필요 여부
 
 - 필요
@@ -10532,6 +10537,7 @@ Handle Agent Turn
     "target": null
   },
   "allow_web_search": true,
+  "base_version": 3,
   "conversation_context": {
     "pending_skill_proposal": null,
     "recent_conversation_summary": null,
@@ -10543,6 +10549,7 @@ Handle Agent Turn
     ],
     "reference_context": null
   },
+  "document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "message": "string",
   "model": "string",
   "output_language": "ko",
@@ -10554,6 +10561,11 @@ Handle Agent Turn
   ]
 }
 ```
+
+저장·반영을 명시한 열린 문서 편집을 승인 계획으로 만들 때는 `active_markdown_context`와 함께
+`document_id`·`base_version`을 전달한다. 파이프라인은 생성된 전체 Markdown을 다시 보안 검사하고,
+해당 문서와 버전에만 적용 가능한 `apply_document_edit` 아티팩트를 만들어 계획 범위를 제한한다.
+미리보기만 필요한 일반 편집은 두 필드를 생략할 수 있다.
 
 #### 5. Response body
 
@@ -10745,7 +10757,7 @@ Handle Agent Turn
 curl -X POST "$PIPELINE/agent/turn" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"active_markdown_context":{"markdown":"<value>","target":null},"allow_web_search":true,"conversation_context":{"pending_skill_proposal":null,"recent_conversation_summary":null,"recent_messages":[null],"reference_context":null},"message":"<value>","model":"<value>","output_language":"ko","provider":"<value>","response_length":"concise","skill_authoring_mode":"preserve","skill_draft_excluded_literals":["<value>"]}'
+  --data '{"active_markdown_context":{"markdown":"<value>","target":null},"allow_web_search":true,"base_version":3,"conversation_context":{"pending_skill_proposal":null,"recent_conversation_summary":null,"recent_messages":[null],"reference_context":null},"document_id":"doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83","message":"<value>","model":"<value>","output_language":"ko","provider":"<value>","response_length":"concise","skill_authoring_mode":"preserve","skill_draft_excluded_literals":["<value>"]}'
 ```
 
 ```json

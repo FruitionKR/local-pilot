@@ -11,11 +11,11 @@ from app.modules.agent.domain.entities import (
     PendingSkillProposal,
 )
 from app.modules.agent_run.application.ports import AgentRunStarterPort
-from app.modules.agent_run.domain.entities import StartAgentRunRequest
+from app.modules.agent_run.domain.entities import StartAgentRunContent, StartAgentRunRequest
 from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
 from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
 from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, MarkdownEditRequest, MarkdownEditTarget
-from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line_count
+from app.modules.markdown_edit.domain.markdown_target_scope import apply_markdown_edit, markdown_line_count
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.application.conversation_context_resolver import conversation_messages_text, update_conversation_summary
 from app.modules.query.application.ports import ConversationSummarizerPort
@@ -248,7 +248,7 @@ class HandleAgentTurnUseCase:
                 if selected_skill is not None and selected_skill.enabled_version is not None
                 else None
             )
-            creation_markdown = None
+            content = None
             if route.action == "workspace_workflow" and route.edit_goal == "create_from_chat":
                 creation_markdown = self._markdown_create_use_case.execute(
                     MarkdownCreateRequest(
@@ -267,6 +267,49 @@ class HandleAgentTurnUseCase:
                 ).document.markdown
                 if inspect_skill_instructions(creation_markdown):
                     return _reject_unsafe_workspace_mutation(route)
+                content = StartAgentRunContent(markdown=creation_markdown)
+            elif route.action == "workspace_workflow" and route.edit_goal is not None:
+                markdown_context = request.active_markdown_context
+                if (
+                    markdown_context is None
+                    or not markdown_context.markdown.strip()
+                    or request.document_id is None
+                    or request.base_version is None
+                ):
+                    return AgentTurnResult(
+                        action="clarify",
+                        route=replace(route, action="clarify"),
+                        message=CLARIFY_MARKDOWN_DOCUMENT_MESSAGE,
+                    )
+                target = markdown_context.target or _whole_document_target(markdown_context.markdown)
+                edit = self._markdown_edit_use_case.execute(
+                    MarkdownEditRequest(
+                        instruction=request.message,
+                        markdown=markdown_context.markdown,
+                        target=target,
+                        workspace_id=request.workspace_id,
+                        user_id=request.user_id,
+                        conversation_summary=_conversation_context_text(request),
+                        edit_goal=route.edit_goal,
+                        skill_instructions=_skill_instructions(selected_skill),
+                        output_language=request.output_language,
+                    )
+                ).edit
+                edited_markdown = apply_markdown_edit(markdown_context.markdown, edit)
+                if inspect_skill_instructions(edited_markdown):
+                    return _reject_unsafe_workspace_mutation(route)
+                actual_target = edit.actual_target
+                content = StartAgentRunContent(
+                    markdown=edited_markdown,
+                    purpose="apply_document_edit",
+                    document_id=request.document_id,
+                    base_version=request.base_version,
+                    target={
+                        "type": actual_target.type,
+                        "start_line": actual_target.start_line,
+                        "end_line": actual_target.end_line,
+                    },
+                )
             run_id, run_status = self._agent_run_starter.start(
                 StartAgentRunRequest(
                     workspace_id=request.workspace_id,
@@ -276,7 +319,7 @@ class HandleAgentTurnUseCase:
                     model=request.model,
                     action=route.action,
                     skill_version_id=skill_version_id,
-                    creation_markdown=creation_markdown,
+                    content=content,
                 )
             )
             return AgentTurnResult(

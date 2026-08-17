@@ -139,6 +139,8 @@ def _handle_agent(
             "user_id": command["user_id"],
             "conversation_context": command.get("conversation_context"),
             "active_markdown_context": command.get("editor_snapshot"),
+            "document_id": command.get("document_id"),
+            "base_version": command.get("base_version"),
             "skill_draft_sources": command.get("skill_draft_sources", []),
             "skill_draft_user_directives": command.get("skill_draft_user_directives", []),
             "skill_draft_excluded_literals": command.get("skill_draft_excluded_literals", []),
