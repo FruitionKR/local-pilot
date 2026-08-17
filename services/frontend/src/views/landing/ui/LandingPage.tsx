@@ -21,9 +21,6 @@ export default function LandingPage() {
           <Link className={styles["landing-primary-action"]} href="/login">
             시작하기
           </Link>
-          <Link className={styles["landing-secondary-action"]} href="/signup">
-            회원가입
-          </Link>
         </div>
       </section>
     </main>
