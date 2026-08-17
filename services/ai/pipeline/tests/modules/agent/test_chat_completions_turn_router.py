@@ -42,6 +42,97 @@ def route_response(action: str = "markdown_edit") -> dict[str, object]:
 
 
 class ChatCompletionsTurnRouterTest(unittest.TestCase):
+    def test_routes_multiturn_title_generation_to_conversation_reply(self) -> None:
+        response = route_response("conversation_reply")
+        response["edit_goal"] = None
+        client = SequenceJsonClient([response])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="그냥 오늘날짜-날씨-이모지 한개 형식으로 만들어줘",
+                conversation_context=AgentConversationContext(
+                    recent_messages=(
+                        ConversationMessage(
+                            role="user",
+                            content="제목을 써줘",
+                        ),
+                        ConversationMessage(
+                            role="assistant",
+                            content="일기로 쓸 제목의 분위기나 주제를 알려주세요.",
+                            action="conversation_reply",
+                        ),
+                        ConversationMessage(
+                            role="user",
+                            content="여름이어서 덥고 습했다",
+                        ),
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(route.action, "conversation_reply")
+        payload = json.loads(client.calls[0][1])
+        self.assertEqual(
+            payload["recent_messages"][1]["action"],
+            "conversation_reply",
+        )
+
+    def test_retries_query_misroute_for_conversation_format_refinement(self) -> None:
+        first = route_response("chat_answer")
+        first["edit_goal"] = None
+        second = route_response("conversation_reply")
+        second["edit_goal"] = None
+        client = SequenceJsonClient([first, second])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="오늘날짜-날씨-이모지 한 개 형식으로 만들어줘",
+                conversation_context=AgentConversationContext(
+                    recent_messages=(
+                        ConversationMessage(
+                            role="assistant",
+                            content="제목의 맥락을 알려주세요.",
+                            action="conversation_reply",
+                        ),
+                        ConversationMessage(role="user", content="덥고 습한 여름이야"),
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(route.action, "conversation_reply")
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn(
+            "a conversational format or wording refinement",
+            retry_payload["contract_failures"][0],
+        )
+
+    def test_explicit_grounded_request_wins_over_previous_conversation_action(self) -> None:
+        first = route_response("conversation_reply")
+        first["edit_goal"] = None
+        client = SequenceJsonClient([first])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="내부 문서 기준으로 제목 형식을 만들어줘",
+                conversation_context=AgentConversationContext(
+                    recent_messages=(
+                        ConversationMessage(
+                            role="assistant",
+                            content="제목의 맥락을 알려주세요.",
+                            action="conversation_reply",
+                        ),
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(route.action, "chat_answer")
+        self.assertEqual(len(client.calls), 1)
+
     def test_promotes_persistent_markdown_edit_to_workspace_workflow(self) -> None:
         client = SequenceJsonClient([route_response("markdown_edit")])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
@@ -491,6 +582,8 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertIn("set `edit_goal` to null", prompt)
         self.assertIn("concrete personal data", prompt)
         self.assertIn("Do not create a mutation plan", prompt)
+        self.assertIn("conversation_reply", prompt)
+        self.assertIn("previous action is only a hint", prompt)
 
     def test_allows_general_whole_document_edit(self) -> None:
         request = AgentTurnRequest(

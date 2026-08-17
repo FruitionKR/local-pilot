@@ -283,6 +283,25 @@ class AgentRoutesTest(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     AgentTurnRequestBody.model_validate(payload)
 
+    def test_agent_turn_keeps_previous_action_as_conversation_hint(self) -> None:
+        request = AgentTurnRequestBody(
+            message="이어서 제목을 만들어줘",
+            conversation_context={
+                "recent_messages": [
+                    {
+                        "role": "assistant",
+                        "content": "날씨를 알려주세요.",
+                        "action": "conversation_reply",
+                    }
+                ]
+            },
+        ).to_domain()
+
+        self.assertEqual(
+            request.conversation_context.recent_messages[0].action,  # type: ignore[union-attr]
+            "conversation_reply",
+        )
+
     def test_agent_turn_validates_skill_mode_and_id_combinations(self) -> None:
         for skill_mode, skill_id in (("auto", None), ("explicit", "skill-1"), ("off", None)):
             with self.subTest(skill_mode=skill_mode):

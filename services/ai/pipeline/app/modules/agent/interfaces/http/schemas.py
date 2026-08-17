@@ -149,6 +149,7 @@ class AgentTurnRequestBody(BaseModel):
 class AgentTurnRouteResponse(BaseModel):
     action: Literal[
         "chat_answer",
+        "conversation_reply",
         "markdown_edit",
         "markdown_create",
         "folder_organize",
@@ -198,6 +199,7 @@ class GeneratedMarkdownResponse(BaseModel):
 class AgentTurnResponse(BaseModel):
     action: Literal[
         "chat_answer",
+        "conversation_reply",
         "markdown_edit",
         "markdown_create",
         "folder_organize",

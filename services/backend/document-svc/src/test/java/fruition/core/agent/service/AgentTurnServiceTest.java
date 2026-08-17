@@ -139,7 +139,7 @@ class AgentTurnServiceTest {
         org.mockito.Mockito.when(chatConversationReader.read("session_1", java.util.List.of("pair_9")))
                 .thenReturn(new fruition.core.chat.service.ChatConversationReader.Conversation(
                         java.util.List.of(new fruition.core.chat.service.ChatConversationReader.Message(
-                                "user", "이전 질문")),
+                                "assistant", "날씨를 알려주세요.", "conversation_reply")),
                         "사용자: 이전 질문"));
         var request = new AgentTurnRequest("session_1", null, null, "이어서 해줘", "openai", "gpt-5-nano",
                 null, "auto", null,
@@ -154,7 +154,9 @@ class AgentTurnServiceTest {
         var context = command.getValue().conversationContext();
         assertThat(context.recentConversationSummary()).isEqualTo("사용자: 이전 질문");
         assertThat(context.recentMessages()).extracting(AgentTurnService.CommandConversationMessage::content)
-                .containsExactly("이전 질문");
+                .containsExactly("날씨를 알려주세요.");
+        assertThat(context.recentMessages()).extracting(AgentTurnService.CommandConversationMessage::action)
+                .containsExactly("conversation_reply");
     }
 
     @Test

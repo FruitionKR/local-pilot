@@ -4130,6 +4130,7 @@ components:
           description: AI가 고른 갈래. 화면이 이 값으로 편집 미리보기와 일반 답변을 나눈다. 질의 메시지는 키가 빠진다.
           enum:
           - chat_answer
+          - conversation_reply
           - markdown_edit
           - markdown_create
           - clarify

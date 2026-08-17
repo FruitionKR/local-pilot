@@ -442,6 +442,7 @@ components:
         action:
           enum:
           - chat_answer
+          - conversation_reply
           - markdown_edit
           - markdown_create
           - folder_organize
@@ -505,6 +506,7 @@ components:
         action:
           enum:
           - chat_answer
+          - conversation_reply
           - markdown_edit
           - markdown_create
           - folder_organize
@@ -708,6 +710,12 @@ components:
       type: object
     ConversationMessageRequest:
       properties:
+        action:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Action
         content:
           maxLength: 4000
           minLength: 1

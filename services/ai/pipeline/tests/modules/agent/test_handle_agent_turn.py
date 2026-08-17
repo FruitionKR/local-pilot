@@ -101,6 +101,16 @@ class FakeQueryUseCase:
         )
 
 
+class RecordingConversationReplier:
+    def __init__(self, reply: str) -> None:
+        self.reply_text = reply
+        self.requests: list[AgentTurnRequest] = []
+
+    def reply(self, request: AgentTurnRequest) -> str:
+        self.requests.append(request)
+        return self.reply_text
+
+
 class RecordingMarkdownEditor:
     def __init__(self, result: MarkdownEditResult, create_result: MarkdownCreateResult | None = None) -> None:
         self.result = result
@@ -246,6 +256,55 @@ def document_skill(capability: str = "document-create") -> Skill:
 
 
 class HandleAgentTurnUseCaseTest(unittest.TestCase):
+    def test_conversation_reply_skips_query_and_keeps_multiturn_context(self) -> None:
+        router = FixedRouter(
+            AgentTurnRoute(
+                action="conversation_reply",
+                confidence=1.0,
+                reason="continue title generation",
+            )
+        )
+        query_use_case = FakeQueryUseCase()
+        replier = RecordingConversationReplier("2026-08-17-덥고 습함-🥵")
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=router,
+            query_use_case=query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            conversation_replier=replier,
+        )
+        messages = (
+            ConversationMessage(role="user", content="제목을 써줘"),
+            ConversationMessage(
+                role="assistant",
+                content="일기로 쓸 제목의 분위기나 주제를 알려주세요.",
+                action="conversation_reply",
+            ),
+            ConversationMessage(role="user", content="여름이어서 덥고 습했다"),
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="오늘날짜-날씨-이모지 한 개 형식으로 만들어줘",
+                conversation_context=AgentConversationContext(recent_messages=messages),
+            )
+        )
+
+        self.assertEqual(result.action, "conversation_reply")
+        self.assertEqual(result.message, "2026-08-17-덥고 습함-🥵")
+        self.assertEqual(query_use_case.questions, [])
+        self.assertEqual(replier.requests[0].conversation_context.recent_messages, messages)  # type: ignore[union-attr]
+
     def test_updates_summary_without_removing_recent_messages_from_agent_routing(self) -> None:
         router = FixedRouter(AgentTurnRoute(action="reject", confidence=1.0, reason="test"))
         editor = RecordingMarkdownEditor(

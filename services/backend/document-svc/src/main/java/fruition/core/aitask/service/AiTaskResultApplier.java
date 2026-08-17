@@ -35,7 +35,7 @@ public class AiTaskResultApplier {
 
     private static final Set<String> MARKDOWN_ACTIONS = Set.of("markdown_create", "markdown_edit");
     private static final Set<String> NON_MUTATING_ACTIONS = Set.of(
-            "chat_answer", "clarify", "reject", "skill_authoring", "skill_draft_proposal");
+            "chat_answer", "conversation_reply", "clarify", "reject", "skill_authoring", "skill_draft_proposal");
     private static final Set<String> AUTONOMOUS_ACTIONS = Set.of("folder_organize", "workspace_workflow");
 
     private static final Logger log = LoggerFactory.getLogger(AiTaskResultApplier.class);
@@ -272,7 +272,7 @@ public class AiTaskResultApplier {
             "skill_draft_proposal", "Skill 제안을 만들었습니다. 미리보기에서 확인해 주세요.");
 
     /**
-     * 말풍선에 보일 본문. chat_answer는 답변, 나머지는 AI가 붙인 설명이다.
+     * 말풍선에 보일 본문. chat_answer는 Query 답변이고 conversation_reply는 message에 담긴다.
      *
      * <p>빈 문자열은 돌려주지 않는다. 빈 말풍선은 화면에서 아무것도 아니고,
      * 다음 턴의 대화 맥락에 실리면 pipeline이 요청 전체를 거부한다.

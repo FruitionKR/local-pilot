@@ -10580,6 +10580,7 @@ Handle Agent Turn
     "recent_conversation_summary": null,
     "recent_messages": [
       {
+        "action": "conversation_reply",
         "content": "string",
         "role": "string"
       }
@@ -10603,6 +10604,11 @@ Handle Agent Turn
 `document_id`·`base_version`을 전달한다. 파이프라인은 생성된 전체 Markdown을 다시 보안 검사하고,
 해당 문서와 버전에만 적용 가능한 `apply_document_edit` 아티팩트를 만들어 계획 범위를 제한한다.
 미리보기만 필요한 일반 편집은 두 필드를 생략할 수 있다.
+
+`conversation_context.recent_messages[].action`은 이전 assistant 응답의 action을 전달하는 선택 필드다.
+라우터는 이를 멀티턴 연속성 힌트로만 사용하며 현재 요청의 명시적 의도를 우선한다.
+응답 action은 내부 문서 근거 조회인 `chat_answer`, 대화 맥락만으로 작성·형식을 이어가는
+`conversation_reply`, 열린 Markdown을 변경하는 `markdown_edit`를 구분한다.
 
 #### 5. Response body
 

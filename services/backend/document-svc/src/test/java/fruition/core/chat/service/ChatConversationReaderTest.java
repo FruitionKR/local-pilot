@@ -64,6 +64,19 @@ class ChatConversationReaderTest {
                 .containsExactly("첫 질문", "첫 답변");
     }
 
+    @Test
+    @DisplayName("assistant action을 다음 Agent 턴의 참고 정보로 보존한다")
+    void keepsAssistantActionAsConversationHint() {
+        ChatMessage assistant = message("p1", "assistant", "날씨를 알려주세요.", "completed", 1);
+        assistant.completeAgentTurn("conversation_reply", "날씨를 알려주세요.");
+        given(message("p1", "user", "제목을 써줘", "completed", 0), assistant);
+
+        var conversation = reader.read("session_1", List.of());
+
+        assertThat(conversation.recentMessages()).extracting(ChatConversationReader.Message::action)
+                .containsExactly(null, "conversation_reply");
+    }
+
     /** 요약은 서버가 원문을 이어붙여 만들지 않는다. pipeline이 갱신해 둔 세션의 누적 요약을 쓴다. */
     @Test
     @DisplayName("요약은 세션에 쌓인 누적 요약을 그대로 넘긴다")

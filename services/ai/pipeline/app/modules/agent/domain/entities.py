@@ -19,6 +19,7 @@ from app.modules.skill.domain.entities import (
 
 AgentAction = Literal[
     "chat_answer",
+    "conversation_reply",
     "markdown_edit",
     "markdown_create",
     "folder_organize",

@@ -68,8 +68,19 @@ PERSISTENT_EDIT_PATTERN = re.compile(
     r"(?:persist|save|apply).{0,30}(?:workspace|approval|permanent))",
     re.IGNORECASE,
 )
+CONVERSATION_REFINEMENT_PATTERN = re.compile(
+    r"(?:형식|말투|길이|이모지|제목|문구).{0,40}(?:만들어|바꿔|변경|수정|써줘|해줘)|"
+    r"(?:format|tone|length|emoji|title|wording).{0,40}(?:make|change|revise|write)",
+    re.IGNORECASE,
+)
+GROUNDED_RETRIEVAL_PATTERN = re.compile(
+    r"(?:내부\s*문서|워크스페이스|위키|wiki|workspace|document).{0,40}"
+    r"(?:기준|근거|찾아|검색|조회|search|find|retrieve|ground)",
+    re.IGNORECASE,
+)
 ALLOWED_ACTIONS = {
     "chat_answer",
+    "conversation_reply",
     "markdown_edit",
     "markdown_create",
     "folder_organize",
@@ -101,7 +112,11 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             ),
             "recent_messages": (
                 [
-                    {"role": message.role, "content": message.content}
+                    {
+                        "role": message.role,
+                        "content": message.content,
+                        "action": message.action,
+                    }
                     for message in request.conversation_context.recent_messages
                 ]
                 if request.conversation_context
@@ -150,6 +165,8 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
         }
         route, failures = self._complete_route(payload)
         route = _promote_persistent_edit(route, request)
+        route = _promote_grounded_query(route, request)
+        failures.extend(_route_failures(route, request))
         failures.extend(_skill_authoring_failures(route, request))
         if not failures:
             return route
@@ -161,6 +178,8 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
         }
         retried_route, retry_failures = self._complete_route(retry_payload)
         retried_route = _promote_persistent_edit(retried_route, request)
+        retried_route = _promote_grounded_query(retried_route, request)
+        retry_failures.extend(_route_failures(retried_route, request))
         retry_failures.extend(_skill_authoring_failures(retried_route, request))
         if retry_failures:
             raise AgentTurnRouteContractError(retry_failures)
@@ -273,8 +292,62 @@ def _promote_persistent_edit(
     )
 
 
+def _promote_grounded_query(
+    route: AgentTurnRoute,
+    request: AgentTurnRequest,
+) -> AgentTurnRoute:
+    if (
+        route.action != "conversation_reply"
+        or request.active_markdown_context is not None
+        or GROUNDED_RETRIEVAL_PATTERN.search(request.message) is None
+    ):
+        return route
+    return replace(
+        route,
+        action="chat_answer",
+        edit_goal=None,
+        selected_skill_id=None,
+        skill_candidates=(),
+    )
+
+
 def _requests_new_skill(message: str) -> bool:
     return NEW_SKILL_REQUEST_PATTERN.search(message) is not None
+
+
+def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:
+    if (
+        route.action == "clarify"
+        and route.edit_goal is None
+        and not route.skill_candidates
+    ):
+        return [
+            "clarify requires a supported Markdown target reason or ambiguous Skill candidates; "
+            "use conversation_reply when a conversational task needs more user context"
+        ]
+    previous_assistant_action = next(
+        (
+            message.action
+            for message in reversed(
+                request.conversation_context.recent_messages
+                if request.conversation_context
+                else ()
+            )
+            if message.role == "assistant"
+        ),
+        None,
+    )
+    if (
+        route.action == "chat_answer"
+        and previous_assistant_action == "conversation_reply"
+        and CONVERSATION_REFINEMENT_PATTERN.search(request.message)
+        and not GROUNDED_RETRIEVAL_PATTERN.search(request.message)
+    ):
+        return [
+            "a conversational format or wording refinement after conversation_reply must remain "
+            "conversation_reply unless the current message explicitly requests grounded retrieval"
+        ]
+    return []
 
 
 def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:

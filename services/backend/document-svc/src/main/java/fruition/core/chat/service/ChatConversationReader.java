@@ -62,7 +62,8 @@ public class ChatConversationReader {
         List<ChatMessage> recent = ordered.subList(Math.max(0, ordered.size() - MAX_RECENT_MESSAGES), ordered.size());
 
         return new Conversation(
-                recent.stream().map(message -> new Message(message.getRole(), truncate(message.getContent()))).toList(),
+                recent.stream().map(message -> new Message(
+                        message.getRole(), truncate(message.getContent()), message.getAction())).toList(),
                 // 요약은 서버가 만들지 않는다. pipeline이 갱신해 세션에 쌓아 둔 것을 그대로 넘긴다.
                 chatSessionService.contextSummary(sessionId));
     }
@@ -104,5 +105,5 @@ public class ChatConversationReader {
 
     public record Conversation(List<Message> recentMessages, String summary) {}
 
-    public record Message(String role, String content) {}
+    public record Message(String role, String content, String action) {}
 }

@@ -2,7 +2,7 @@ import re
 from collections.abc import Callable
 from dataclasses import replace
 
-from app.modules.agent.application.ports import AgentTurnRouterPort
+from app.modules.agent.application.ports import AgentTurnRouterPort, ConversationReplierPort
 from app.modules.agent.domain.exceptions import AgentConfigurationError
 from app.modules.agent.domain.entities import (
     AgentTurnRequest,
@@ -65,6 +65,7 @@ class HandleAgentTurnUseCase:
         skill_draft_proposer: ProposeSkillDraftUseCase | None = None,
         conversation_summarizer: ConversationSummarizerPort | None = None,
         web_search_query_use_case_factory: Callable[[], AnswerQueryUseCase] | None = None,
+        conversation_replier: ConversationReplierPort | None = None,
     ) -> None:
         self._router = router
         self._query_use_case = query_use_case
@@ -76,6 +77,7 @@ class HandleAgentTurnUseCase:
         self._skill_draft_proposer = skill_draft_proposer
         self._conversation_summarizer = conversation_summarizer
         self._web_search_query_use_case_factory = web_search_query_use_case_factory
+        self._conversation_replier = conversation_replier
 
     def execute(self, request: AgentTurnRequest) -> AgentTurnResult:
         if not request.message.strip():
@@ -375,6 +377,15 @@ class HandleAgentTurnUseCase:
                 action="reject",
                 route=route,
                 message="요청한 작업은 현재 지원 범위에서 처리할 수 없습니다.",
+            )
+
+        if route.action == "conversation_reply":
+            if self._conversation_replier is None:
+                raise AgentConfigurationError("Conversation reply is not configured.")
+            return AgentTurnResult(
+                action="conversation_reply",
+                route=route,
+                message=self._conversation_replier.reply(request),
             )
 
         query_kwargs: dict[str, object] = {
