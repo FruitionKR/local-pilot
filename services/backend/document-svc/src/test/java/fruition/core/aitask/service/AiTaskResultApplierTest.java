@@ -234,6 +234,37 @@ class AiTaskResultApplierTest {
         assertThat(captured.getValue().evidenceSnippets()).hasSize(1);
     }
 
+    /**
+     * pipeline이 보낸 값의 타입이 어긋나면 해석에서 예외가 난다. 근거를 붙이면서 이 경로가 생겼으므로,
+     * 기존 채팅 기록 안전망이 근거 해석 실패까지 덮는지 못박아 둔다. 근거는 포기해도 답변은 남아야 한다.
+     */
+    @Test
+    void chatAnswerWithUnreadableEvidencePayloadStillAppliesResult() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-badchat:succeeded","run_id":"run-badchat","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "message_context":{"assistant_message_id":"chat_assistant_3"}},
+                 "payload":{"action":"chat_answer","chat":{"answer":"답변",
+                 "related_pages":[{"id":"wiki_1","page_type":"concept","title":"제목","slug":"slug",
+                 "relevance_score":0.9,"role":"seed_source","depth":"깊이가 숫자가 아님"}],
+                 "evidence_snippets":[]}}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-badchat:succeeded"),
+                eq("run-badchat"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-badchat")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", null, null, null));
+        when(jdbcTemplate.update(contains("SET status = 'ready'"), any(), any(), eq("run-badchat")))
+                .thenReturn(1);
+
+        AiTaskResultApplier.AgentApplyResult result = applier.applyAgent(event);
+
+        // 답변은 남고 근거만 포기한다.
+        assertThat(result.applied()).isTrue();
+        assertThat(result.error()).isNull();
+        verify(chatTurnRecorder).completeAgentTurn(eq("chat_assistant_3"), any(), any());
+        verify(chatEvidenceRecorder, never()).record(anyString(), any());
+    }
+
     /** 편집 갈래에는 chat이 없다. 근거 저장을 시도하면 안 된다. */
     @Test
     void markdownEditAgentResultDoesNotRecordEvidence() throws Exception {

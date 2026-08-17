@@ -269,6 +269,9 @@ public class AiTaskResultApplier {
     /**
      * AI가 질의로 판정한 턴은 답변과 함께 근거가 온다. 질의 경로와 같은 자리에 남겨야
      * 새로고침한 뒤에도 근거가 보인다. 편집·Skill 갈래에는 chat이 없어 아무것도 하지 않는다.
+     *
+     * <p>해석 실패는 호출부(recordAgentChatMessage)가 이미 삼킨다. DB에 쓰기 전이라 트랜잭션도
+     * 멀쩡해 답변은 그대로 남는다. 여기서 또 잡지 않는다.
      */
     private void recordAgentChatEvidence(String assistantMessageId, JsonNode payload) {
         JsonNode chat = payload.path("chat");

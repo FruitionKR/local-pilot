@@ -220,6 +220,30 @@ class QueryServiceTest {
         return document;
     }
 
+    /** 삭제된 문서는 화면에서 열 수 없다. 눌러도 아무 일이 없는 근거를 남기지 않는다. */
+    @Test
+    @DisplayName("근거가 삭제된 문서를 가리키면 저장하지 않는다")
+    void query_evidenceForDeletedDocument_isSkipped() {
+        List<PipelineQueryResponse.EvidenceSnippet> evidence = List.of(
+                new PipelineQueryResponse.EvidenceSnippet(
+                        1, DOCUMENT_ID, List.of("B0001"), List.of(
+                        new PipelineQueryResponse.SourceRef(DOCUMENT_ID, "B0001")), "삭제된 문서")
+        );
+        Document deleted = documentInWorkspace(DOCUMENT_ID, WORKSPACE_ID);
+        lenient().when(deleted.getDeletedAt()).thenReturn(java.time.Instant.parse("2026-08-01T00:00:00Z"));
+        doReturn(List.of(deleted)).when(documentRepository).findAllById(any());
+        PipelineQueryResponse response = responseWithEvidence(evidence);
+        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
+                eq(true), anyList()))
+                .thenReturn(response);
+
+        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+
+        ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
+        verify(referenceRepository).saveAll(refCaptor.capture());
+        assertThat(refCaptor.getValue()).isEmpty();
+    }
+
     /**
      * 근거가 다른 워크스페이스 문서를 가리키면 화면에서 열리지 않는 근거가 되고, 그 문서 제목이
      * 근거 목록으로 새어 나간다. 대화가 속한 워크스페이스의 문서만 남긴다.

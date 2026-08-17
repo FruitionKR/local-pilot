@@ -49,11 +49,19 @@ public class ChatEvidenceRecorder {
         this.documentRepository = documentRepository;
     }
 
-    /** 메시지 ID만 아는 호출부(결과 이벤트 반영)를 위한 진입점. */
+    /**
+     * 메시지 ID만 아는 호출부(결과 이벤트 반영)를 위한 진입점.
+     *
+     * <p>세션을 지우면 메시지도 함께 지워지므로, 진행 중이던 턴의 결과가 뒤늦게 오면 대상이 없다.
+     * 정상 흐름이라 실패로 보지 않되 흔적은 남긴다. 근거가 왜 없는지 되짚을 때 유일한 단서다.
+     */
     @Transactional
     public void record(String assistantMessageId, PipelineQueryResponse response) {
         chatMessageRepository.findById(assistantMessageId)
-                .ifPresent(message -> record(message, response));
+                .ifPresentOrElse(
+                        message -> record(message, response),
+                        () -> log.info("[답변 근거 저장 생략] messageId={} reason=메시지를 찾을 수 없음",
+                                assistantMessageId));
     }
 
     @Transactional
@@ -69,6 +77,10 @@ public class ChatEvidenceRecorder {
     /**
      * 제목은 pipeline 쪽 컬럼이 text라 길이 상한이 없는데 여기 컬럼은 varchar(255)다. 그대로 넣으면
      * flush에서 터져 답변까지 되돌아가므로 잘라서 담는다. slug·page_type은 양쪽 다 255자라 그대로 둔다.
+     *
+     * <p>근거 참조와 달리 워크스페이스를 확인하지 않는다. wiki_page_id에는 FK가 없고 위키 페이지는
+     * pipeline이 자기 DB에서 소유해 여기서 대조할 테이블이 없다. 즉 pipeline이 워크스페이스 경계를
+     * 지킨다는 가정에 기대고 있다. 이 가정이 깨지면 남의 페이지 제목이 근거 목록에 그대로 보인다.
      */
     private List<ChatMessageRelatedPage> buildRelatedPages(ChatMessage assistantMessage,
                                                            PipelineQueryResponse pipelineResponse) {
@@ -120,10 +132,10 @@ public class ChatEvidenceRecorder {
         List<ChatMessageReference> refs = new ArrayList<>();
         for (PipelineQueryResponse.EvidenceSnippet snippet : usable) {
             Document document = documentsById.get(snippet.sourceDocumentId());
-            if (document == null || !document.getWorkspaceId().equals(workspaceId)) {
+            String excluded = exclusionReason(document, workspaceId);
+            if (excluded != null) {
                 log.warn("[답변 근거 제외] messageId={} rank={} documentId={} reason={}",
-                        assistantMessage.getId(), snippet.rank(), snippet.sourceDocumentId(),
-                        document == null ? "문서를 찾을 수 없음" : "다른 워크스페이스의 문서");
+                        assistantMessage.getId(), snippet.rank(), snippet.sourceDocumentId(), excluded);
                 continue;
             }
             refs.add(new ChatMessageReference(
@@ -134,6 +146,19 @@ public class ChatEvidenceRecorder {
             ));
         }
         return refs;
+    }
+
+    /**
+     * 근거로 남길 수 없는 이유. 남길 수 있으면 null.
+     *
+     * <p>기준은 "화면에서 그 문서를 열 수 있는가"다. 열 수 없는 문서를 가리키는 근거는 눌러도
+     * 아무 일이 없고, 남의 워크스페이스 문서라면 제목이 근거 목록으로 새어 나간다.
+     */
+    private static String exclusionReason(Document document, String workspaceId) {
+        if (document == null) return "문서를 찾을 수 없음";
+        if (!document.getWorkspaceId().equals(workspaceId)) return "다른 워크스페이스의 문서";
+        if (document.getDeletedAt() != null) return "삭제된 문서";
+        return null;
     }
 
     /** 근거 개수만큼 조회하면 N+1이 되므로 문서 ID를 모아 한 번에 읽는다. */
