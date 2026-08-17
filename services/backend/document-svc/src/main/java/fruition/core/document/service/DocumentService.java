@@ -7,7 +7,6 @@ import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentAsset;
 import fruition.core.document.repository.DocumentAssetRepository;
 import fruition.core.document.domain.DocumentEditState;
-import fruition.core.document.domain.DocumentProcessingState;
 import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.domain.DocumentStatus;
 import fruition.shared.idempotency.IdempotencyService;
@@ -104,7 +103,6 @@ public class DocumentService {
     private static final int MAX_SAVE_ATTEMPTS = 3;
 
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
-    private static final int STALLED_THRESHOLD_SECONDS = 60;
     private static final String INITIAL_NOTE_FILENAME = "새 노트.md";
     private static final String CONVERT_PLACEHOLDER_MARKDOWN = "PDF 변환 중...\n";
 
@@ -1114,26 +1112,6 @@ public class DocumentService {
         );
     }
 
-    private String areaOf(Document document) {
-        return document.getDocumentRole() == DocumentRole.EDITABLE ? "pages" : "sources";
-    }
-
-    private String itemKindOf(Document document) {
-        return document.getDocumentRole() == DocumentRole.EDITABLE ? "page" : "source_file";
-    }
-
-    /**
-     * 마지막 ingest 스냅샷(content_hash)과 현재 편집본(current_content_hash)이 다르면 재분석이 필요하다.
-     * 처리 중이면 이미 재분석이 진행 중이므로 제외한다. 실패(failed)는 기존 오류 표시가 담당한다.
-     */
-    private boolean needsReingest(Document document) {
-        return document.getDocumentRole() == DocumentRole.EDITABLE
-                && document.getStatus() != DocumentStatus.processing
-                && document.getCurrentContentHash() != null
-                && document.getContentHash() != null
-                && !document.getCurrentContentHash().equals(document.getContentHash());
-    }
-
     public DocumentContentSaveResponse saveContent(
             String workspaceId,
             String userId,
@@ -1938,15 +1916,6 @@ public class DocumentService {
         return dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
     }
 
-    private DocumentProcessingState resolveProcessingState(Document doc) {
-        if (doc.getStatus() == DocumentStatus.completed) return DocumentProcessingState.completed;
-        if (doc.getStatus() == DocumentStatus.failed) return DocumentProcessingState.failed;
-        if (doc.getPipelineRunId() == null) return DocumentProcessingState.starting;
-        if (doc.getProcessingUpdatedAt() == null) return DocumentProcessingState.starting;
-        boolean stalled = doc.getProcessingUpdatedAt()
-                .isBefore(Instant.now().minusSeconds(STALLED_THRESHOLD_SECONDS));
-        return stalled ? DocumentProcessingState.stalled : DocumentProcessingState.running;
-    }
 
     private String sha256(byte[] data) {
         try {
