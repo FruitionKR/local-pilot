@@ -6,8 +6,8 @@ x-ai-task-worker: &ai-task-worker
   command: ["python", "-m", "app.workers.task_worker"]
   environment: &ai-task-environment
     AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
-    DOCUMENT_INTERNAL_BASE_URL: ${DOCUMENT_INTERNAL_BASE_URL:-http://host.docker.internal:8080}
-    ACCESS_INTERNAL_BASE_URL: ${ACCESS_INTERNAL_BASE_URL:-http://host.docker.internal:8081}
+    DOCUMENT_INTERNAL_BASE_URL: http://host.docker.internal:8080
+    ACCESS_INTERNAL_BASE_URL: http://host.docker.internal:8081
     KAFKA_BOOTSTRAP_SERVERS: kafka:19092
     AI_TASK_EVENT_TOPIC: ${AI_TASK_EVENT_TOPIC:-ai.task.event}
     REDIS_HOST: redis
@@ -51,8 +51,8 @@ services:
     environment:
       # AI runtime 저장소는 모두 ai_db가 소유한다.
       AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
-      DOCUMENT_INTERNAL_BASE_URL: ${DOCUMENT_INTERNAL_BASE_URL:-http://host.docker.internal:8080}
-      ACCESS_INTERNAL_BASE_URL: ${ACCESS_INTERNAL_BASE_URL:-http://host.docker.internal:8081}
+      DOCUMENT_INTERNAL_BASE_URL: http://host.docker.internal:8080
+      ACCESS_INTERNAL_BASE_URL: http://host.docker.internal:8081
       # ai_db 스키마 적용(멱등)은 pipeline-api 기동 시에만 수행한다
       AI_DB_MIGRATION_URL: postgresql://${AI_DB_MIGRATION_USER:-ai_migration}:${AI_DB_MIGRATION_PASSWORD:-ai_migration_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -100,8 +100,8 @@ services:
     environment:
       # ingest는 ai_db와 document-svc 내부 API만 사용한다.
       AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
-      DOCUMENT_INTERNAL_BASE_URL: ${DOCUMENT_INTERNAL_BASE_URL:-http://host.docker.internal:8080}
-      ACCESS_INTERNAL_BASE_URL: ${ACCESS_INTERNAL_BASE_URL:-http://host.docker.internal:8081}
+      DOCUMENT_INTERNAL_BASE_URL: http://host.docker.internal:8080
+      ACCESS_INTERNAL_BASE_URL: http://host.docker.internal:8081
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       INGEST_COMMAND_TOPIC: ${INGEST_COMMAND_TOPIC:-ai.ingest.command}
       AI_TASK_EVENT_TOPIC: ${AI_TASK_EVENT_TOPIC:-ai.task.event}
