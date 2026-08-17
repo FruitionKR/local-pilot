@@ -3,13 +3,8 @@ package fruition.core.query.service;
 import fruition.core.chat.service.ChatEvidenceRecorder;
 import fruition.core.chat.service.ChatTurnRecorder;
 import fruition.core.chat.domain.ChatMessage;
-import fruition.core.chat.domain.ChatMessageReference;
-import fruition.core.chat.domain.ChatMessageRelatedPage;
 import fruition.core.chat.domain.ChatSession;
-import fruition.core.chat.domain.SourceRef;
 import fruition.core.chat.exception.ChatSessionNotFoundException;
-import fruition.core.chat.repository.ChatMessageReferenceRepository;
-import fruition.core.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.core.chat.repository.ChatMessageRepository;
 import fruition.core.chat.repository.ChatSessionRepository;
 import fruition.core.query.exception.PipelineQueryException;
@@ -22,7 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -33,28 +27,21 @@ import java.util.stream.Collectors;
 public class QueryService {
 
     private static final Logger log = LoggerFactory.getLogger(QueryService.class);
-    private static final String REFERENCE_TYPE_SOURCE_BLOCK = "source_block";
     private static final int MAX_RECENT_MESSAGE_CONTENT_LENGTH = 4000;
 
     private final PipelineQueryRequester pipelineQueryClient;
     private final ChatMessageRepository chatMessageRepository;
-    private final ChatMessageReferenceRepository referenceRepository;
-    private final ChatMessageRelatedPageRepository relatedPageRepository;
     private final ChatSessionRepository chatSessionRepository;
     private final ChatTurnRecorder chatTurnRecorder;
     private final ChatEvidenceRecorder chatEvidenceRecorder;
 
     public QueryService(PipelineQueryRequester pipelineQueryClient,
                         ChatMessageRepository chatMessageRepository,
-                        ChatMessageReferenceRepository referenceRepository,
-                        ChatMessageRelatedPageRepository relatedPageRepository,
                         ChatSessionRepository chatSessionRepository,
                         ChatTurnRecorder chatTurnRecorder,
                         ChatEvidenceRecorder chatEvidenceRecorder) {
         this.pipelineQueryClient = pipelineQueryClient;
         this.chatMessageRepository = chatMessageRepository;
-        this.referenceRepository = referenceRepository;
-        this.relatedPageRepository = relatedPageRepository;
         this.chatSessionRepository = chatSessionRepository;
         this.chatTurnRecorder = chatTurnRecorder;
         this.chatEvidenceRecorder = chatEvidenceRecorder;
@@ -247,9 +234,6 @@ public class QueryService {
         session.touchLastMessageAt(Instant.now());
         chatSessionRepository.save(session);
     }
-
-
-
 
     public record QueryMessageContext(
             String pairId,
