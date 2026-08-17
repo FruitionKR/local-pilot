@@ -8,10 +8,11 @@ def test_evaluator_prompt_defines_exclusive_route_order() -> None:
     prompt = DEFAULT_QUERY_EVALUATOR_PROMPT.read_text(encoding="utf-8")
 
     assert "Choose the first matching route in this exact order" in prompt
-    assert "This check applies even when no substantive answer can be produced" in prompt
+    assert prompt.index("2. `web_fallback`") < prompt.index("4. `revise_answer`")
     assert "choose `internal_web_augmented`, never `web_fallback`" in prompt
     assert "not a hallucinated answer that still needs revision" in prompt
     assert "Mandatory answer-safety gate" in prompt
+    assert "A limitation statement that the retrieved Wiki evidence does not contain" in prompt
     assert "retrieved evidence is sufficient, but" not in prompt
 
 

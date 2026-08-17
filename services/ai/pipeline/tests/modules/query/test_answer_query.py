@@ -40,6 +40,16 @@ class SemanticScoreSearch(ScoreSearch):
         return SemanticQueryEmbedding(model_name="test-model", vector=[1.0, 0.0])
 
 
+class RecordingSemanticScoreSearch(RecordingScoreSearch):
+    def __init__(self, scores_by_title: dict[str, float]) -> None:
+        super().__init__(scores_by_title)
+        self.embedding_queries: list[str] = []
+
+    def embed_query(self, query: str) -> SemanticQueryEmbedding:
+        self.embedding_queries.append(query)
+        return SemanticQueryEmbedding(model_name="test-model", vector=[1.0, 0.0])
+
+
 class EmptyTextSearch:
     def score(self, query: str, documents: list[str]) -> list[float]:
         return [0.0 for _ in documents]
@@ -302,7 +312,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             [SemanticQueryEmbedding(model_name="test-model", vector=[1.0, 0.0])],
         )
 
-    def test_uses_sixty_forty_hybrid_weight_for_page_ranking(self) -> None:
+    def test_uses_dense_score_for_page_ranking(self) -> None:
         pages = [
             source_page("source:semantic", "Semantic Candidate"),
             source_page("source:keyword", "Keyword Candidate"),
@@ -332,7 +342,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
 
         result = use_case.execute("정확한검색어", workspace_id="ws_test")
 
-        self.assertEqual(result.related_pages[0].page.id, "source:keyword")
+        self.assertEqual(result.related_pages[0].page.id, "source:semantic")
 
     def test_loads_neighbor_page_outside_initial_candidate_pool(self) -> None:
         pages = [
@@ -579,12 +589,6 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
                 link_type="source_related_to",
                 confidence=0.92,
             ),
-            WikiPageLink(
-                from_page_id="source:b",
-                to_page_id="concept:rag",
-                link_type="source_mentions_concept",
-                confidence=0.91,
-            ),
         ]
         use_case = AnswerQueryUseCase(
             wiki_repository=InMemoryWikiRepository(pages, links),
@@ -698,19 +702,20 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertIn("제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다.", result.answer.content)
         self.assertNotIn("Transformer", result.answer.content)
 
-    def test_uses_rewritten_query_for_retrieval(self) -> None:
+    def test_uses_original_question_for_dense_and_rewrite_for_text_retrieval(self) -> None:
         pages = [
             source_page("source:attention", "Lecture Attention"),
             concept_page("concept:self-attention", "Self Attention"),
         ]
-        embedding_search = RecordingScoreSearch(
+        repository = RecordingCandidateRepository(pages, [])
+        embedding_search = RecordingSemanticScoreSearch(
             {
                 "Lecture Attention": 0.90,
                 "Self Attention": 0.95,
             }
         )
         use_case = AnswerQueryUseCase(
-            wiki_repository=InMemoryWikiRepository(pages, []),
+            wiki_repository=repository,
             embedding_search=embedding_search,
             text_search=EmptyTextSearch(),
             answer_generator=RecordingAnswerGenerator(),
@@ -719,8 +724,30 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
 
         use_case.execute("토큰끼리 서로 보는 구조가 뭐야?", workspace_id="ws_test")
 
+        self.assertEqual(
+            embedding_search.embedding_queries,
+            ["토큰끼리 서로 보는 구조가 뭐야?"],
+        )
         self.assertTrue(embedding_search.queries)
-        self.assertTrue(all(query == "self attention token" for query in embedding_search.queries))
+        self.assertTrue(
+            all(query == "토큰끼리 서로 보는 구조가 뭐야?" for query in embedding_search.queries)
+        )
+        self.assertEqual(repository.candidate_calls[0][1], "self attention token")
+
+    def test_uses_rewritten_query_for_text_only_page_scoring(self) -> None:
+        pages = [source_page("source:attention", "Self Attention")]
+        text_search = RecordingScoreSearch({"Self Attention": 0.95})
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=text_search,
+            text_search=text_search,
+            answer_generator=RecordingAnswerGenerator(),
+            query_rewriter=FixedQueryRewriter("self attention token"),
+        )
+
+        use_case.execute("토큰끼리 서로 보는 구조가 뭐야?", workspace_id="ws_test")
+
+        self.assertEqual(set(text_search.queries), {"self attention token"})
 
     def test_uses_conversation_context_to_resolve_follow_up_question_for_retrieval(self) -> None:
         pages = [
@@ -898,6 +925,30 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.web_search.result_count, 0)
         self.assertEqual(result.web_search.error_code, "web_search_failed")
         self.assertNotIn("provider detail must not reach", result.answer.content)
+
+    def test_evaluator_web_route_returns_limitation_when_web_search_has_no_answer(self) -> None:
+        for route in ("web_fallback", "internal_web_augmented"):
+            for web_search in (FailingWebSearch(), FakeWebSearch([])):
+                with self.subTest(route=route, web_search=type(web_search).__name__):
+                    use_case = AnswerQueryUseCase(
+                        wiki_repository=InMemoryWikiRepository([source_page("source:wiki", "Wiki Source")], []),
+                        embedding_search=ScoreSearch({"Wiki Source": 0.95}),
+                        text_search=EmptyTextSearch(),
+                        answer_generator=RecordingAnswerGenerator("근거 없이 만든 외부 사실입니다. [1]"),
+                        query_evaluator=FakeQueryEvaluator(
+                            QueryEvaluation(
+                                route=route,
+                                evidence_relevance=0.0,
+                                web_query="외부 사실",
+                            )
+                        ),
+                        web_search=web_search,
+                    )
+
+                    result = use_case.execute("외부 사실을 알려줘.", workspace_id="ws_test")
+
+                    self.assertNotIn("근거 없이 만든 외부 사실", result.answer.content)
+                    self.assertTrue(result.web_search.executed)
 
     def test_query_evaluator_reviews_generated_answer_and_can_keep_internal_answer_when_seed_score_is_low(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]

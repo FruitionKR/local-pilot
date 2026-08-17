@@ -33,6 +33,9 @@ def test_intent_prompts_require_canonical_tool_sets() -> None:
         assert "complete canonical tool list" in prompt
         assert "never choose a task-specific subset" in prompt
         assert "Do not return `ambiguous` merely because" in prompt
+        assert "Classify the reusable action that the finished Skill will perform" in prompt
+        assert '"고객에게 이메일을 자동 발송하는 규칙을 만들어줘" -> `unsupported`' in prompt
+        assert 'never the string `"null"`' in prompt
 
 
 def test_authoring_prompt_requires_complete_preserve_proposal() -> None:
