@@ -28,48 +28,8 @@ Wiki 스키마 조회·초안·미리보기·활성화 API다.
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `JsonNode` / `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
 
-[상세 계약](#detail-get-api-workspaces-workspace-id-wiki-schema-active)
-
-<a id="summary-post-api-workspaces-workspace-id-wiki-schema-drafts"></a>
-### `POST /api/workspaces/{workspace_id}/wiki-schema/drafts`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 검토할 Wiki 생성 규칙을 초안 상태로 저장합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `WikiSchemaDraftRequest` |
-| 출력 | `200` 초안 생성 성공 — `WikiSchemaDraftResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 Schema 정의 — `JsonNode` / `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `JsonNode` / `ErrorResponse`<br>`422` Schema 요청 검증 실패 — `JsonNode` / `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-wiki-schema-drafts)
-
-<a id="summary-post-api-workspaces-workspace-id-wiki-schema-preview"></a>
-### `POST /api/workspaces/{workspace_id}/wiki-schema/preview`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Schema 규칙을 저장하지 않고 적용해 예상 Wiki 구조를 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `WikiSchemaPreviewRequest` |
-| 출력 | `200` 미리보기 생성 성공 — `WikiSchemaPreviewResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 Schema 또는 입력 — `JsonNode` / `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `JsonNode` / `ErrorResponse`<br>`422` Schema 요청 검증 실패 — `JsonNode` / `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-wiki-schema-preview)
-
-<a id="summary-post-api-workspaces-workspace-id-wiki-schema-schema-id-activate"></a>
-### `POST /api/workspaces/{workspace_id}/wiki-schema/{schema_id}/activate`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 선택한 Wiki Schema ID의 활성화를 요청합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `schema_id`: `string` |
-| 출력 | `200` 활성화 성공 — `WikiSchemaResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` Schema 또는 워크스페이스를 찾을 수 없음 — `JsonNode` / `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-wiki-schema-schema-id-activate)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-wiki-schema-active"></a>
 ### `GET /api/workspaces/{workspace_id}/wiki-schema/active` 상세
@@ -193,6 +153,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-s
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikischema/controller/WikiSchemaController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getActive`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-wiki-schema-drafts"></a>
+### `POST /api/workspaces/{workspace_id}/wiki-schema/drafts`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 검토할 Wiki 생성 규칙을 초안 상태로 저장합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `WikiSchemaDraftRequest` |
+| 출력 | `200` 초안 생성 성공 — `WikiSchemaDraftResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 Schema 정의 — `JsonNode` / `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `JsonNode` / `ErrorResponse`<br>`422` Schema 요청 검증 실패 — `JsonNode` / `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-wiki-schema-drafts"></a>
 ### `POST /api/workspaces/{workspace_id}/wiki-schema/drafts` 상세
@@ -332,6 +308,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikischema/controller/WikiSchemaController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: createDraft`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-wiki-schema-preview"></a>
+### `POST /api/workspaces/{workspace_id}/wiki-schema/preview`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Schema 규칙을 저장하지 않고 적용해 예상 Wiki 구조를 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `WikiSchemaPreviewRequest` |
+| 출력 | `200` 미리보기 생성 성공 — `WikiSchemaPreviewResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 Schema 또는 입력 — `JsonNode` / `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `JsonNode` / `ErrorResponse`<br>`422` Schema 요청 검증 실패 — `JsonNode` / `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-wiki-schema-preview"></a>
 ### `POST /api/workspaces/{workspace_id}/wiki-schema/preview` 상세
 
@@ -452,6 +444,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikischema/controller/WikiSchemaController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: preview`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-wiki-schema-schema-id-activate"></a>
+### `POST /api/workspaces/{workspace_id}/wiki-schema/{schema_id}/activate`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 선택한 Wiki Schema ID의 활성화를 요청합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `schema_id`: `string` |
+| 출력 | `200` 활성화 성공 — `WikiSchemaResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` Schema 또는 워크스페이스를 찾을 수 없음 — `JsonNode` / `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-wiki-schema-schema-id-activate"></a>
 ### `POST /api/workspaces/{workspace_id}/wiki-schema/{schema_id}/activate` 상세
@@ -576,3 +584,5 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikischema/controller/WikiSchemaController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: activate`)
+
+</details>

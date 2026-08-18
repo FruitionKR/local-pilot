@@ -34,126 +34,8 @@
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
-[상세 계약](#detail-get-api-workspaces-workspace-id-agent-runs-run-id)
-
-<a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-approve"></a>
-### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/approve`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 현재 AgentRun 계획을 승인합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string`<br>**Body** — `AgentRunApproveRequest` |
-| 출력 | `200` 성공 — `JsonNode` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-agent-runs-run-id-approve)
-
-<a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-cancel"></a>
-### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/cancel`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 현재 AgentRun을 취소합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
-| 출력 | `200` 성공 — `JsonNode` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-agent-runs-run-id-cancel)
-
-<a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-reject"></a>
-### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/reject`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 현재 AgentRun 계획을 거절합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
-| 출력 | `200` 성공 — `JsonNode` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-agent-runs-run-id-reject)
-
-<a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-revise"></a>
-### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/revise`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 현재 AgentRun에 새 계획을 요청합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string`<br>**Body** — `AgentRunReviseRequest` |
-| 출력 | `200` 성공 — `JsonNode` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-agent-runs-run-id-revise)
-
-<a id="summary-post-api-workspaces-workspace-id-agent-turn"></a>
-### `POST /api/workspaces/{workspace_id}/agent/turn`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 사용자 요청을 비동기 Agent 실행 대기열에 등록합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `AgentTurnRequest` |
-| 출력 | `202` Agent 실행이 대기열에 등록됨 — `AgentTurnResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 문서 version 충돌 — `ErrorResponse`<br>`423` 다른 사용자가 문서를 편집 중 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-agent-turn)
-
-<a id="summary-get-api-workspaces-workspace-id-agent-turn-run-id"></a>
-### `GET /api/workspaces/{workspace_id}/agent/turn/{run_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 워크스페이스의 Agent 실행 결과를 조회합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
-| 출력 | `200` 결과 조회 성공 — `AgentTurnResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` Agent run ID 형식이 올바르지 않음 — `ErrorResponse`<br>`404` 실행 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`503` Agent 상태 파이프라인 사용 불가 — `JsonNode` / `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-agent-turn-run-id)
-
-<a id="summary-get-api-workspaces-workspace-id-agent-turn-run-id-events"></a>
-### `GET /api/workspaces/{workspace_id}/agent/turn/{run_id}/events`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Agent turn의 진행 상황과 최종 결과를 Server-Sent Events로 전달합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
-| 출력 | `200` SSE 구독 시작 — `string` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십과 해당 run의 소유를 검증한다.<br>그 밖의 조건은 상세 권한 규칙 참고 |
-| 주요 오류 | `400` Agent run ID 형식이 올바르지 않음 — `ErrorResponse`<br>`404` 실행 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-agent-turn-run-id-events)
-
-<a id="summary-post-internal-agent-tools-execute-tool-name"></a>
-### `POST /internal/agent/tools/execute/{tool_name}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 승인된 Agent Tool 변경 작업을 실행합니다. |
-| 입력 | **Path** — `tool_name`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `AgentToolExecuteRequest` |
-| 출력 | `200` 성공 — `object` |
-| 조건 | 인증 필요<br>`X-Agent-Service-Token`을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `401` Agent 서비스 인증 토큰 누락 또는 불일치 |
-
-[상세 계약](#detail-post-internal-agent-tools-execute-tool-name)
-
-<a id="summary-post-internal-agent-tools-read-tool-name"></a>
-### `POST /internal/agent/tools/read/{tool_name}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 승인된 Agent Tool 읽기 작업을 실행합니다. |
-| 입력 | **Path** — `tool_name`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `AgentToolReadRequest` |
-| 출력 | `200` 성공 — `object` |
-| 조건 | 인증 필요<br>`X-Agent-Service-Token`을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `401` Agent 서비스 인증 토큰 누락 또는 불일치 |
-
-[상세 계약](#detail-post-internal-agent-tools-read-tool-name)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-agent-runs-run-id"></a>
 ### `GET /api/workspaces/{workspace_id}/agent/runs/{run_id}` 상세
@@ -220,6 +102,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getRun`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-approve"></a>
+### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/approve`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 현재 AgentRun 계획을 승인합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string`<br>**Body** — `AgentRunApproveRequest` |
+| 출력 | `200` 성공 — `JsonNode` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | 공통 오류 계약 적용 |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-agent-runs-run-id-approve"></a>
 ### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/approve` 상세
@@ -296,6 +194,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: approve`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-cancel"></a>
+### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/cancel`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 현재 AgentRun을 취소합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
+| 출력 | `200` 성공 — `JsonNode` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | 공통 오류 계약 적용 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-agent-runs-run-id-cancel"></a>
 ### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/cancel` 상세
 
@@ -362,6 +276,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: cancel`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-reject"></a>
+### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/reject`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 현재 AgentRun 계획을 거절합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
+| 출력 | `200` 성공 — `JsonNode` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | 공통 오류 계약 적용 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-agent-runs-run-id-reject"></a>
 ### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/reject` 상세
 
@@ -427,6 +357,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: reject`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-revise"></a>
+### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/revise`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 현재 AgentRun에 새 계획을 요청합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string`<br>**Body** — `AgentRunReviseRequest` |
+| 출력 | `200` 성공 — `JsonNode` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | 공통 오류 계약 적용 |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-agent-runs-run-id-revise"></a>
 ### `POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/revise` 상세
@@ -501,6 +447,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: revise`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-agent-turn"></a>
+### `POST /api/workspaces/{workspace_id}/agent/turn`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 사용자 요청을 비동기 Agent 실행 대기열에 등록합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `AgentTurnRequest` |
+| 출력 | `202` Agent 실행이 대기열에 등록됨 — `AgentTurnResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 문서 version 충돌 — `ErrorResponse`<br>`423` 다른 사용자가 문서를 편집 중 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-agent-turn"></a>
 ### `POST /api/workspaces/{workspace_id}/agent/turn` 상세
@@ -675,6 +637,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: turn`)
 
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-agent-turn-run-id"></a>
+### `GET /api/workspaces/{workspace_id}/agent/turn/{run_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 워크스페이스의 Agent 실행 결과를 조회합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
+| 출력 | `200` 결과 조회 성공 — `AgentTurnResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` Agent run ID 형식이 올바르지 않음 — `ErrorResponse`<br>`404` 실행 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`503` Agent 상태 파이프라인 사용 불가 — `JsonNode` / `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-api-workspaces-workspace-id-agent-turn-run-id"></a>
 ### `GET /api/workspaces/{workspace_id}/agent/turn/{run_id}` 상세
 
@@ -776,6 +754,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getTurn`)
 
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-agent-turn-run-id-events"></a>
+### `GET /api/workspaces/{workspace_id}/agent/turn/{run_id}/events`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Agent turn의 진행 상황과 최종 결과를 Server-Sent Events로 전달합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
+| 출력 | `200` SSE 구독 시작 — `string` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십과 해당 run의 소유를 검증한다.<br>그 밖의 조건은 상세 권한 규칙 참고 |
+| 주요 오류 | `400` Agent run ID 형식이 올바르지 않음 — `ErrorResponse`<br>`404` 실행 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-api-workspaces-workspace-id-agent-turn-run-id-events"></a>
 ### `GET /api/workspaces/{workspace_id}/agent/turn/{run_id}/events` 상세
 
@@ -869,6 +863,22 @@ string
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: subscribeTurnEvents`)
 
+</details>
+
+<a id="summary-post-internal-agent-tools-execute-tool-name"></a>
+### `POST /internal/agent/tools/execute/{tool_name}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 승인된 Agent Tool 변경 작업을 실행합니다. |
+| 입력 | **Path** — `tool_name`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `AgentToolExecuteRequest` |
+| 출력 | `200` 성공 — `object` |
+| 조건 | 인증 필요<br>`X-Agent-Service-Token`을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `401` Agent 서비스 인증 토큰 누락 또는 불일치 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-internal-agent-tools-execute-tool-name"></a>
 ### `POST /internal/agent/tools/execute/{tool_name}` 상세
 
@@ -954,6 +964,22 @@ curl -X POST "$DOCUMENT/internal/agent/tools/execute/<value>" \
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentToolController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: execute`)
 
+</details>
+
+<a id="summary-post-internal-agent-tools-read-tool-name"></a>
+### `POST /internal/agent/tools/read/{tool_name}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 승인된 Agent Tool 읽기 작업을 실행합니다. |
+| 입력 | **Path** — `tool_name`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `AgentToolReadRequest` |
+| 출력 | `200` 성공 — `object` |
+| 조건 | 인증 필요<br>`X-Agent-Service-Token`을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `401` Agent 서비스 인증 토큰 누락 또는 불일치 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-internal-agent-tools-read-tool-name"></a>
 ### `POST /internal/agent/tools/read/{tool_name}` 상세
 
@@ -1033,3 +1059,5 @@ curl -X POST "$DOCUMENT/internal/agent/tools/read/<value>" \
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentToolController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: read`)
+
+</details>

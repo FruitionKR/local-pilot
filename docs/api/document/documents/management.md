@@ -32,100 +32,8 @@
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>필터링: `query`<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`500` 서버 내부 오류 — `ErrorResponse` |
 
-[상세 계약](#detail-get-api-workspaces-workspace-id-documents)
-
-<a id="summary-post-api-workspaces-workspace-id-documents"></a>
-### `POST /api/workspaces/{workspace_id}/documents`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | PDF 또는 Markdown 파일을 업로드합니다. Markdown은 편집 상태와 처리 큐를 생성하고, PDF는 읽기 전용 원본으로만 저장합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Query** — `folder_id`(선택): `string`<br>**Body** — `file` |
-| 출력 | `201` 업로드 성공 — `DocumentUploadResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 파일 없음 또는 잘못된 요청 — `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Idempotency-Key 충돌 — `ErrorResponse`<br>`415` 지원하지 않는 파일 형식 — `ErrorResponse`<br>`500` 서버 내부 오류 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-documents)
-
-<a id="summary-post-api-workspaces-workspace-id-documents-markdown"></a>
-### `POST /api/workspaces/{workspace_id}/documents/markdown`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 표시 이름과 전체 Markdown 본문으로 즉시 편집 가능한 문서를 생성합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `MarkdownDocumentCreateRequest` |
-| 출력 | `201` 생성 성공 또는 멱등 재요청 — `DocumentUploadResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 본문 또는 Idempotency-Key — `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Idempotency-Key 충돌 — `ErrorResponse`<br>`413` Markdown 5MB 초과 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-documents-markdown)
-
-<a id="summary-get-api-workspaces-workspace-id-documents-document-id"></a>
-### `GET /api/workspaces/{workspace_id}/documents/{document_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 특정 문서의 상세 정보를 반환합니다. 연결된 Wiki 페이지 목록이 포함됩니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `200` 상세 조회 성공 — `DocumentDetailResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`500` 서버 내부 오류 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-documents-document-id)
-
-<a id="summary-post-api-workspaces-workspace-id-documents-document-id-duplicate"></a>
-### `POST /api/workspaces/{workspace_id}/documents/{document_id}/duplicate`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 문서 소유자가 최신 Markdown 편집본을 같은 부모의 마지막 위치에 새 문서로 복제합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `Idempotency-Key`: `string` |
-| 출력 | `201` 복제 성공 또는 멱등 재요청 — `DocumentDuplicateResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 Idempotency-Key — `ErrorResponse`<br>`403` 문서 소유자가 아니거나 편집 문서가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Idempotency-Key 충돌 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-documents-document-id-duplicate)
-
-<a id="summary-patch-api-workspaces-workspace-id-documents-document-id-position"></a>
-### `PATCH /api/workspaces/{workspace_id}/documents/{document_id}/position`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 문서를 대상 폴더와 정렬 위치로 이동합니다. base version과 Idempotency-Key로 동시 변경을 검증합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `DocumentPositionRequest` |
-| 출력 | `200` 이동 성공 또는 멱등 재요청 — `DocumentPositionResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 위치 또는 version, 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`404` 문서, 대상 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
-
-[상세 계약](#detail-patch-api-workspaces-workspace-id-documents-document-id-position)
-
-<a id="summary-patch-api-workspaces-workspace-id-documents-document-id-rename"></a>
-### `PATCH /api/workspaces/{workspace_id}/documents/{document_id}/rename`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Notion의 page title처럼 표시 이름만 변경하며 본문과 Wiki 제목은 유지합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Body** — `DocumentRenameRequest` |
-| 출력 | `200` 이름 변경 성공 — `DocumentRenameResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 유효하지 않은 파일명 — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 문서 version 충돌 — `ErrorResponse` |
-
-[상세 계약](#detail-patch-api-workspaces-workspace-id-documents-document-id-rename)
-
-<a id="summary-post-internal-workspaces-workspace-id-initial-note"></a>
-### `POST /internal/workspaces/{workspace_id}/initial-note`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 새 워크스페이스에 기본 Markdown 문서를 생성합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `InitialNoteRequest` |
-| 출력 | `204` 생성 완료 — 본문 없음 |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
-
-[상세 계약](#detail-post-internal-workspaces-workspace-id-initial-note)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-documents"></a>
 ### `GET /api/workspaces/{workspace_id}/documents` 상세
@@ -232,6 +140,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: list`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-documents"></a>
+### `POST /api/workspaces/{workspace_id}/documents`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | PDF 또는 Markdown 파일을 업로드합니다. Markdown은 편집 상태와 처리 큐를 생성하고, PDF는 읽기 전용 원본으로만 저장합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Query** — `folder_id`(선택): `string`<br>**Body** — `file` |
+| 출력 | `201` 업로드 성공 — `DocumentUploadResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 파일 없음 또는 잘못된 요청 — `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Idempotency-Key 충돌 — `ErrorResponse`<br>`415` 지원하지 않는 파일 형식 — `ErrorResponse`<br>`500` 서버 내부 오류 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-documents"></a>
 ### `POST /api/workspaces/{workspace_id}/documents` 상세
@@ -348,6 +272,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: upload`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-documents-markdown"></a>
+### `POST /api/workspaces/{workspace_id}/documents/markdown`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 표시 이름과 전체 Markdown 본문으로 즉시 편집 가능한 문서를 생성합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `MarkdownDocumentCreateRequest` |
+| 출력 | `201` 생성 성공 또는 멱등 재요청 — `DocumentUploadResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 본문 또는 Idempotency-Key — `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Idempotency-Key 충돌 — `ErrorResponse`<br>`413` Markdown 5MB 초과 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-documents-markdown"></a>
 ### `POST /api/workspaces/{workspace_id}/documents/markdown` 상세
@@ -466,6 +406,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: createMarkdown`)
 
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-documents-document-id"></a>
+### `GET /api/workspaces/{workspace_id}/documents/{document_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 특정 문서의 상세 정보를 반환합니다. 연결된 Wiki 페이지 목록이 포함됩니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
+| 출력 | `200` 상세 조회 성공 — `DocumentDetailResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`500` 서버 내부 오류 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-api-workspaces-workspace-id-documents-document-id"></a>
 ### `GET /api/workspaces/{workspace_id}/documents/{document_id}` 상세
 
@@ -571,6 +527,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getById`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-documents-document-id-duplicate"></a>
+### `POST /api/workspaces/{workspace_id}/documents/{document_id}/duplicate`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 문서 소유자가 최신 Markdown 편집본을 같은 부모의 마지막 위치에 새 문서로 복제합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `Idempotency-Key`: `string` |
+| 출력 | `201` 복제 성공 또는 멱등 재요청 — `DocumentDuplicateResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 Idempotency-Key — `ErrorResponse`<br>`403` 문서 소유자가 아니거나 편집 문서가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Idempotency-Key 충돌 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-documents-document-id-duplicate"></a>
 ### `POST /api/workspaces/{workspace_id}/documents/{document_id}/duplicate` 상세
@@ -678,6 +650,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: duplicate`)
 
+</details>
+
+<a id="summary-patch-api-workspaces-workspace-id-documents-document-id-position"></a>
+### `PATCH /api/workspaces/{workspace_id}/documents/{document_id}/position`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 문서를 대상 폴더와 정렬 위치로 이동합니다. base version과 Idempotency-Key로 동시 변경을 검증합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `DocumentPositionRequest` |
+| 출력 | `200` 이동 성공 또는 멱등 재요청 — `DocumentPositionResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 위치 또는 version, 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`404` 문서, 대상 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-patch-api-workspaces-workspace-id-documents-document-id-position"></a>
 ### `PATCH /api/workspaces/{workspace_id}/documents/{document_id}/position` 상세
 
@@ -782,6 +770,22 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docu
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentPositionController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: move_1`)
+
+</details>
+
+<a id="summary-patch-api-workspaces-workspace-id-documents-document-id-rename"></a>
+### `PATCH /api/workspaces/{workspace_id}/documents/{document_id}/rename`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Notion의 page title처럼 표시 이름만 변경하며 본문과 Wiki 제목은 유지합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Body** — `DocumentRenameRequest` |
+| 출력 | `200` 이름 변경 성공 — `DocumentRenameResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 유효하지 않은 파일명 — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 문서 version 충돌 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-patch-api-workspaces-workspace-id-documents-document-id-rename"></a>
 ### `PATCH /api/workspaces/{workspace_id}/documents/{document_id}/rename` 상세
@@ -890,6 +894,22 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docu
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: rename_2`)
 
+</details>
+
+<a id="summary-post-internal-workspaces-workspace-id-initial-note"></a>
+### `POST /internal/workspaces/{workspace_id}/initial-note`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 새 워크스페이스에 기본 Markdown 문서를 생성합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `InitialNoteRequest` |
+| 출력 | `204` 생성 완료 — 본문 없음 |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-internal-workspaces-workspace-id-initial-note"></a>
 ### `POST /internal/workspaces/{workspace_id}/initial-note` 상세
 
@@ -958,3 +978,5 @@ curl -X POST "$DOCUMENT/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/InternalDocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: createInitialNote`)
+
+</details>

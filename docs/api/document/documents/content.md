@@ -33,113 +33,8 @@
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | `404` asset 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
 
-[상세 계약](#detail-get-api-workspaces-workspace-id-assets-asset-id-content)
-
-<a id="summary-post-api-workspaces-workspace-id-documents-document-id-edit-lock"></a>
-### `POST /api/workspaces/{workspace_id}/documents/{document_id}/edit-lock`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 편집기 진입 시 호출한다. 비었거나 만료됐거나 본인 보유면 잠금을 부여(200)한다. 다른 사용자가 편집 중이면 423과 보유자 정보를 반환한다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `200` 잠금 획득/갱신 — `EditLockResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`423` 다른 사용자가 편집 중 — `EditLockResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-documents-document-id-edit-lock)
-
-<a id="summary-delete-api-workspaces-workspace-id-documents-document-id-edit-lock"></a>
-### `DELETE /api/workspaces/{workspace_id}/documents/{document_id}/edit-lock`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 편집기 종료 시 호출한다. 보유자 본인의 잠금만 해제하며 멱등이다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `200` 성공 |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
-
-[상세 계약](#detail-delete-api-workspaces-workspace-id-documents-document-id-edit-lock)
-
-<a id="summary-post-api-workspaces-workspace-id-documents-document-id-edit-lock-heartbeat"></a>
-### `POST /api/workspaces/{workspace_id}/documents/{document_id}/edit-lock/heartbeat`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 편집 중 주기적으로 호출해 잠금을 연장한다. 보유자가 아니거나 만료됐으면 409. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `200` 잠금 연장 — `EditLockResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `409` 잠금 상실(만료/타인 보유) — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-documents-document-id-edit-lock-heartbeat)
-
-<a id="summary-get-api-workspaces-workspace-id-documents-document-id-blocks"></a>
-### `GET /api/workspaces/{workspace_id}/documents/{document_id}/blocks`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 원본 문서를 block 단위로 나눈 텍스트 목록을 반환합니다. 답변 인용 클릭 시 원본 block 하이라이트에 사용됩니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `200` 조회 성공 — `DocumentBlocksResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-documents-document-id-blocks)
-
-<a id="summary-put-api-workspaces-workspace-id-documents-document-id-content"></a>
-### `PUT /api/workspaces/{workspace_id}/documents/{document_id}/content`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 전체 Markdown과 신규 이미지를 저장합니다. base_revision이 현재 편집 revision과 일치할 때만 반영하며 revision_write_id 재시도는 기존 결과를 반환합니다. 이미지 포함 저장은 metadata part를 사용합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Body** — `apply_operation_id`, `base_revision`, `markdown`, `metadata`, `revision_write_id`, `source` |
-| 출력 | `200` 저장 성공 또는 동일 본문 no-op — `DocumentContentSaveResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 Markdown, base_revision 또는 revision_write_id — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 편집 revision 또는 revision_write_id 충돌 — `ErrorResponse`<br>`413` Markdown 5MB 또는 이미지 제한 초과 — `ErrorResponse`<br>`415` 지원하지 않는 이미지 형식 — `ErrorResponse` |
-
-[상세 계약](#detail-put-api-workspaces-workspace-id-documents-document-id-content)
-
-<a id="summary-get-api-workspaces-workspace-id-documents-document-id-export"></a>
-### `GET /api/workspaces/{workspace_id}/documents/{document_id}/export`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 최신 Markdown 편집본을 내보냅니다. 관리 이미지가 있으면 이미지와 Markdown을 ZIP으로 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `200` Markdown 다운로드 — `string` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` workspace, Markdown 문서 또는 편집 상태를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-documents-document-id-export)
-
-<a id="summary-get-api-workspaces-workspace-id-documents-document-id-original"></a>
-### `GET /api/workspaces/{workspace_id}/documents/{document_id}/original`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | MinIO에 저장된 원본 파일을 스트리밍합니다. PDF는 inline, 그 외는 attachment로 반환됩니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `200` 원본 파일 반환 — `string` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 문서, 원본 파일 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-documents-document-id-original)
-
-<a id="summary-get-internal-documents-document-id-pipeline-source"></a>
-### `GET /internal/documents/{document_id}/pipeline-source`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | AI pipeline이 사용할 문서 원본 위치와 소유 범위를 조회합니다. |
-| 입력 | **Path** — `document_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` |
-| 출력 | `200` 성공 — `object` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
-
-[상세 계약](#detail-get-internal-documents-document-id-pipeline-source)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-assets-asset-id-content"></a>
 ### `GET /api/workspaces/{workspace_id}/assets/{asset_id}/content` 상세
@@ -211,6 +106,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/assets
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentAssetController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getContent`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-documents-document-id-edit-lock"></a>
+### `POST /api/workspaces/{workspace_id}/documents/{document_id}/edit-lock`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 편집기 진입 시 호출한다. 비었거나 만료됐거나 본인 보유면 잠금을 부여(200)한다. 다른 사용자가 편집 중이면 423과 보유자 정보를 반환한다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
+| 출력 | `200` 잠금 획득/갱신 — `EditLockResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`423` 다른 사용자가 편집 중 — `EditLockResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-documents-document-id-edit-lock"></a>
 ### `POST /api/workspaces/{workspace_id}/documents/{document_id}/edit-lock` 상세
@@ -297,6 +208,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentEditLockController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: acquire`)
 
+</details>
+
+<a id="summary-delete-api-workspaces-workspace-id-documents-document-id-edit-lock"></a>
+### `DELETE /api/workspaces/{workspace_id}/documents/{document_id}/edit-lock`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 편집기 종료 시 호출한다. 보유자 본인의 잠금만 해제하며 멱등이다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
+| 출력 | `200` 성공 |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | 공통 오류 계약 적용 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-delete-api-workspaces-workspace-id-documents-document-id-edit-lock"></a>
 ### `DELETE /api/workspaces/{workspace_id}/documents/{document_id}/edit-lock` 상세
 
@@ -357,6 +284,22 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/doc
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentEditLockController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: release`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-documents-document-id-edit-lock-heartbeat"></a>
+### `POST /api/workspaces/{workspace_id}/documents/{document_id}/edit-lock/heartbeat`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 편집 중 주기적으로 호출해 잠금을 연장한다. 보유자가 아니거나 만료됐으면 409. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
+| 출력 | `200` 잠금 연장 — `EditLockResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `409` 잠금 상실(만료/타인 보유) — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-documents-document-id-edit-lock-heartbeat"></a>
 ### `POST /api/workspaces/{workspace_id}/documents/{document_id}/edit-lock/heartbeat` 상세
@@ -440,6 +383,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentEditLockController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: heartbeat`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-documents-document-id-blocks"></a>
+### `GET /api/workspaces/{workspace_id}/documents/{document_id}/blocks`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 원본 문서를 block 단위로 나눈 텍스트 목록을 반환합니다. 답변 인용 클릭 시 원본 block 하이라이트에 사용됩니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
+| 출력 | `200` 조회 성공 — `DocumentBlocksResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-documents-document-id-blocks"></a>
 ### `GET /api/workspaces/{workspace_id}/documents/{document_id}/blocks` 상세
@@ -531,6 +490,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: blocks`)
+
+</details>
+
+<a id="summary-put-api-workspaces-workspace-id-documents-document-id-content"></a>
+### `PUT /api/workspaces/{workspace_id}/documents/{document_id}/content`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 전체 Markdown과 신규 이미지를 저장합니다. base_revision이 현재 편집 revision과 일치할 때만 반영하며 revision_write_id 재시도는 기존 결과를 반환합니다. 이미지 포함 저장은 metadata part를 사용합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Body** — `apply_operation_id`, `base_revision`, `markdown`, `metadata`, `revision_write_id`, `source` |
+| 출력 | `200` 저장 성공 또는 동일 본문 no-op — `DocumentContentSaveResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 Markdown, base_revision 또는 revision_write_id — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 편집 revision 또는 revision_write_id 충돌 — `ErrorResponse`<br>`413` Markdown 5MB 또는 이미지 제한 초과 — `ErrorResponse`<br>`415` 지원하지 않는 이미지 형식 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-put-api-workspaces-workspace-id-documents-document-id-content"></a>
 ### `PUT /api/workspaces/{workspace_id}/documents/{document_id}/content` 상세
@@ -663,6 +638,22 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: saveContent`)
 
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-documents-document-id-export"></a>
+### `GET /api/workspaces/{workspace_id}/documents/{document_id}/export`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 최신 Markdown 편집본을 내보냅니다. 관리 이미지가 있으면 이미지와 Markdown을 ZIP으로 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
+| 출력 | `200` Markdown 다운로드 — `string` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` workspace, Markdown 문서 또는 편집 상태를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-api-workspaces-workspace-id-documents-document-id-export"></a>
 ### `GET /api/workspaces/{workspace_id}/documents/{document_id}/export` 상세
 
@@ -737,6 +728,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: export`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-documents-document-id-original"></a>
+### `GET /api/workspaces/{workspace_id}/documents/{document_id}/original`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | MinIO에 저장된 원본 파일을 스트리밍합니다. PDF는 inline, 그 외는 attachment로 반환됩니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
+| 출력 | `200` 원본 파일 반환 — `string` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 문서, 원본 파일 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-documents-document-id-original"></a>
 ### `GET /api/workspaces/{workspace_id}/documents/{document_id}/original` 상세
@@ -813,6 +820,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getOriginal`)
 
+</details>
+
+<a id="summary-get-internal-documents-document-id-pipeline-source"></a>
+### `GET /internal/documents/{document_id}/pipeline-source`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | AI pipeline이 사용할 문서 원본 위치와 소유 범위를 조회합니다. |
+| 입력 | **Path** — `document_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` |
+| 출력 | `200` 성공 — `object` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-internal-documents-document-id-pipeline-source"></a>
 ### `GET /internal/documents/{document_id}/pipeline-source` 상세
 
@@ -880,3 +903,5 @@ curl -X GET "$DOCUMENT/internal/documents/<value>/pipeline-source" \
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/InternalDocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: findPipelineSource`)
+
+</details>

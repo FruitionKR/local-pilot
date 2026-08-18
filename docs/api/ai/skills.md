@@ -32,100 +32,8 @@ Skill 조회·작성·게시·설정 내부 API다.
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>필터링: `workspace_id`, `user_id`<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
 | 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
-[상세 계약](#detail-get-skills)
-
-<a id="summary-post-skills-author"></a>
-### `POST /skills/author`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 사용자 요청과 참조 문서로 Skill 초안을 작성합니다. |
-| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `SkillAuthoringRequest` |
-| 출력 | `200` 성공 — `SkillAuthoringResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-post-skills-author)
-
-<a id="summary-post-skills-author-publish"></a>
-### `POST /skills/author/publish`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 검토한 Skill 초안을 게시합니다. |
-| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `PublishAuthoredSkillRequest` |
-| 출력 | `200` 성공 — `SkillAuthoringResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-post-skills-author-publish)
-
-<a id="summary-post-skills-preview"></a>
-### `POST /skills/preview`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill 지침과 권한을 게시 전에 미리 검증합니다. |
-| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `SkillDefinitionRequest` |
-| 출력 | `200` 성공 — `SkillPreviewResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-post-skills-preview)
-
-<a id="summary-get-skills-skill-id"></a>
-### `GET /skills/{skill_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill 상세 정보를 조회합니다. |
-| 입력 | **Path** — `skill_id`: `string`<br>**Query** — `workspace_id`: `string`, `user_id`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null` |
-| 출력 | `200` 성공 — `SkillResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>필터링: `workspace_id`, `user_id`<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-get-skills-skill-id)
-
-<a id="summary-patch-skills-skill-id"></a>
-### `PATCH /skills/{skill_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill 지침과 실행 설정을 변경합니다. |
-| 입력 | **Path** — `skill_id`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `UpdateSkillRequest` |
-| 출력 | `200` 성공 — `SkillAuthoringResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-patch-skills-skill-id)
-
-<a id="summary-post-skills-skill-id-disable"></a>
-### `POST /skills/{skill_id}/disable`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill을 비활성화합니다. |
-| 입력 | **Path** — `skill_id`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `SkillActorRequest` |
-| 출력 | `200` 성공 — `SkillResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-post-skills-skill-id-disable)
-
-<a id="summary-post-skills-skill-id-enable"></a>
-### `POST /skills/{skill_id}/enable`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill을 활성화합니다. |
-| 입력 | **Path** — `skill_id`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `SkillActorRequest` |
-| 출력 | `200` 성공 — `SkillResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-post-skills-skill-id-enable)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-skills"></a>
 ### `GET /skills` 상세
@@ -297,6 +205,22 @@ curl -X GET "$PIPELINE/skills?workspace_id=<value>&user_id=<value>" \
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: list_skills_skills_get`)
 
+</details>
+
+<a id="summary-post-skills-author"></a>
+### `POST /skills/author`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 사용자 요청과 참조 문서로 Skill 초안을 작성합니다. |
+| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `SkillAuthoringRequest` |
+| 출력 | `200` 성공 — `SkillAuthoringResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-skills-author"></a>
 ### `POST /skills/author` 상세
 
@@ -441,6 +365,22 @@ curl -X POST "$PIPELINE/skills/author" \
 
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: author_skill_skills_author_post`)
+
+</details>
+
+<a id="summary-post-skills-author-publish"></a>
+### `POST /skills/author/publish`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 검토한 Skill 초안을 게시합니다. |
+| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `PublishAuthoredSkillRequest` |
+| 출력 | `200` 성공 — `SkillAuthoringResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-skills-author-publish"></a>
 ### `POST /skills/author/publish` 상세
@@ -589,6 +529,22 @@ curl -X POST "$PIPELINE/skills/author/publish" \
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: publish_authored_skill_skills_author_publish_post`)
 
+</details>
+
+<a id="summary-post-skills-preview"></a>
+### `POST /skills/preview`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Skill 지침과 권한을 게시 전에 미리 검증합니다. |
+| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `SkillDefinitionRequest` |
+| 출력 | `200` 성공 — `SkillPreviewResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-skills-preview"></a>
 ### `POST /skills/preview` 상세
 
@@ -699,6 +655,22 @@ curl -X POST "$PIPELINE/skills/preview" \
 
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: preview_skill_skills_preview_post`)
+
+</details>
+
+<a id="summary-get-skills-skill-id"></a>
+### `GET /skills/{skill_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Skill 상세 정보를 조회합니다. |
+| 입력 | **Path** — `skill_id`: `string`<br>**Query** — `workspace_id`: `string`, `user_id`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `SkillResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>필터링: `workspace_id`, `user_id`<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-skills-skill-id"></a>
 ### `GET /skills/{skill_id}` 상세
@@ -867,6 +839,22 @@ curl -X GET "$PIPELINE/skills/<value>?workspace_id=<value>&user_id=<value>" \
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: get_skill_skills__skill_id__get`)
 
+</details>
+
+<a id="summary-patch-skills-skill-id"></a>
+### `PATCH /skills/{skill_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Skill 지침과 실행 설정을 변경합니다. |
+| 입력 | **Path** — `skill_id`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `UpdateSkillRequest` |
+| 출력 | `200` 성공 — `SkillAuthoringResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-patch-skills-skill-id"></a>
 ### `PATCH /skills/{skill_id}` 상세
 
@@ -995,6 +983,22 @@ curl -X PATCH "$PIPELINE/skills/<value>" \
 
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: update_skill_skills__skill_id__patch`)
+
+</details>
+
+<a id="summary-post-skills-skill-id-disable"></a>
+### `POST /skills/{skill_id}/disable`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Skill을 비활성화합니다. |
+| 입력 | **Path** — `skill_id`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `SkillActorRequest` |
+| 출력 | `200` 성공 — `SkillResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-skills-skill-id-disable"></a>
 ### `POST /skills/{skill_id}/disable` 상세
@@ -1170,6 +1174,22 @@ curl -X POST "$PIPELINE/skills/<value>/disable" \
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: disable_skill_skills__skill_id__disable_post`)
 
+</details>
+
+<a id="summary-post-skills-skill-id-enable"></a>
+### `POST /skills/{skill_id}/enable`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Skill을 활성화합니다. |
+| 입력 | **Path** — `skill_id`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `SkillActorRequest` |
+| 출력 | `200` 성공 — `SkillResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-skills-skill-id-enable"></a>
 ### `POST /skills/{skill_id}/enable` 상세
 
@@ -1343,3 +1363,5 @@ curl -X POST "$PIPELINE/skills/<value>/enable" \
 
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: enable_skill_skills__skill_id__enable_post`)
+
+</details>

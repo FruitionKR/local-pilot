@@ -31,87 +31,8 @@
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
 
-[상세 계약](#detail-get-api-workspaces-workspace-id-documents-trash)
-
-<a id="summary-delete-api-workspaces-workspace-id-documents-document-id"></a>
-### `DELETE /api/workspaces/{workspace_id}/documents/{document_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 원본과 편집 상태를 유지한 채 문서를 소프트 삭제합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `DocumentLifecycleRequest` |
-| 출력 | `200` 삭제 성공 — `DocumentLifecycleResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 base_version 또는 Idempotency-Key — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 문서 version 또는 멱등 키 충돌 — `ErrorResponse` |
-
-[상세 계약](#detail-delete-api-workspaces-workspace-id-documents-document-id)
-
-<a id="summary-get-api-workspaces-workspace-id-documents-document-id-diff"></a>
-### `GET /api/workspaces/{workspace_id}/documents/{document_id}/diff`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 두 Markdown 버전을 줄 단위로 비교해 GitHub 스타일 diff hunk를 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Query** — `from_version`: `integer`, `to_version`: `integer` |
-| 출력 | `200` 비교 성공 — `DocumentContentDiffResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>필터링: `from_version`, `to_version`<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 편집 가능한 Markdown 문서가 아님 — `ErrorResponse`<br>`404` 문서 또는 비교할 버전을 찾을 수 없음 — `ErrorResponse`<br>`422` 문서 차이가 너무 커서 안전하게 비교할 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-documents-document-id-diff)
-
-<a id="summary-post-api-workspaces-workspace-id-documents-document-id-restore"></a>
-### `POST /api/workspaces/{workspace_id}/documents/{document_id}/restore`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 삭제 문서를 역할별 최상위 마지막 위치에 복구합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `DocumentLifecycleRequest` |
-| 출력 | `200` 복구 성공 — `DocumentLifecycleResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 base_version 또는 Idempotency-Key — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 삭제 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 문서 version 또는 멱등 키 충돌 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-documents-document-id-restore)
-
-<a id="summary-get-api-workspaces-workspace-id-documents-document-id-versions"></a>
-### `GET /api/workspaces/{workspace_id}/documents/{document_id}/versions`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 편집 가능 Markdown 문서의 콘텐츠 버전 이력을 최신 순으로 반환합니다. 본문은 제외한 메타데이터만 제공합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `200` 조회 성공 — `DocumentContentVersionListResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 편집 가능한 Markdown 문서가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-documents-document-id-versions)
-
-<a id="summary-get-api-workspaces-workspace-id-documents-document-id-versions-version"></a>
-### `GET /api/workspaces/{workspace_id}/documents/{document_id}/versions/{version}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 특정 버전의 전체 Markdown 본문을 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`, `version`: `integer` |
-| 출력 | `200` 조회 성공 — `DocumentContentVersionResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 문서 또는 해당 버전을 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-documents-document-id-versions-version)
-
-<a id="summary-post-api-workspaces-workspace-id-documents-document-id-versions-version-restore"></a>
-### `POST /api/workspaces/{workspace_id}/documents/{document_id}/versions/{version}/restore`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 과거 버전을 새 버전으로 복원합니다(비파괴적). base_version이 현재 version과 일치할 때만 반영합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`, `version`: `integer`<br>**Body** — `DocumentContentRestoreRequest` |
-| 출력 | `200` 복원 성공 또는 동일 본문 no-op — `DocumentContentSaveResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 편집 가능한 Markdown 문서가 아니거나 base_version 오류 — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 해당 버전을 찾을 수 없음 — `ErrorResponse`<br>`409` 문서 version 충돌 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-documents-document-id-versions-version-restore)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-documents-trash"></a>
 ### `GET /api/workspaces/{workspace_id}/documents/trash` 상세
@@ -214,6 +135,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: trash`)
+
+</details>
+
+<a id="summary-delete-api-workspaces-workspace-id-documents-document-id"></a>
+### `DELETE /api/workspaces/{workspace_id}/documents/{document_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 원본과 편집 상태를 유지한 채 문서를 소프트 삭제합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `DocumentLifecycleRequest` |
+| 출력 | `200` 삭제 성공 — `DocumentLifecycleResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 base_version 또는 Idempotency-Key — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 문서 version 또는 멱등 키 충돌 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-delete-api-workspaces-workspace-id-documents-document-id"></a>
 ### `DELETE /api/workspaces/{workspace_id}/documents/{document_id}` 상세
@@ -320,6 +257,22 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/doc
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: delete_1`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-documents-document-id-diff"></a>
+### `GET /api/workspaces/{workspace_id}/documents/{document_id}/diff`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 두 Markdown 버전을 줄 단위로 비교해 GitHub 스타일 diff hunk를 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Query** — `from_version`: `integer`, `to_version`: `integer` |
+| 출력 | `200` 비교 성공 — `DocumentContentDiffResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>필터링: `from_version`, `to_version`<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 편집 가능한 Markdown 문서가 아님 — `ErrorResponse`<br>`404` 문서 또는 비교할 버전을 찾을 수 없음 — `ErrorResponse`<br>`422` 문서 차이가 너무 커서 안전하게 비교할 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-documents-document-id-diff"></a>
 ### `GET /api/workspaces/{workspace_id}/documents/{document_id}/diff` 상세
@@ -450,6 +403,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: compareVersions`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-documents-document-id-restore"></a>
+### `POST /api/workspaces/{workspace_id}/documents/{document_id}/restore`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 삭제 문서를 역할별 최상위 마지막 위치에 복구합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `DocumentLifecycleRequest` |
+| 출력 | `200` 복구 성공 — `DocumentLifecycleResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 base_version 또는 Idempotency-Key — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 삭제 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 문서 version 또는 멱등 키 충돌 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-documents-document-id-restore"></a>
 ### `POST /api/workspaces/{workspace_id}/documents/{document_id}/restore` 상세
 
@@ -556,6 +525,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: restore_1`)
 
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-documents-document-id-versions"></a>
+### `GET /api/workspaces/{workspace_id}/documents/{document_id}/versions`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 편집 가능 Markdown 문서의 콘텐츠 버전 이력을 최신 순으로 반환합니다. 본문은 제외한 메타데이터만 제공합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
+| 출력 | `200` 조회 성공 — `DocumentContentVersionListResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 편집 가능한 Markdown 문서가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-api-workspaces-workspace-id-documents-document-id-versions"></a>
 ### `GET /api/workspaces/{workspace_id}/documents/{document_id}/versions` 상세
 
@@ -660,6 +645,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: listVersions`)
 
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-documents-document-id-versions-version"></a>
+### `GET /api/workspaces/{workspace_id}/documents/{document_id}/versions/{version}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 특정 버전의 전체 Markdown 본문을 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`, `version`: `integer` |
+| 출력 | `200` 조회 성공 — `DocumentContentVersionResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 문서 또는 해당 버전을 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-api-workspaces-workspace-id-documents-document-id-versions-version"></a>
 ### `GET /api/workspaces/{workspace_id}/documents/{document_id}/versions/{version}` 상세
 
@@ -749,6 +750,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getVersion`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-documents-document-id-versions-version-restore"></a>
+### `POST /api/workspaces/{workspace_id}/documents/{document_id}/versions/{version}/restore`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 과거 버전을 새 버전으로 복원합니다(비파괴적). base_version이 현재 version과 일치할 때만 반영합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`, `version`: `integer`<br>**Body** — `DocumentContentRestoreRequest` |
+| 출력 | `200` 복원 성공 또는 동일 본문 no-op — `DocumentContentSaveResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 편집 가능한 Markdown 문서가 아니거나 base_version 오류 — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 해당 버전을 찾을 수 없음 — `ErrorResponse`<br>`409` 문서 version 충돌 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-documents-document-id-versions-version-restore"></a>
 ### `POST /api/workspaces/{workspace_id}/documents/{document_id}/versions/{version}/restore` 상세
@@ -870,3 +887,5 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: restoreVersion`)
+
+</details>

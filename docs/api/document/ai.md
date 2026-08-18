@@ -33,113 +33,8 @@
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
-[상세 계약](#detail-get-api-ai-models)
-
-<a id="summary-get-api-workspaces-workspace-id-ai-model-settings"></a>
-### `GET /api/workspaces/{workspace_id}/ai-model-settings`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와 MEMBER 모두 조회할 수 있습니다. |
-| 입력 | **Path** — `workspace_id`: `string` |
-| 출력 | `200` 조회 성공 — `SettingsResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다.<br>그 밖의 조건은 상세 권한 규칙 참고 |
-| 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-ai-model-settings)
-
-<a id="summary-put-api-workspaces-workspace-id-ai-model-settings"></a>
-### `PUT /api/workspaces/{workspace_id}/ai-model-settings`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있고, 활성 model catalog에 있는 조합만 허용합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `SettingsRequest` |
-| 출력 | `200` 변경 성공 — `SettingsResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다.<br>그 밖의 조건은 상세 권한 규칙 참고 |
-| 주요 오류 | `400` catalog에 없는 provider/model 조합 — `ErrorResponse`<br>`403` OWNER가 아님 — `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-put-api-workspaces-workspace-id-ai-model-settings)
-
-<a id="summary-get-api-workspaces-workspace-id-ai-operation-logs"></a>
-### `GET /api/workspaces/{workspace_id}/ai-operation-logs`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 최신순으로 반환합니다. 로그 테이블만 읽으며 diff를 계산하지 않습니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Query** — `type`(선택): `string`, `status`(선택): `string`, `cursor`(선택): `string`, `size`(선택): `integer` |
-| 출력 | `200` 조회 성공 — `OperationLogListResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>페이지네이션: `cursor`, `size`<br>필터링: `type`, `status`, `cursor`, `size`<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-ai-operation-logs)
-
-<a id="summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id"></a>
-### `GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `operation_id`: `string` |
-| 출력 | `200` 조회 성공 — `OperationLogDetailResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 작업 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-ai-operation-logs-operation-id)
-
-<a id="summary-post-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore"></a>
-### `POST /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 복구 대상에 따라 처리 방식이 다릅니다. 문서 편집 복구는 즉시 완료되어 200을 반환하고, Wiki 복구는 queued 상태로 등록되어 202를 반환합니다. 미리보기와 같은 계산을 다시 하고 Wiki에 반영합니다. 받치는 기여가 남지 않은 페이지는 삭제하고, 되돌릴 버전이 그대로 있는 페이지는 그 내용으로 복원하며, 남은 조각을 합쳐야 하는 페이지는 llmPipeline에 재작성을 맡깁니다. 재작성이 있으면 status가 rebuilding으로 돌아오며 결과는 로그 상세로 확인합니다. ingest 되돌리기는 Wiki만 되돌리고 원문 문서는 건드리지 않습니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `operation_id`: `string`<br>**Body** — `RestoreExecuteRequest` |
-| 출력 | `200` 문서 편집 복구 즉시 완료 — `RestoreExecuteResponse`<br>`202` Wiki 복구 queued 등록 — `RestoreExecuteResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 되돌릴 수 없는 작업이거나 대상이 없음 — `ErrorResponse`<br>`404` 작업 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 미리보기 이후 대상이 변경됨 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore)
-
-<a id="summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore-preview"></a>
-### `GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore-preview`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 이 작업을 되돌리면 무엇이 삭제·복원·재작성되는지 계산합니다. 지목한 작업과 그 이후 같은 문서의 작업을 전부 걷어내며, 그 과정에서 만들어진 페이지는 삭제됩니다. 문서 편집 복구는 canonical 편집 revision을 확인하며, 응답의 preview_token은 복구 실행에 그대로 전달해야 합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `operation_id`: `string` |
-| 출력 | `200` 계산 성공 — `RestorePreviewResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 작업 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore-preview)
-
-<a id="summary-post-api-workspaces-workspace-id-documents-document-id-convert-markdown"></a>
-### `POST /api/workspaces/{workspace_id}/documents/{document_id}/convert-markdown`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | PDF 원본 문서를 Markdown 문서로 변환합니다. 변환 결과를 담을 편집 가능 placeholder 문서를 즉시 만들어 반환하고, 실제 변환은 백그라운드에서 진행됩니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `Idempotency-Key`: `string` |
-| 출력 | `202` 변환 요청 접수 및 placeholder 문서 생성 — `DocumentUploadResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` PDF 원본 문서가 아니거나 잘못된 Idempotency-Key — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Idempotency-Key 충돌 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-documents-document-id-convert-markdown)
-
-<a id="summary-post-api-workspaces-workspace-id-documents-document-id-ingest"></a>
-### `POST /api/workspaces/{workspace_id}/documents/{document_id}/ingest`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 편집 가능 Markdown 문서를 최신 편집본으로 다시 Wiki 파이프라인에 넣습니다. 편집본을 원본으로 승격한 뒤 재처리합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `202` 재처리 큐 등록됨 — `DocumentIngestResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 편집 가능한 Markdown 문서가 아님 — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 이미 처리 중인 문서 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-documents-document-id-ingest)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-ai-models"></a>
 ### `GET /api/ai-models` 상세
@@ -216,6 +111,22 @@ curl -X GET "$DOCUMENT/api/ai-models" \
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/ai/AiModelCatalogController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: list_4`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-ai-model-settings"></a>
+### `GET /api/workspaces/{workspace_id}/ai-model-settings`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와 MEMBER 모두 조회할 수 있습니다. |
+| 입력 | **Path** — `workspace_id`: `string` |
+| 출력 | `200` 조회 성공 — `SettingsResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다.<br>그 밖의 조건은 상세 권한 규칙 참고 |
+| 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-ai-model-settings"></a>
 ### `GET /api/workspaces/{workspace_id}/ai-model-settings` 상세
@@ -301,6 +212,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/ai/WorkspaceAiModelSettingsController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: get`)
+
+</details>
+
+<a id="summary-put-api-workspaces-workspace-id-ai-model-settings"></a>
+### `PUT /api/workspaces/{workspace_id}/ai-model-settings`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있고, 활성 model catalog에 있는 조합만 허용합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `SettingsRequest` |
+| 출력 | `200` 변경 성공 — `SettingsResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다.<br>그 밖의 조건은 상세 권한 규칙 참고 |
+| 주요 오류 | `400` catalog에 없는 provider/model 조합 — `ErrorResponse`<br>`403` OWNER가 아님 — `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-put-api-workspaces-workspace-id-ai-model-settings"></a>
 ### `PUT /api/workspaces/{workspace_id}/ai-model-settings` 상세
@@ -405,6 +332,22 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/ai/WorkspaceAiModelSettingsController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: update`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-ai-operation-logs"></a>
+### `GET /api/workspaces/{workspace_id}/ai-operation-logs`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 최신순으로 반환합니다. 로그 테이블만 읽으며 diff를 계산하지 않습니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Query** — `type`(선택): `string`, `status`(선택): `string`, `cursor`(선택): `string`, `size`(선택): `integer` |
+| 출력 | `200` 조회 성공 — `OperationLogListResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>페이지네이션: `cursor`, `size`<br>필터링: `type`, `status`, `cursor`, `size`<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-ai-operation-logs"></a>
 ### `GET /api/workspaces/{workspace_id}/ai-operation-logs` 상세
@@ -513,6 +456,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/aihistory/controller/OperationQueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: list_3`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id"></a>
+### `GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `operation_id`: `string` |
+| 출력 | `200` 조회 성공 — `OperationLogDetailResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 작업 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-ai-operation-logs-operation-id"></a>
 ### `GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}` 상세
@@ -709,6 +668,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/aihistory/controller/OperationQueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: detail`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore"></a>
+### `POST /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 복구 대상에 따라 처리 방식이 다릅니다. 문서 편집 복구는 즉시 완료되어 200을 반환하고, Wiki 복구는 queued 상태로 등록되어 202를 반환합니다. 미리보기와 같은 계산을 다시 하고 Wiki에 반영합니다. 받치는 기여가 남지 않은 페이지는 삭제하고, 되돌릴 버전이 그대로 있는 페이지는 그 내용으로 복원하며, 남은 조각을 합쳐야 하는 페이지는 llmPipeline에 재작성을 맡깁니다. 재작성이 있으면 status가 rebuilding으로 돌아오며 결과는 로그 상세로 확인합니다. ingest 되돌리기는 Wiki만 되돌리고 원문 문서는 건드리지 않습니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `operation_id`: `string`<br>**Body** — `RestoreExecuteRequest` |
+| 출력 | `200` 문서 편집 복구 즉시 완료 — `RestoreExecuteResponse`<br>`202` Wiki 복구 queued 등록 — `RestoreExecuteResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 되돌릴 수 없는 작업이거나 대상이 없음 — `ErrorResponse`<br>`404` 작업 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 미리보기 이후 대상이 변경됨 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore"></a>
 ### `POST /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore` 상세
 
@@ -817,6 +792,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-op
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/aihistory/controller/OperationQueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: restore_2`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore-preview"></a>
+### `GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore-preview`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 이 작업을 되돌리면 무엇이 삭제·복원·재작성되는지 계산합니다. 지목한 작업과 그 이후 같은 문서의 작업을 전부 걷어내며, 그 과정에서 만들어진 페이지는 삭제됩니다. 문서 편집 복구는 canonical 편집 revision을 확인하며, 응답의 preview_token은 복구 실행에 그대로 전달해야 합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `operation_id`: `string` |
+| 출력 | `200` 계산 성공 — `RestorePreviewResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 작업 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore-preview"></a>
 ### `GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore-preview` 상세
@@ -931,6 +922,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/aihistory/controller/OperationQueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: restorePreview`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-documents-document-id-convert-markdown"></a>
+### `POST /api/workspaces/{workspace_id}/documents/{document_id}/convert-markdown`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | PDF 원본 문서를 Markdown 문서로 변환합니다. 변환 결과를 담을 편집 가능 placeholder 문서를 즉시 만들어 반환하고, 실제 변환은 백그라운드에서 진행됩니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `Idempotency-Key`: `string` |
+| 출력 | `202` 변환 요청 접수 및 placeholder 문서 생성 — `DocumentUploadResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` PDF 원본 문서가 아니거나 잘못된 Idempotency-Key — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Idempotency-Key 충돌 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-documents-document-id-convert-markdown"></a>
 ### `POST /api/workspaces/{workspace_id}/documents/{document_id}/convert-markdown` 상세
 
@@ -1038,6 +1045,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: convertMarkdown`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-documents-document-id-ingest"></a>
+### `POST /api/workspaces/{workspace_id}/documents/{document_id}/ingest`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 편집 가능 Markdown 문서를 최신 편집본으로 다시 Wiki 파이프라인에 넣습니다. 편집본을 원본으로 승격한 뒤 재처리합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
+| 출력 | `202` 재처리 큐 등록됨 — `DocumentIngestResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 편집 가능한 Markdown 문서가 아님 — `ErrorResponse`<br>`403` 문서 소유자가 아님 — `ErrorResponse`<br>`404` 문서 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 이미 처리 중인 문서 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-documents-document-id-ingest"></a>
 ### `POST /api/workspaces/{workspace_id}/documents/{document_id}/ingest` 상세
 
@@ -1129,3 +1152,5 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: ingest`)
+
+</details>

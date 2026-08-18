@@ -25,9 +25,8 @@ Wiki 기반 질의 실행 내부 API다.
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
 | 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
-[상세 계약](#detail-post-query)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-query"></a>
 ### `POST /query` 상세
@@ -291,3 +290,5 @@ curl -X POST "$PIPELINE/query" \
 
 - 진입점: `services/ai/pipeline/app/modules/query/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: answer_query_query_post`)
+
+</details>

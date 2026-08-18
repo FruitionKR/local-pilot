@@ -34,126 +34,8 @@
 | 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다.<br>기존 인증번호 요청 API도 가입 이메일 중복을 `409`로 노출하므로 동일한 공개 범위를 유지한다.<br>그 밖의 조건은 상세 권한 규칙 참고 |
 | 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`429` 요청 횟수 제한 초과 — `ErrorResponse` |
 
-[상세 계약](#detail-post-api-auth-email-availability)
-
-<a id="summary-post-api-auth-email-verifications"></a>
-### `POST /api/auth/email-verifications`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 회원가입/비밀번호 재설정을 위한 인증번호를 발급합니다. |
-| 입력 | **Body** — `EmailVerificationRequest` |
-| 출력 | `202` 인증번호 발급 — `EmailVerificationResponse` |
-| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
-| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`409` 이미 가입된 이메일(purpose=signup) — `ErrorResponse`<br>`429` 재요청 제한 초과 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-auth-email-verifications)
-
-<a id="summary-post-api-auth-email-verifications-verification-id-confirm"></a>
-### `POST /api/auth/email-verifications/{verification_id}/confirm`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 인증번호를 검증하고 1회용 verification_token을 발급합니다. |
-| 입력 | **Path** — `verification_id`: `string`<br>**Body** — `VerificationConfirmRequest` |
-| 출력 | `200` 검증 성공 — `VerificationConfirmResponse` |
-| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
-| 주요 오류 | `400` 인증번호 불일치·만료·시도 초과 — `ErrorResponse`<br>`404` 인증 요청을 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-auth-email-verifications-verification-id-confirm)
-
-<a id="summary-post-api-auth-login"></a>
-### `POST /api/auth/login`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 이메일/비밀번호를 검증하고 access/refresh token을 발급합니다. |
-| 입력 | **Body** — `LoginRequest` |
-| 출력 | `200` 로그인 성공 — `LoginResponse` |
-| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
-| 주요 오류 | `401` 이메일 또는 비밀번호 불일치 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-auth-login)
-
-<a id="summary-post-api-auth-logout"></a>
-### `POST /api/auth/logout`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | refresh token을 폐기합니다. |
-| 입력 | **Body** — `RefreshRequest` |
-| 출력 | `204` 로그아웃 성공 |
-| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
-| 주요 오류 | `401` 유효하지 않거나 만료된 refresh token — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-auth-logout)
-
-<a id="summary-get-api-auth-me"></a>
-### `GET /api/auth/me`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | access token으로 인증된 사용자의 프로필을 반환합니다. |
-| 입력 | 없음 |
-| 출력 | `200` 조회 성공 — `MeResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다. |
-| 주요 오류 | `401` 인증되지 않음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-auth-me)
-
-<a id="summary-post-api-auth-oauth-exchange"></a>
-### `POST /api/auth/oauth/exchange`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 교환합니다. |
-| 입력 | **Body** — `OAuthExchangeRequest` |
-| 출력 | `200` 교환 성공 — `LoginResponse` |
-| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
-| 주요 오류 | `401` 유효하지 않거나 만료된 code — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-auth-oauth-exchange)
-
-<a id="summary-post-api-auth-password-reset"></a>
-### `POST /api/auth/password-reset`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 세션을 폐기합니다. |
-| 입력 | **Body** — `PasswordResetRequest` |
-| 출력 | `204` 재설정 성공 |
-| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
-| 주요 오류 | `400` 잘못된 요청 또는 유효하지 않은 토큰 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-auth-password-reset)
-
-<a id="summary-post-api-auth-refresh"></a>
-### `POST /api/auth/refresh`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | refresh token을 검증하고 access/refresh token을 새로 발급합니다. 기존 refresh token은 폐기됩니다. |
-| 입력 | **Body** — `RefreshRequest` |
-| 출력 | `200` 재발급 성공 — `LoginResponse` |
-| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
-| 주요 오류 | `401` 유효하지 않거나 만료된 refresh token — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-auth-refresh)
-
-<a id="summary-post-api-auth-signup"></a>
-### `POST /api/auth/signup`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 이메일/비밀번호로 신규 사용자를 생성합니다. |
-| 입력 | **Body** — `SignupRequest` |
-| 출력 | `201` 회원가입 성공 — `SignupResponse` |
-| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
-| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`409` 이미 가입된 이메일 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-auth-signup)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-auth-email-availability"></a>
 ### `POST /api/auth/email-availability` 상세
@@ -229,6 +111,22 @@ curl -X POST "$ACCESS/api/auth/email-availability" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: checkEmailAvailability`)
+
+</details>
+
+<a id="summary-post-api-auth-email-verifications"></a>
+### `POST /api/auth/email-verifications`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 회원가입/비밀번호 재설정을 위한 인증번호를 발급합니다. |
+| 입력 | **Body** — `EmailVerificationRequest` |
+| 출력 | `202` 인증번호 발급 — `EmailVerificationResponse` |
+| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
+| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`409` 이미 가입된 이메일(purpose=signup) — `ErrorResponse`<br>`429` 재요청 제한 초과 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-auth-email-verifications"></a>
 ### `POST /api/auth/email-verifications` 상세
@@ -325,6 +223,22 @@ curl -X POST "$ACCESS/api/auth/email-verifications" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: requestEmailVerification`)
 
+</details>
+
+<a id="summary-post-api-auth-email-verifications-verification-id-confirm"></a>
+### `POST /api/auth/email-verifications/{verification_id}/confirm`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 인증번호를 검증하고 1회용 verification_token을 발급합니다. |
+| 입력 | **Path** — `verification_id`: `string`<br>**Body** — `VerificationConfirmRequest` |
+| 출력 | `200` 검증 성공 — `VerificationConfirmResponse` |
+| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
+| 주요 오류 | `400` 인증번호 불일치·만료·시도 초과 — `ErrorResponse`<br>`404` 인증 요청을 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-auth-email-verifications-verification-id-confirm"></a>
 ### `POST /api/auth/email-verifications/{verification_id}/confirm` 상세
 
@@ -418,6 +332,22 @@ curl -X POST "$ACCESS/api/auth/email-verifications/<value>/confirm" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: confirmEmailVerification`)
 
+</details>
+
+<a id="summary-post-api-auth-login"></a>
+### `POST /api/auth/login`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 이메일/비밀번호를 검증하고 access/refresh token을 발급합니다. |
+| 입력 | **Body** — `LoginRequest` |
+| 출력 | `200` 로그인 성공 — `LoginResponse` |
+| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
+| 주요 오류 | `401` 이메일 또는 비밀번호 불일치 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-auth-login"></a>
 ### `POST /api/auth/login` 상세
 
@@ -507,6 +437,22 @@ curl -X POST "$ACCESS/api/auth/login" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: login`)
 
+</details>
+
+<a id="summary-post-api-auth-logout"></a>
+### `POST /api/auth/logout`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | refresh token을 폐기합니다. |
+| 입력 | **Body** — `RefreshRequest` |
+| 출력 | `204` 로그아웃 성공 |
+| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
+| 주요 오류 | `401` 유효하지 않거나 만료된 refresh token — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-auth-logout"></a>
 ### `POST /api/auth/logout` 상세
 
@@ -582,6 +528,22 @@ curl -X POST "$ACCESS/api/auth/logout" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: logout`)
 
+</details>
+
+<a id="summary-get-api-auth-me"></a>
+### `GET /api/auth/me`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | access token으로 인증된 사용자의 프로필을 반환합니다. |
+| 입력 | 없음 |
+| 출력 | `200` 조회 성공 — `MeResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다. |
+| 주요 오류 | `401` 인증되지 않음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-api-auth-me"></a>
 ### `GET /api/auth/me` 상세
 
@@ -655,6 +617,22 @@ curl -X GET "$ACCESS/api/auth/me" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: me`)
+
+</details>
+
+<a id="summary-post-api-auth-oauth-exchange"></a>
+### `POST /api/auth/oauth/exchange`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 교환합니다. |
+| 입력 | **Body** — `OAuthExchangeRequest` |
+| 출력 | `200` 교환 성공 — `LoginResponse` |
+| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
+| 주요 오류 | `401` 유효하지 않거나 만료된 code — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-auth-oauth-exchange"></a>
 ### `POST /api/auth/oauth/exchange` 상세
@@ -744,6 +722,22 @@ curl -X POST "$ACCESS/api/auth/oauth/exchange" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: exchangeOAuthCode`)
 
+</details>
+
+<a id="summary-post-api-auth-password-reset"></a>
+### `POST /api/auth/password-reset`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 세션을 폐기합니다. |
+| 입력 | **Body** — `PasswordResetRequest` |
+| 출력 | `204` 재설정 성공 |
+| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
+| 주요 오류 | `400` 잘못된 요청 또는 유효하지 않은 토큰 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-auth-password-reset"></a>
 ### `POST /api/auth/password-reset` 상세
 
@@ -826,6 +820,22 @@ curl -X POST "$ACCESS/api/auth/password-reset" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: resetPassword`)
+
+</details>
+
+<a id="summary-post-api-auth-refresh"></a>
+### `POST /api/auth/refresh`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | refresh token을 검증하고 access/refresh token을 새로 발급합니다. 기존 refresh token은 폐기됩니다. |
+| 입력 | **Body** — `RefreshRequest` |
+| 출력 | `200` 재발급 성공 — `LoginResponse` |
+| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
+| 주요 오류 | `401` 유효하지 않거나 만료된 refresh token — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-auth-refresh"></a>
 ### `POST /api/auth/refresh` 상세
@@ -914,6 +924,22 @@ curl -X POST "$ACCESS/api/auth/refresh" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: refresh`)
+
+</details>
+
+<a id="summary-post-api-auth-signup"></a>
+### `POST /api/auth/signup`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 이메일/비밀번호로 신규 사용자를 생성합니다. |
+| 입력 | **Body** — `SignupRequest` |
+| 출력 | `201` 회원가입 성공 — `SignupResponse` |
+| 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
+| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`409` 이미 가입된 이메일 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-auth-signup"></a>
 ### `POST /api/auth/signup` 상세
@@ -1012,3 +1038,5 @@ curl -X POST "$ACCESS/api/auth/signup" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: signup`)
+
+</details>

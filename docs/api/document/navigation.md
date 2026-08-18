@@ -34,126 +34,8 @@
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | `400` 잘못된 이름 또는 위치, 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`404` 워크스페이스 또는 상위 폴더를 찾을 수 없음 — `ErrorResponse`<br>`409` IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
 
-[상세 계약](#detail-post-api-workspaces-workspace-id-folders)
-
-<a id="summary-patch-api-workspaces-workspace-id-folders-folder-id"></a>
-### `PATCH /api/workspaces/{workspace_id}/folders/{folder_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 폴더 이름을 변경하고 base version으로 동시 변경을 검증합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `folder_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `FolderRenameRequest` |
-| 출력 | `200` 변경 성공 또는 멱등 재요청 — `FolderResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 이름 또는 version, 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`404` 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
-
-[상세 계약](#detail-patch-api-workspaces-workspace-id-folders-folder-id)
-
-<a id="summary-delete-api-workspaces-workspace-id-folders-folder-id"></a>
-### `DELETE /api/workspaces/{workspace_id}/folders/{folder_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 폴더와 하위 항목을 휴지통 상태로 전환하며 base version으로 동시 변경을 검증합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `folder_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `DocumentLifecycleRequest` |
-| 출력 | `200` 삭제 성공 또는 멱등 재요청 — `FolderLifecycleResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 version 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`403` 내용이 있는 폴더를 삭제할 권한이 없음 — `ErrorResponse`<br>`404` 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
-
-[상세 계약](#detail-delete-api-workspaces-workspace-id-folders-folder-id)
-
-<a id="summary-get-api-workspaces-workspace-id-folders-folder-id-children"></a>
-### `GET /api/workspaces/{workspace_id}/folders/{folder_id}/children`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 폴더 바로 아래의 하위 폴더와 문서를 정렬 순서로 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `folder_id`: `string` |
-| 출력 | `200` 조회 성공 — `FolderChildrenResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-folders-folder-id-children)
-
-<a id="summary-patch-api-workspaces-workspace-id-folders-folder-id-position"></a>
-### `PATCH /api/workspaces/{workspace_id}/folders/{folder_id}/position`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 폴더를 대상 상위 폴더와 정렬 위치로 이동합니다. 자기 자신이나 하위 폴더로는 이동할 수 없습니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `folder_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `FolderPositionRequest` |
-| 출력 | `200` 이동 성공 또는 멱등 재요청 — `FolderResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 요청 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`404` 폴더, 대상 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 순환 이동, version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
-
-[상세 계약](#detail-patch-api-workspaces-workspace-id-folders-folder-id-position)
-
-<a id="summary-post-api-workspaces-workspace-id-folders-folder-id-restore"></a>
-### `POST /api/workspaces/{workspace_id}/folders/{folder_id}/restore`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 삭제된 폴더와 하위 항목을 복구하고 유효한 탐색 위치에 배치합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `folder_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `DocumentLifecycleRequest` |
-| 출력 | `200` 복구 성공 또는 멱등 재요청 — `FolderLifecycleResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 version 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`404` 삭제된 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-folders-folder-id-restore)
-
-<a id="summary-get-api-workspaces-workspace-id-document-tree"></a>
-### `GET /api/workspaces/{workspace_id}/document-tree`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 모든 폴더를 펼친 상태의 활성 폴더·문서 계층을 한 번에 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string` |
-| 출력 | `200` 전체 트리 조회 성공 — `DocumentTreeResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 활성 워크스페이스 또는 멤버십을 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-document-tree)
-
-<a id="summary-get-api-workspaces-workspace-id-navigation"></a>
-### `GET /api/workspaces/{workspace_id}/navigation`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 워크스페이스 최상위의 폴더와 문서를 정렬 순서로 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string` |
-| 출력 | `200` 조회 성공 — `FolderChildrenResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-navigation)
-
-<a id="summary-get-api-workspaces-workspace-id-navigation-breadcrumb"></a>
-### `GET /api/workspaces/{workspace_id}/navigation/breadcrumb`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 폴더 또는 문서까지 이어지는 상위 폴더 경로를 최상위부터 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Query** — `folder_id`(선택): `string`, `document_id`(선택): `string` |
-| 출력 | `200` 경로 조회 성공 — `BreadcrumbResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>필터링: `folder_id`, `document_id`<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` folder_id와 document_id가 모두 없거나 함께 전달됨 — `ErrorResponse`<br>`404` 대상 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-navigation-breadcrumb)
-
-<a id="summary-get-api-workspaces-workspace-id-navigation-search"></a>
-### `GET /api/workspaces/{workspace_id}/navigation/search`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 워크스페이스의 폴더 이름과 문서 파일명을 검색해 계층 경로를 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Query** — `query`: `string` |
-| 출력 | `200` 검색 성공 — `HierarchySearchResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>필터링: `query`<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 검색어가 비어 있거나 잘못됨 — `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-navigation-search)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-folders"></a>
 ### `POST /api/workspaces/{workspace_id}/folders` 상세
@@ -263,6 +145,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folde
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: create`)
+
+</details>
+
+<a id="summary-patch-api-workspaces-workspace-id-folders-folder-id"></a>
+### `PATCH /api/workspaces/{workspace_id}/folders/{folder_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 폴더 이름을 변경하고 base version으로 동시 변경을 검증합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `folder_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `FolderRenameRequest` |
+| 출력 | `200` 변경 성공 또는 멱등 재요청 — `FolderResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 이름 또는 version, 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`404` 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-patch-api-workspaces-workspace-id-folders-folder-id"></a>
 ### `PATCH /api/workspaces/{workspace_id}/folders/{folder_id}` 상세
@@ -374,6 +272,22 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/fold
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: rename_1`)
 
+</details>
+
+<a id="summary-delete-api-workspaces-workspace-id-folders-folder-id"></a>
+### `DELETE /api/workspaces/{workspace_id}/folders/{folder_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 폴더와 하위 항목을 휴지통 상태로 전환하며 base version으로 동시 변경을 검증합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `folder_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `DocumentLifecycleRequest` |
+| 출력 | `200` 삭제 성공 또는 멱등 재요청 — `FolderLifecycleResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 version 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`403` 내용이 있는 폴더를 삭제할 권한이 없음 — `ErrorResponse`<br>`404` 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-delete-api-workspaces-workspace-id-folders-folder-id"></a>
 ### `DELETE /api/workspaces/{workspace_id}/folders/{folder_id}` 상세
 
@@ -480,6 +394,22 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/fol
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: delete`)
 
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-folders-folder-id-children"></a>
+### `GET /api/workspaces/{workspace_id}/folders/{folder_id}/children`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 폴더 바로 아래의 하위 폴더와 문서를 정렬 순서로 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `folder_id`: `string` |
+| 출력 | `200` 조회 성공 — `FolderChildrenResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-api-workspaces-workspace-id-folders-folder-id-children"></a>
 ### `GET /api/workspaces/{workspace_id}/folders/{folder_id}/children` 상세
 
@@ -576,6 +506,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folder
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: children`)
+
+</details>
+
+<a id="summary-patch-api-workspaces-workspace-id-folders-folder-id-position"></a>
+### `PATCH /api/workspaces/{workspace_id}/folders/{folder_id}/position`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 폴더를 대상 상위 폴더와 정렬 위치로 이동합니다. 자기 자신이나 하위 폴더로는 이동할 수 없습니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `folder_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `FolderPositionRequest` |
+| 출력 | `200` 이동 성공 또는 멱등 재요청 — `FolderResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 요청 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`404` 폴더, 대상 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 순환 이동, version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-patch-api-workspaces-workspace-id-folders-folder-id-position"></a>
 ### `PATCH /api/workspaces/{workspace_id}/folders/{folder_id}/position` 상세
@@ -688,6 +634,22 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/fold
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: move`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-folders-folder-id-restore"></a>
+### `POST /api/workspaces/{workspace_id}/folders/{folder_id}/restore`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 삭제된 폴더와 하위 항목을 복구하고 유효한 탐색 위치에 배치합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `folder_id`: `string`<br>**Header** — `Idempotency-Key`: `string`<br>**Body** — `DocumentLifecycleRequest` |
+| 출력 | `200` 복구 성공 또는 멱등 재요청 — `FolderLifecycleResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 version 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음) — `ErrorResponse`<br>`404` 삭제된 폴더 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용) — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-folders-folder-id-restore"></a>
 ### `POST /api/workspaces/{workspace_id}/folders/{folder_id}/restore` 상세
 
@@ -792,6 +754,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folde
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: restore`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-document-tree"></a>
+### `GET /api/workspaces/{workspace_id}/document-tree`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 모든 폴더를 펼친 상태의 활성 폴더·문서 계층을 한 번에 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string` |
+| 출력 | `200` 전체 트리 조회 성공 — `DocumentTreeResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 활성 워크스페이스 또는 멤버십을 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-document-tree"></a>
 ### `GET /api/workspaces/{workspace_id}/document-tree` 상세
@@ -937,6 +915,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentTreeController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: tree`)
 
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-navigation"></a>
+### `GET /api/workspaces/{workspace_id}/navigation`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 워크스페이스 최상위의 폴더와 문서를 정렬 순서로 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string` |
+| 출력 | `200` 조회 성공 — `FolderChildrenResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-api-workspaces-workspace-id-navigation"></a>
 ### `GET /api/workspaces/{workspace_id}/navigation` 상세
 
@@ -1032,6 +1026,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/naviga
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/NavigationController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: root`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-navigation-breadcrumb"></a>
+### `GET /api/workspaces/{workspace_id}/navigation/breadcrumb`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 폴더 또는 문서까지 이어지는 상위 폴더 경로를 최상위부터 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Query** — `folder_id`(선택): `string`, `document_id`(선택): `string` |
+| 출력 | `200` 경로 조회 성공 — `BreadcrumbResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>필터링: `folder_id`, `document_id`<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` folder_id와 document_id가 모두 없거나 함께 전달됨 — `ErrorResponse`<br>`404` 대상 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-navigation-breadcrumb"></a>
 ### `GET /api/workspaces/{workspace_id}/navigation/breadcrumb` 상세
@@ -1131,6 +1141,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/naviga
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/NavigationController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: breadcrumb`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-navigation-search"></a>
+### `GET /api/workspaces/{workspace_id}/navigation/search`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 워크스페이스의 폴더 이름과 문서 파일명을 검색해 계층 경로를 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Query** — `query`: `string` |
+| 출력 | `200` 검색 성공 — `HierarchySearchResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>필터링: `query`<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 검색어가 비어 있거나 잘못됨 — `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-navigation-search"></a>
 ### `GET /api/workspaces/{workspace_id}/navigation/search` 상세
@@ -1243,3 +1269,5 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/naviga
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/NavigationController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: search`)
+
+</details>

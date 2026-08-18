@@ -31,87 +31,8 @@ Agent turn과 run·artifact·Tool 인가 내부 API다.
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>`AGENT_SKILLS_ENABLED=true`이면 Agent 서비스 토큰도 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
 | 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 또는 Agent 서비스 인증 토큰 누락·불일치<br>`503` 내부 또는 Agent 서비스 인증 미설정 |
 
-[상세 계약](#detail-post-agent-turn)
-
-<a id="summary-post-internal-agent-runs-artifacts-list"></a>
-### `POST /internal/agent/runs/artifacts/list`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Agent 실행에 등록된 artifact 목록을 조회합니다. |
-| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentArtifactListRequest` |
-| 출력 | `200` 성공 — 배열<`AgentArtifactResponse`> |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-post-internal-agent-runs-artifacts-list)
-
-<a id="summary-post-internal-agent-runs-artifacts-register"></a>
-### `POST /internal/agent/runs/artifacts/register`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Agent 실행 결과 artifact를 등록합니다. |
-| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentArtifactRegisterRequest` |
-| 출력 | `200` 성공 — `AgentArtifactResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-post-internal-agent-runs-artifacts-register)
-
-<a id="summary-post-internal-agent-runs-artifacts-resolve"></a>
-### `POST /internal/agent/runs/artifacts/resolve`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Agent artifact의 저장 위치와 메타데이터를 확인합니다. |
-| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentArtifactResolveRequest` |
-| 출력 | `200` 성공 — `AgentArtifactResolveResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-post-internal-agent-runs-artifacts-resolve)
-
-<a id="summary-post-internal-agent-runs-tool-authorizations-execute"></a>
-### `POST /internal/agent/runs/tool-authorizations/execute`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Agent Tool 변경 작업의 실행 권한을 검증합니다. |
-| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentToolExecuteAuthorizationRequest` |
-| 출력 | `204` 성공 |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-post-internal-agent-runs-tool-authorizations-execute)
-
-<a id="summary-post-internal-agent-runs-tool-authorizations-read"></a>
-### `POST /internal/agent/runs/tool-authorizations/read`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Agent Tool 읽기 작업의 실행 권한을 검증합니다. |
-| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentToolReadAuthorizationRequest` |
-| 출력 | `204` 성공 |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-post-internal-agent-runs-tool-authorizations-read)
-
-<a id="summary-get-internal-agent-runs-run-id"></a>
-### `GET /internal/agent/runs/{run_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Markdown Agent 실행 상태와 결과를 조회합니다. |
-| 입력 | **Path** — `run_id`: `string`<br>**Query** — `workspace_id`: `string`, `user_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
-| 출력 | `200` 성공 — `MarkdownAgentRunStatusResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>필터링: `workspace_id`, `user_id`<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-[상세 계약](#detail-get-internal-agent-runs-run-id)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-agent-turn"></a>
 ### `POST /agent/turn` 상세
@@ -554,6 +475,22 @@ curl -X POST "$PIPELINE/agent/turn" \
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: handle_agent_turn_agent_turn_post`)
 
+</details>
+
+<a id="summary-post-internal-agent-runs-artifacts-list"></a>
+### `POST /internal/agent/runs/artifacts/list`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Agent 실행에 등록된 artifact 목록을 조회합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentArtifactListRequest` |
+| 출력 | `200` 성공 — 배열<`AgentArtifactResponse`> |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-internal-agent-runs-artifacts-list"></a>
 ### `POST /internal/agent/runs/artifacts/list` 상세
 
@@ -669,6 +606,22 @@ curl -X POST "$PIPELINE/internal/agent/runs/artifacts/list" \
 
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: list_agent_artifacts_internal_agent_runs_artifacts_list_post`)
+
+</details>
+
+<a id="summary-post-internal-agent-runs-artifacts-register"></a>
+### `POST /internal/agent/runs/artifacts/register`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Agent 실행 결과 artifact를 등록합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentArtifactRegisterRequest` |
+| 출력 | `200` 성공 — `AgentArtifactResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-internal-agent-runs-artifacts-register"></a>
 ### `POST /internal/agent/runs/artifacts/register` 상세
@@ -789,6 +742,22 @@ curl -X POST "$PIPELINE/internal/agent/runs/artifacts/register" \
 
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: register_agent_artifact_internal_agent_runs_artifacts_register_post`)
+
+</details>
+
+<a id="summary-post-internal-agent-runs-artifacts-resolve"></a>
+### `POST /internal/agent/runs/artifacts/resolve`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Agent artifact의 저장 위치와 메타데이터를 확인합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentArtifactResolveRequest` |
+| 출력 | `200` 성공 — `AgentArtifactResolveResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-internal-agent-runs-artifacts-resolve"></a>
 ### `POST /internal/agent/runs/artifacts/resolve` 상세
@@ -911,6 +880,22 @@ curl -X POST "$PIPELINE/internal/agent/runs/artifacts/resolve" \
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: resolve_agent_artifact_internal_agent_runs_artifacts_resolve_post`)
 
+</details>
+
+<a id="summary-post-internal-agent-runs-tool-authorizations-execute"></a>
+### `POST /internal/agent/runs/tool-authorizations/execute`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Agent Tool 변경 작업의 실행 권한을 검증합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentToolExecuteAuthorizationRequest` |
+| 출력 | `204` 성공 |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-internal-agent-runs-tool-authorizations-execute"></a>
 ### `POST /internal/agent/runs/tool-authorizations/execute` 상세
 
@@ -1011,6 +996,22 @@ curl -X POST "$PIPELINE/internal/agent/runs/tool-authorizations/execute" \
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: authorize_agent_tool_execute_internal_agent_runs_tool_authorizations_execute_post`)
 
+</details>
+
+<a id="summary-post-internal-agent-runs-tool-authorizations-read"></a>
+### `POST /internal/agent/runs/tool-authorizations/read`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Agent Tool 읽기 작업의 실행 권한을 검증합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentToolReadAuthorizationRequest` |
+| 출력 | `204` 성공 |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-internal-agent-runs-tool-authorizations-read"></a>
 ### `POST /internal/agent/runs/tool-authorizations/read` 상세
 
@@ -1103,6 +1104,22 @@ curl -X POST "$PIPELINE/internal/agent/runs/tool-authorizations/read" \
 
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: authorize_agent_tool_read_internal_agent_runs_tool_authorizations_read_post`)
+
+</details>
+
+<a id="summary-get-internal-agent-runs-run-id"></a>
+### `GET /internal/agent/runs/{run_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Markdown Agent 실행 상태와 결과를 조회합니다. |
+| 입력 | **Path** — `run_id`: `string`<br>**Query** — `workspace_id`: `string`, `user_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `MarkdownAgentRunStatusResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>필터링: `workspace_id`, `user_id`<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-internal-agent-runs-run-id"></a>
 ### `GET /internal/agent/runs/{run_id}` 상세
@@ -1210,3 +1227,5 @@ curl -X GET "$PIPELINE/internal/agent/runs/<value>?workspace_id=<value>&user_id=
 
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: get_markdown_agent_run_internal_agent_runs__run_id__get`)
+
+</details>

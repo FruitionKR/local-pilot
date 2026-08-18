@@ -28,48 +28,8 @@
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | `400` 잘못된 요청 (질문이 비어 있는 경우) — `ErrorResponse`<br>`404` 세션 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`500` 서버 내부 오류 — `ErrorResponse`<br>`502` 파이프라인 요청 거부 — `ErrorResponse`<br>`503` 파이프라인 타임아웃 또는 사용 불가 — `ErrorResponse` |
 
-[상세 계약](#detail-post-api-workspaces-workspace-id-chat-sessions-session-id-query)
-
-<a id="summary-post-api-workspaces-workspace-id-chat-sessions-session-id-query-runs"></a>
-### `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/query/runs`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 질의를 비동기 run으로 시작합니다. 진행 상황은 GET /api/query/runs/{request_id}/events(SSE)로 구독합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string`<br>**Body** — `QueryRequest` |
-| 출력 | `202` run 시작됨 — `QueryRunCreateResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 요청 (질문이 비어 있는 경우) — `ErrorResponse`<br>`404` 세션 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-chat-sessions-session-id-query-runs)
-
-<a id="summary-get-api-query-runs-requestid"></a>
-### `GET /api/query/runs/{requestId}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 비동기 질의의 현재 상태와 완료 결과 또는 오류 정보를 반환합니다. |
-| 입력 | **Path** — `requestId`: `string` |
-| 출력 | `200` 상태 조회 성공 — `QueryRunStatusResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다. |
-| 주요 오류 | `404` 질의 실행 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-query-runs-requestid)
-
-<a id="summary-get-api-query-runs-requestid-events"></a>
-### `GET /api/query/runs/{requestId}/events`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 비동기 질의의 진행 상황과 최종 결과를 Server-Sent Events로 전달합니다. |
-| 입력 | **Path** — `requestId`: `string` |
-| 출력 | `200` SSE 구독 시작 — `string` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다. |
-| 주요 오류 | `404` 질의 실행 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-query-runs-requestid-events)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-chat-sessions-session-id-query"></a>
 ### `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/query` 상세
@@ -345,6 +305,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/query/controller/QueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: query`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-chat-sessions-session-id-query-runs"></a>
+### `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/query/runs`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 질의를 비동기 run으로 시작합니다. 진행 상황은 GET /api/query/runs/{request_id}/events(SSE)로 구독합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string`<br>**Body** — `QueryRequest` |
+| 출력 | `202` run 시작됨 — `QueryRunCreateResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 요청 (질문이 비어 있는 경우) — `ErrorResponse`<br>`404` 세션 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-chat-sessions-session-id-query-runs"></a>
 ### `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/query/runs` 상세
 
@@ -443,6 +419,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/query/controller/QueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: createRun`)
+
+</details>
+
+<a id="summary-get-api-query-runs-requestid"></a>
+### `GET /api/query/runs/{requestId}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 비동기 질의의 현재 상태와 완료 결과 또는 오류 정보를 반환합니다. |
+| 입력 | **Path** — `requestId`: `string` |
+| 출력 | `200` 상태 조회 성공 — `QueryRunStatusResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다. |
+| 주요 오류 | `404` 질의 실행 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-query-runs-requestid"></a>
 ### `GET /api/query/runs/{requestId}` 상세
@@ -711,6 +703,22 @@ curl -X GET "$DOCUMENT/api/query/runs/<value>" \
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/query/controller/QueryRunController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getRun_1`)
 
+</details>
+
+<a id="summary-get-api-query-runs-requestid-events"></a>
+### `GET /api/query/runs/{requestId}/events`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 비동기 질의의 진행 상황과 최종 결과를 Server-Sent Events로 전달합니다. |
+| 입력 | **Path** — `requestId`: `string` |
+| 출력 | `200` SSE 구독 시작 — `string` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다. |
+| 주요 오류 | `404` 질의 실행 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-get-api-query-runs-requestid-events"></a>
 ### `GET /api/query/runs/{requestId}/events` 상세
 
@@ -795,3 +803,5 @@ string
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/query/controller/QueryRunController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: subscribe`)
+
+</details>

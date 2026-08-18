@@ -30,74 +30,8 @@
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
 
-[상세 계약](#detail-get-api-workspaces-workspace-id-chat-sessions)
-
-<a id="summary-post-api-workspaces-workspace-id-chat-sessions"></a>
-### `POST /api/workspaces/{workspace_id}/chat/sessions`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 워크스페이스당 최대 10개까지 생성할 수 있습니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `ChatSessionCreateRequest` |
-| 출력 | `201` 생성 성공 — `ChatSessionResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 세션 개수 제한 초과 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-chat-sessions)
-
-<a id="summary-delete-api-workspaces-workspace-id-chat-sessions-session-id"></a>
-### `DELETE /api/workspaces/{workspace_id}/chat/sessions/{session_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 워크스페이스에서 지정한 채팅 세션과 해당 세션의 메시지 기록을 삭제합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string` |
-| 출력 | `204` 삭제 성공 |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 세션 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-delete-api-workspaces-workspace-id-chat-sessions-session-id)
-
-<a id="summary-get-api-workspaces-workspace-id-chat-sessions-session-id-messages"></a>
-### `GET /api/workspaces/{workspace_id}/chat/sessions/{session_id}/messages`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 세션 내 채팅 메시지를 생성 순서대로 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string` |
-| 출력 | `200` 조회 성공 — `ChatMessagesResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` 세션 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-chat-sessions-session-id-messages)
-
-<a id="summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki"></a>
-### `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 세션(full) 또는 선택 문답(partial)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 위키 생성은 파이프라인이 비동기로 수행합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string`<br>**Body** — `ChatWikiExportRequest` |
-| 출력 | `200` 성공 — `ChatWikiExportResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki)
-
-<a id="summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki-preview"></a>
-### `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki/preview`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 세션을 llmPipeline 입력용 Markdown으로 직렬화해 결과만 반환합니다. 저장/파이프라인 호출은 하지 않습니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string` |
-| 출력 | `200` 성공 — `string` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki-preview)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-chat-sessions"></a>
 ### `GET /api/workspaces/{workspace_id}/chat/sessions` 상세
@@ -190,6 +124,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/chat/controller/ChatSessionController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: list_1`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-chat-sessions"></a>
+### `POST /api/workspaces/{workspace_id}/chat/sessions`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 워크스페이스당 최대 10개까지 생성할 수 있습니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `ChatSessionCreateRequest` |
+| 출력 | `201` 생성 성공 — `ChatSessionResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` 세션 개수 제한 초과 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-chat-sessions"></a>
 ### `POST /api/workspaces/{workspace_id}/chat/sessions` 상세
@@ -284,6 +234,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/chat/controller/ChatSessionController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: create_1`)
 
+</details>
+
+<a id="summary-delete-api-workspaces-workspace-id-chat-sessions-session-id"></a>
+### `DELETE /api/workspaces/{workspace_id}/chat/sessions/{session_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 워크스페이스에서 지정한 채팅 세션과 해당 세션의 메시지 기록을 삭제합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string` |
+| 출력 | `204` 삭제 성공 |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 세션 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-delete-api-workspaces-workspace-id-chat-sessions-session-id"></a>
 ### `DELETE /api/workspaces/{workspace_id}/chat/sessions/{session_id}` 상세
 
@@ -355,6 +321,22 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/cha
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/chat/controller/ChatSessionController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: delete_2`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-chat-sessions-session-id-messages"></a>
+### `GET /api/workspaces/{workspace_id}/chat/sessions/{session_id}/messages`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 세션 내 채팅 메시지를 생성 순서대로 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string` |
+| 출력 | `200` 조회 성공 — `ChatMessagesResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 세션 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-chat-sessions-session-id-messages"></a>
 ### `GET /api/workspaces/{workspace_id}/chat/sessions/{session_id}/messages` 상세
@@ -529,6 +511,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/chat/controller/ChatSessionController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getMessages`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki"></a>
+### `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 세션(full) 또는 선택 문답(partial)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 위키 생성은 파이프라인이 비동기로 수행합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string`<br>**Body** — `ChatWikiExportRequest` |
+| 출력 | `200` 성공 — `ChatWikiExportResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | 공통 오류 계약 적용 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki"></a>
 ### `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki` 상세
 
@@ -610,6 +608,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/chat/controller/ChatWikiExportController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: exportToWiki`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki-preview"></a>
+### `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki/preview`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 세션을 llmPipeline 입력용 Markdown으로 직렬화해 결과만 반환합니다. 저장/파이프라인 호출은 하지 않습니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string` |
+| 출력 | `200` 성공 — `string` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | 공통 오류 계약 적용 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki-preview"></a>
 ### `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki/preview` 상세
 
@@ -673,3 +687,5 @@ string
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/chat/controller/ChatWikiExportController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: previewWikiMarkdown`)
+
+</details>

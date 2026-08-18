@@ -32,100 +32,8 @@ Skill 작성·게시·설정과 참조 문서 읽기 API다.
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | `404` 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 요청 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
 
-[상세 계약](#detail-get-api-workspaces-workspace-id-skills)
-
-<a id="summary-post-api-workspaces-workspace-id-skills-author"></a>
-### `POST /api/workspaces/{workspace_id}/skills/author`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 자연어 요구를 바탕으로 저장 전 Skill 초안을 생성합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `SkillAuthoringRequest` |
-| 출력 | `200` 초안 작성 성공 — `allowed_tools`, `capabilities`, `description`, `instructions_markdown`, `issues`, `name`, `question`, `scope_type`, … |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`404` 워크스페이스 또는 참조 문서를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 이름 또는 버전 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`413` 참조 문서 또는 요청 본문이 너무 큼 — `JsonNode` / `ErrorResponse`<br>`422` Skill 요청 검증 실패 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-skills-author)
-
-<a id="summary-post-api-workspaces-workspace-id-skills-author-publish"></a>
-### `POST /api/workspaces/{workspace_id}/skills/author/publish`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 작성된 Skill 정의를 검토 후 게시합니다. |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `SkillPublishRequest` |
-| 출력 | `200` 게시 성공 — `allowed_tools`, `capabilities`, `description`, `instructions_markdown`, `issues`, `name`, `question`, `scope_type`, … |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 Skill 정의 — `ErrorResponse`<br>`404` 워크스페이스 또는 참조 문서를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 이름 또는 버전 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`413` 요청 본문이 너무 큼 — `JsonNode` / `ErrorResponse`<br>`422` Skill 요청 검증 실패 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-skills-author-publish)
-
-<a id="summary-get-api-workspaces-workspace-id-skills-skill-id"></a>
-### `GET /api/workspaces/{workspace_id}/skills/{skill_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill의 현재 정의와 실행 설정을 반환합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `skill_id`: `string` |
-| 출력 | `200` 상세 조회 성공 — `SkillResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` Skill 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 요청 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
-
-[상세 계약](#detail-get-api-workspaces-workspace-id-skills-skill-id)
-
-<a id="summary-patch-api-workspaces-workspace-id-skills-skill-id"></a>
-### `PATCH /api/workspaces/{workspace_id}/skills/{skill_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill의 정의를 수정합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `skill_id`: `string`<br>**Body** — `SkillUpdateRequest` |
-| 출력 | `200` 수정 성공 — `description`, `instructions_markdown`, `issues`, `name`, `question`, `scope_type`, `skill_id`, `skill_markdown`, … |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `400` 잘못된 Skill 정의 — `ErrorResponse`<br>`404` Skill 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 이름 또는 버전 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`413` 요청 본문이 너무 큼 — `JsonNode` / `ErrorResponse`<br>`422` Skill 요청 검증 실패 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
-
-[상세 계약](#detail-patch-api-workspaces-workspace-id-skills-skill-id)
-
-<a id="summary-post-api-workspaces-workspace-id-skills-skill-id-disable"></a>
-### `POST /api/workspaces/{workspace_id}/skills/{skill_id}/disable`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill을 Agent 실행 대상에서 제외합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `skill_id`: `string` |
-| 출력 | `200` 비활성화 성공 — `SkillResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` Skill 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 요청 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-skills-skill-id-disable)
-
-<a id="summary-post-api-workspaces-workspace-id-skills-skill-id-enable"></a>
-### `POST /api/workspaces/{workspace_id}/skills/{skill_id}/enable`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill을 Agent 실행 대상에 포함합니다. |
-| 입력 | **Path** — `workspace_id`: `string`, `skill_id`: `string` |
-| 출력 | `200` 활성화 성공 — `SkillResponse` |
-| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
-| 주요 오류 | `404` Skill 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 요청 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
-
-[상세 계약](#detail-post-api-workspaces-workspace-id-skills-skill-id-enable)
-
-<a id="summary-post-internal-agent-skill-authoring-references-read"></a>
-### `POST /internal/agent/skill-authoring/references/read`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill 작성에 사용할 참조 문서의 범위와 권한을 검증한 뒤 본문을 반환합니다. |
-| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `SkillReferenceReadRequest` |
-| 출력 | `200` 성공 — `SkillReferenceReadResponse` |
-| 조건 | 인증 필요<br>`X-Agent-Service-Token`을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `401` Agent 서비스 인증 토큰 누락 또는 불일치 |
-
-[상세 계약](#detail-post-internal-agent-skill-authoring-references-read)
-
-## 상세 계약
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-skills"></a>
 ### `GET /api/workspaces/{workspace_id}/skills` 상세
@@ -286,6 +194,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: list_2`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-skills-author"></a>
+### `POST /api/workspaces/{workspace_id}/skills/author`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 자연어 요구를 바탕으로 저장 전 Skill 초안을 생성합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `SkillAuthoringRequest` |
+| 출력 | `200` 초안 작성 성공 — `allowed_tools`, `capabilities`, `description`, `instructions_markdown`, `issues`, `name`, `question`, `scope_type`, … |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`404` 워크스페이스 또는 참조 문서를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 이름 또는 버전 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`413` 참조 문서 또는 요청 본문이 너무 큼 — `JsonNode` / `ErrorResponse`<br>`422` Skill 요청 검증 실패 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-skills-author"></a>
 ### `POST /api/workspaces/{workspace_id}/skills/author` 상세
 
@@ -420,6 +344,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: author`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-skills-author-publish"></a>
+### `POST /api/workspaces/{workspace_id}/skills/author/publish`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 작성된 Skill 정의를 검토 후 게시합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `SkillPublishRequest` |
+| 출력 | `200` 게시 성공 — `allowed_tools`, `capabilities`, `description`, `instructions_markdown`, `issues`, `name`, `question`, `scope_type`, … |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 Skill 정의 — `ErrorResponse`<br>`404` 워크스페이스 또는 참조 문서를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 이름 또는 버전 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`413` 요청 본문이 너무 큼 — `JsonNode` / `ErrorResponse`<br>`422` Skill 요청 검증 실패 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-skills-author-publish"></a>
 ### `POST /api/workspaces/{workspace_id}/skills/author/publish` 상세
@@ -557,6 +497,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: publish`)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-skills-skill-id"></a>
+### `GET /api/workspaces/{workspace_id}/skills/{skill_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Skill의 현재 정의와 실행 설정을 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `skill_id`: `string` |
+| 출력 | `200` 상세 조회 성공 — `SkillResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` Skill 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 요청 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-get-api-workspaces-workspace-id-skills-skill-id"></a>
 ### `GET /api/workspaces/{workspace_id}/skills/{skill_id}` 상세
@@ -714,6 +670,22 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: get_1`)
 
+</details>
+
+<a id="summary-patch-api-workspaces-workspace-id-skills-skill-id"></a>
+### `PATCH /api/workspaces/{workspace_id}/skills/{skill_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Skill의 정의를 수정합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `skill_id`: `string`<br>**Body** — `SkillUpdateRequest` |
+| 출력 | `200` 수정 성공 — `description`, `instructions_markdown`, `issues`, `name`, `question`, `scope_type`, `skill_id`, `skill_markdown`, … |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 잘못된 Skill 정의 — `ErrorResponse`<br>`404` Skill 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 이름 또는 버전 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`413` 요청 본문이 너무 큼 — `JsonNode` / `ErrorResponse`<br>`422` Skill 요청 검증 실패 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-patch-api-workspaces-workspace-id-skills-skill-id"></a>
 ### `PATCH /api/workspaces/{workspace_id}/skills/{skill_id}` 상세
 
@@ -832,6 +804,22 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skil
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: update_1`)
+
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-skills-skill-id-disable"></a>
+### `POST /api/workspaces/{workspace_id}/skills/{skill_id}/disable`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Skill을 Agent 실행 대상에서 제외합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `skill_id`: `string` |
+| 출력 | `200` 비활성화 성공 — `SkillResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` Skill 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 요청 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
 
 <a id="detail-post-api-workspaces-workspace-id-skills-skill-id-disable"></a>
 ### `POST /api/workspaces/{workspace_id}/skills/{skill_id}/disable` 상세
@@ -989,6 +977,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: disable`)
 
+</details>
+
+<a id="summary-post-api-workspaces-workspace-id-skills-skill-id-enable"></a>
+### `POST /api/workspaces/{workspace_id}/skills/{skill_id}/enable`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Skill을 Agent 실행 대상에 포함합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `skill_id`: `string` |
+| 출력 | `200` 활성화 성공 — `SkillResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` Skill 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`409` Skill 요청 충돌 — `ErrorResponse`<br>`410` Skill이 더 이상 유효하지 않음 — `ErrorResponse`<br>`503` llmPipeline 사용 불가 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-api-workspaces-workspace-id-skills-skill-id-enable"></a>
 ### `POST /api/workspaces/{workspace_id}/skills/{skill_id}/enable` 상세
 
@@ -1145,6 +1149,22 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: enable`)
 
+</details>
+
+<a id="summary-post-internal-agent-skill-authoring-references-read"></a>
+### `POST /internal/agent/skill-authoring/references/read`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | Skill 작성에 사용할 참조 문서의 범위와 권한을 검증한 뒤 본문을 반환합니다. |
+| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `SkillReferenceReadRequest` |
+| 출력 | `200` 성공 — `SkillReferenceReadResponse` |
+| 조건 | 인증 필요<br>`X-Agent-Service-Token`을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `401` Agent 서비스 인증 토큰 누락 또는 불일치 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
 <a id="detail-post-internal-agent-skill-authoring-references-read"></a>
 ### `POST /internal/agent/skill-authoring/references/read` 상세
 
@@ -1225,3 +1245,5 @@ curl -X POST "$DOCUMENT/internal/agent/skill-authoring/references/read" \
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: read_1`)
+
+</details>
