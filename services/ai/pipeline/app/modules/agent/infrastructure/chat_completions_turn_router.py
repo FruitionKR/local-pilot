@@ -95,6 +95,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                         "role": message.role,
                         "content": message.content,
                         "action": message.action,
+                        "run_id": message.run_id,
                     }
                     for message in request.conversation_context.recent_messages
                 ]

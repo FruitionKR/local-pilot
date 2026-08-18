@@ -75,7 +75,8 @@ Agent 요청을 분류하고 Query·문서 생성·편집 작업을 실행합니
       {
         "action": "conversation_reply",
         "content": "string",
-        "role": "string"
+        "role": "string",
+        "run_id": "agent_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
       }
     ],
     "reference_context": null
@@ -105,6 +106,9 @@ Agent 실행 계획에는 별도의 권한·tool·승인 검사를 계속 적용
 
 `conversation_context.recent_messages[].action`은 이전 assistant 응답의 action을 전달하는 선택 필드다.
 라우터는 이를 멀티턴 연속성 힌트로만 사용하며 현재 요청의 명시적 의도를 우선한다.
+`recent_messages[].run_id`도 선택 필드이며, 사용자가 이전 Markdown 편집안을 저장하겠다고 확인하면
+같은 workspace·user·document·base version의 완료된 실행 결과를 조회해 정확한 편집안을 재사용한다.
+일치하는 실행을 확인할 수 없으면 새 승인 작업을 만들지 않고 미리보기를 다시 요청한다.
 복합 요청은 `retrieval_source`(`none|workspace|web`),
 `document_operation`(`none|create|edit`), `persist`로 분해한 뒤 전체 조합을 대표하는 action을
 선택한다. 서버는 이 의미를 문장 패턴으로 덮어쓰지 않고, action과 필드 조합이 모순될 때만

@@ -747,6 +747,12 @@ components:
           - assistant
           title: Role
           type: string
+        run_id:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Run Id
       required:
       - role
       - content

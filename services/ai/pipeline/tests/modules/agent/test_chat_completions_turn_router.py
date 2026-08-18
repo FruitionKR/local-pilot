@@ -73,6 +73,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
                             role="assistant",
                             content="일기로 쓸 제목의 분위기나 주제를 알려주세요.",
                             action="conversation_reply",
+                            run_id="agent_preview_1",
                         ),
                         ConversationMessage(
                             role="user",
@@ -89,6 +90,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             payload["recent_messages"][1]["action"],
             "conversation_reply",
         )
+        self.assertEqual(payload["recent_messages"][1]["run_id"], "agent_preview_1")
 
     def test_keeps_structured_compound_route_without_semantic_rewrite(self) -> None:
         response = route_response("workspace_workflow")

@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 
 from app.modules.agent.application.handle_agent_turn import HandleAgentTurnUseCase
 from app.modules.agent.domain.entities import (
@@ -156,6 +157,18 @@ class RecordingAgentRunStarter:
     def start(self, request: object) -> tuple[str, str]:
         self.requests.append(request)
         return "run-1", "queued"
+
+
+class FixedMarkdownTurnRepository:
+    def __init__(self, result: dict[str, object] | None) -> None:
+        self.result = result
+        self.requests: list[tuple[str, str, str]] = []
+
+    def get_markdown_turn_status(
+        self, workspace_id: str, user_id: str, run_id: str
+    ) -> dict[str, object] | None:
+        self.requests.append((workspace_id, user_id, run_id))
+        return self.result
 
 
 class RecordingSkillAuthorer:
@@ -699,6 +712,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                     confidence=0.95,
                     reason="folder request",
                     selected_skill_id="skill-1",
+                    persist=True,
                 )
             ),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
@@ -775,6 +789,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                     action="workspace_workflow",
                     confidence=0.95,
                     reason="workspace document request",
+                    persist=True,
                 )
             ),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
@@ -1212,6 +1227,226 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertTrue(web_query_use_case.kwargs[0]["allow_web_search"])
         self.assertIn("grounded_query", editor.create_requests[0].reference_context)
         self.assertIsNotNone(starter.requests[0].content)
+
+    def test_direct_mutation_recheck_only_confirms_action_and_persistence(self) -> None:
+        starter = RecordingAgentRunStarter()
+        default_query_use_case = FakeQueryUseCase()
+        web_query_use_case = FakeQueryUseCase()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=1),
+                    summary="웹 근거 반영",
+                    replacement_markdown="# 웹 근거 보고서",
+                )
+            )
+        )
+        contextual_route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.99,
+            reason="web-grounded edit",
+            edit_goal="other",
+            retrieval_source="web",
+            document_operation="edit",
+            persist=True,
+        )
+        direct_route = replace(
+            contextual_route,
+            retrieval_source="none",
+            document_operation="none",
+            edit_goal=None,
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(contextual_route, direct_route),
+            query_use_case=default_query_use_case,  # type: ignore[arg-type]
+            web_search_query_use_case_factory=lambda: web_query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="웹 근거로 현재 문서를 다시 작성해 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+                base_version=3,
+                allow_web_search=True,
+                active_markdown_context=ActiveMarkdownContext(markdown="# 기존 문서"),
+            )
+        )
+
+        self.assertEqual(result.action, "workspace_workflow")
+        self.assertEqual(len(starter.requests), 1)
+        self.assertEqual(web_query_use_case.questions, ["웹 근거로 현재 문서를 다시 작성해 저장해줘"])
+
+    def test_preview_confirmation_reuses_exact_previous_edit(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                    summary="호출되면 안 됨",
+                    replacement_markdown="WRONG",
+                )
+            )
+        )
+        contextual_route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.99,
+            reason="approve previous preview",
+            edit_goal="other",
+            document_operation="edit",
+            persist=True,
+        )
+        direct_route = contextual_route
+        repository = FixedMarkdownTurnRepository(
+            {
+                "document_id": "document-1",
+                "base_version": 3,
+                "status": "completed",
+                "result": {
+                    "action": "markdown_edit",
+                    "edit": {
+                        "operation": "replace",
+                        "actual_target": {"type": "selection", "start_line": 3, "end_line": 3},
+                        "requested_target": {"type": "selection", "start_line": 3, "end_line": 3},
+                        "changed": True,
+                        "summary": "미리보기 변경",
+                        "replacement_markdown": "AFTER",
+                    },
+                },
+            }
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(contextual_route, direct_route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+            markdown_turn_repository=repository,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="이대로 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+                base_version=3,
+                conversation_context=AgentConversationContext(
+                    recent_messages=(
+                        ConversationMessage(role="user", content="marker를 바꿔줘"),
+                        ConversationMessage(
+                            role="assistant",
+                            content="편집안을 만들었습니다.",
+                            action="markdown_edit",
+                            run_id="agent-preview-1",
+                        ),
+                    )
+                ),
+                active_markdown_context=ActiveMarkdownContext(
+                    markdown="# 제목\n\nBEFORE",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "workspace_workflow")
+        self.assertEqual(repository.requests, [("workspace-1", "user-1", "agent-preview-1")])
+        self.assertEqual(editor.requests, [])
+        content = getattr(starter.requests[0], "content")
+        self.assertEqual(getattr(content, "markdown"), "# 제목\n\nAFTER")
+
+    def test_persistent_insert_after_without_section_returns_clarification(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="insert_after",
+                    target=MarkdownEditTarget(type="current_section", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.99,
+            reason="append and persist",
+            edit_goal="insert_after",
+            document_operation="edit",
+            persist=True,
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(route, route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="문서 아래에 내용을 추가해 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+                base_version=3,
+                active_markdown_context=ActiveMarkdownContext(markdown="# 제목"),
+            )
+        )
+
+        self.assertEqual(result.action, "clarify")
+        self.assertIn("현재 섹션", result.message or "")
+        self.assertEqual(editor.requests, [])
+        self.assertEqual(starter.requests, [])
+
+    def test_persistent_noop_edit_does_not_start_approval_run(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=1),
+                    summary="변경 없음",
+                    replacement_markdown="# 제목",
+                )
+            )
+        )
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.99,
+            reason="persist edit",
+            edit_goal="other",
+            document_operation="edit",
+            persist=True,
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(route, route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="현재 문서를 다듬어 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+                base_version=3,
+                active_markdown_context=ActiveMarkdownContext(markdown="# 제목"),
+            )
+        )
+
+        self.assertEqual(result.action, "clarify")
+        self.assertIn("변경할 내용", result.message or "")
+        self.assertEqual(starter.requests, [])
 
     def test_indirect_context_cannot_start_mutation_without_direct_intent(self) -> None:
         starter = RecordingAgentRunStarter()

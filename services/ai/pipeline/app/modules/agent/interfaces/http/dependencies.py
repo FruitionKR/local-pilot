@@ -36,6 +36,7 @@ def build_handle_agent_turn_use_case(
         provider=provider, model=model, event_publisher=event_publisher
     )
     feature_enabled = os.environ.get("AGENT_SKILLS_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+    agent_run_repository = PostgresAgentRunRepository()
     return HandleAgentTurnUseCase(
         router=build_agent_turn_router(provider=provider, model=model),
         query_use_case=query_use_case,
@@ -45,7 +46,8 @@ def build_handle_agent_turn_use_case(
         markdown_edit_use_case=GenerateMarkdownEditUseCase(markdown_editor),
         markdown_create_use_case=GenerateMarkdownDocumentUseCase(markdown_editor),
         skill_selector=SelectSkillUseCase(PostgresSkillRepository(), feature_enabled=feature_enabled),
-        agent_run_starter=StartAgentRunUseCase(PostgresAgentRunRepository(), feature_enabled=feature_enabled),
+        agent_run_starter=StartAgentRunUseCase(agent_run_repository, feature_enabled=feature_enabled),
+        markdown_turn_repository=agent_run_repository,
         skill_authorer=(get_author_skill_use_case(provider=provider, model=model) if feature_enabled else None),
         skill_draft_proposer=(
             get_propose_skill_draft_use_case(provider=provider, model=model)

@@ -65,6 +65,7 @@ class ConversationMessage:
     role: ConversationRole
     content: str
     action: str | None = None
+    run_id: str | None = None
 
 
 @dataclass(frozen=True)

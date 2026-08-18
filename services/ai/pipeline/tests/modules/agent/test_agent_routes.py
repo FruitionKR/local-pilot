@@ -295,6 +295,7 @@ class AgentRoutesTest(unittest.TestCase):
                         "role": "assistant",
                         "content": "날씨를 알려주세요.",
                         "action": "conversation_reply",
+                        "run_id": "agent_preview_1",
                     }
                 ]
             },
@@ -303,6 +304,10 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(
             request.conversation_context.recent_messages[0].action,  # type: ignore[union-attr]
             "conversation_reply",
+        )
+        self.assertEqual(
+            request.conversation_context.recent_messages[0].run_id,  # type: ignore[union-attr]
+            "agent_preview_1",
         )
 
     def test_agent_turn_validates_skill_mode_and_id_combinations(self) -> None:
