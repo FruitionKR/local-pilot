@@ -18,8 +18,8 @@
 | [`POST /api/workspaces/{workspace_id}/agent/turn`](#summary-post-api-workspaces-workspace-id-agent-turn) | 사용자 요청을 비동기 Agent 실행 대기열에 등록합니다. |
 | [`GET /api/workspaces/{workspace_id}/agent/turn/{run_id}`](#summary-get-api-workspaces-workspace-id-agent-turn-run-id) | 워크스페이스의 Agent 실행 결과를 조회합니다. |
 | [`GET /api/workspaces/{workspace_id}/agent/turn/{run_id}/events`](#summary-get-api-workspaces-workspace-id-agent-turn-run-id-events) | Agent turn의 진행 상황과 최종 결과를 Server-Sent Events로 전달합니다. |
-| [`POST /internal/agent/tools/execute/{tool_name}`](#summary-post-internal-agent-tools-execute-tool-name) | 목적 설명 없음 |
-| [`POST /internal/agent/tools/read/{tool_name}`](#summary-post-internal-agent-tools-read-tool-name) | 목적 설명 없음 |
+| [`POST /internal/agent/tools/execute/{tool_name}`](#summary-post-internal-agent-tools-execute-tool-name) | 승인된 Agent Tool 변경 작업을 실행합니다. |
+| [`POST /internal/agent/tools/read/{tool_name}`](#summary-post-internal-agent-tools-read-tool-name) | 승인된 Agent Tool 읽기 작업을 실행합니다. |
 
 ## 한눈에 보기
 
@@ -30,7 +30,7 @@
 |---|---|
 | 목적 | 자율 AgentRun 계획과 실행 상태를 조회합니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
-| 출력 | `200` OK — `JsonNode` |
+| 출력 | `200` 성공 — `JsonNode` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -43,7 +43,7 @@
 |---|---|
 | 목적 | 현재 AgentRun 계획을 승인합니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string`<br>**Body** — `AgentRunApproveRequest` |
-| 출력 | `200` OK — `JsonNode` |
+| 출력 | `200` 성공 — `JsonNode` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -56,7 +56,7 @@
 |---|---|
 | 목적 | 현재 AgentRun을 취소합니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
-| 출력 | `200` OK — `JsonNode` |
+| 출력 | `200` 성공 — `JsonNode` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -69,7 +69,7 @@
 |---|---|
 | 목적 | 현재 AgentRun 계획을 거절합니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string` |
-| 출력 | `200` OK — `JsonNode` |
+| 출력 | `200` 성공 — `JsonNode` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -82,7 +82,7 @@
 |---|---|
 | 목적 | 현재 AgentRun에 새 계획을 요청합니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `run_id`: `string`<br>**Body** — `AgentRunReviseRequest` |
-| 출력 | `200` OK — `JsonNode` |
+| 출력 | `200` 성공 — `JsonNode` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -132,11 +132,11 @@
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 목적 설명 없음 |
-| 입력 | **Path** — `tool_name`: `string`<br>**Body** — `AgentToolExecuteRequest` |
-| 출력 | `200` OK — `object` |
+| 목적 | 승인된 Agent Tool 변경 작업을 실행합니다. |
+| 입력 | **Path** — `tool_name`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `AgentToolExecuteRequest` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>`X-Agent-Service-Token`을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
+| 주요 오류 | `401` Agent 서비스 인증 토큰 누락 또는 불일치 |
 
 [상세 계약](#detail-post-internal-agent-tools-execute-tool-name)
 
@@ -145,11 +145,11 @@
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 목적 설명 없음 |
-| 입력 | **Path** — `tool_name`: `string`<br>**Body** — `AgentToolReadRequest` |
-| 출력 | `200` OK — `object` |
+| 목적 | 승인된 Agent Tool 읽기 작업을 실행합니다. |
+| 입력 | **Path** — `tool_name`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `AgentToolReadRequest` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>`X-Agent-Service-Token`을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
+| 주요 오류 | `401` Agent 서비스 인증 토큰 누락 또는 불일치 |
 
 [상세 계약](#detail-post-internal-agent-tools-read-tool-name)
 
@@ -878,7 +878,7 @@ string
 
 #### 2. 목적
 
-목적 설명 없음
+승인된 Agent Tool 변경 작업을 실행합니다.
 
 #### 3. Auth 필요 여부
 
@@ -890,6 +890,7 @@ string
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `tool_name` | `string` | 예 | - |
+| header | `X-Agent-Service-Token` | `string` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`AgentToolExecuteRequest`)
 
@@ -920,6 +921,8 @@ string
 
 #### 6. Error response
 
+- HTTP `401`: Agent 서비스 인증 토큰 누락 또는 불일치
+
 - 명세에 별도 오류 응답이 정의되어 있지 않다.
 
 #### 7. Pagination / filtering
@@ -936,6 +939,7 @@ string
 
 ```bash
 curl -X POST "$DOCUMENT/internal/agent/tools/execute/<value>" \
+  -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"arguments":{},"idempotency_key":"<value>","operation_hash":"<value>","operation_id":"<value>","plan_id":"<value>","plan_version":1,"run_id":"<value>","user_id":"<value>","workspace_id":"<value>"}'
 ```
@@ -959,7 +963,7 @@ curl -X POST "$DOCUMENT/internal/agent/tools/execute/<value>" \
 
 #### 2. 목적
 
-목적 설명 없음
+승인된 Agent Tool 읽기 작업을 실행합니다.
 
 #### 3. Auth 필요 여부
 
@@ -971,6 +975,7 @@ curl -X POST "$DOCUMENT/internal/agent/tools/execute/<value>" \
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `tool_name` | `string` | 예 | - |
+| header | `X-Agent-Service-Token` | `string` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`AgentToolReadRequest`)
 
@@ -996,6 +1001,8 @@ curl -X POST "$DOCUMENT/internal/agent/tools/execute/<value>" \
 
 #### 6. Error response
 
+- HTTP `401`: Agent 서비스 인증 토큰 누락 또는 불일치
+
 - 명세에 별도 오류 응답이 정의되어 있지 않다.
 
 #### 7. Pagination / filtering
@@ -1012,6 +1019,7 @@ curl -X POST "$DOCUMENT/internal/agent/tools/execute/<value>" \
 
 ```bash
 curl -X POST "$DOCUMENT/internal/agent/tools/read/<value>" \
+  -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"arguments":{},"run_id":"<value>","user_id":"<value>","workspace_id":"<value>"}'
 ```

@@ -10,13 +10,13 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 
 | API | 목적 |
 |---|---|
-| [`POST /chat-wiki/runs`](#summary-post-chat-wiki-runs) | Run Chat Wiki Endpoint |
-| [`POST /pipeline/reingest-runs`](#summary-post-pipeline-reingest-runs) | Run Reingest Pipeline Endpoint |
-| [`POST /pipeline/runs`](#summary-post-pipeline-runs) | Run Pipeline Endpoint |
-| [`GET /pipeline/runs/{run_id}`](#summary-get-pipeline-runs-run-id) | Get Pipeline Run |
-| [`GET /pipeline/runs/{run_id}/logs`](#summary-get-pipeline-runs-run-id-logs) | Get Pipeline Logs |
-| [`GET /documents/{document_id}`](#summary-get-documents-document-id) | Get Document |
-| [`GET /health`](#summary-get-health) | Health |
+| [`POST /chat-wiki/runs`](#summary-post-chat-wiki-runs) | 채팅 내용을 Wiki에 반영하는 pipeline run을 실행합니다. |
+| [`POST /pipeline/reingest-runs`](#summary-post-pipeline-reingest-runs) | 문서 재편입 pipeline run을 실행합니다. |
+| [`POST /pipeline/runs`](#summary-post-pipeline-runs) | 문서 ingest pipeline run을 실행합니다. |
+| [`GET /pipeline/runs/{run_id}`](#summary-get-pipeline-runs-run-id) | pipeline run의 상태와 결과를 조회합니다. |
+| [`GET /pipeline/runs/{run_id}/logs`](#summary-get-pipeline-runs-run-id-logs) | pipeline run 로그를 조회합니다. |
+| [`GET /documents/{document_id}`](#summary-get-documents-document-id) | pipeline 처리를 위한 문서 정보를 조회합니다. |
+| [`GET /health`](#summary-get-health) | ai-svc의 상태를 확인합니다. |
 
 ## 한눈에 보기
 
@@ -25,11 +25,11 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Run Chat Wiki Endpoint |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `ChatWikiRunIn` |
-| 출력 | `200` Successful Response — `PipelineRunOut` |
+| 목적 | 채팅 내용을 Wiki에 반영하는 pipeline run을 실행합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `ChatWikiRunIn` |
+| 출력 | `200` 성공 — `PipelineRunOut` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-chat-wiki-runs)
 
@@ -38,11 +38,11 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Run Reingest Pipeline Endpoint |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `ReingestRunIn` |
-| 출력 | `200` Successful Response — `PipelineRunOut` |
+| 목적 | 문서 재편입 pipeline run을 실행합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `ReingestRunIn` |
+| 출력 | `200` 성공 — `PipelineRunOut` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-pipeline-reingest-runs)
 
@@ -51,11 +51,11 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Run Pipeline Endpoint |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `PipelineRunIn` |
-| 출력 | `200` Successful Response — `PipelineRunOut` |
+| 목적 | 문서 ingest pipeline run을 실행합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `PipelineRunIn` |
+| 출력 | `200` 성공 — `PipelineRunOut` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-pipeline-runs)
 
@@ -64,11 +64,11 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Get Pipeline Run |
-| 입력 | **Path** — `run_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` / `null` |
-| 출력 | `200` Successful Response — `object` |
+| 목적 | pipeline run의 상태와 결과를 조회합니다. |
+| 입력 | **Path** — `run_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-get-pipeline-runs-run-id)
 
@@ -77,11 +77,11 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Get Pipeline Logs |
-| 입력 | **Path** — `run_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` / `null` |
-| 출력 | `200` Successful Response — `string` |
+| 목적 | pipeline run 로그를 조회합니다. |
+| 입력 | **Path** — `run_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `string` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-get-pipeline-runs-run-id-logs)
 
@@ -90,11 +90,11 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Get Document |
-| 입력 | **Path** — `document_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` / `null` |
-| 출력 | `200` Successful Response — `object` |
+| 목적 | pipeline 처리를 위한 문서 정보를 조회합니다. |
+| 입력 | **Path** — `document_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-get-documents-document-id)
 
@@ -103,9 +103,9 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Health |
+| 목적 | ai-svc의 상태를 확인합니다. |
 | 입력 | 없음 |
-| 출력 | `200` Successful Response — `object` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -122,7 +122,7 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 
 #### 2. 목적
 
-Run Chat Wiki Endpoint
+채팅 내용을 Wiki에 반영하는 pipeline run을 실행합니다.
 
 #### 3. Auth 필요 여부
 
@@ -133,7 +133,7 @@ Run Chat Wiki Endpoint
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`ChatWikiRunIn`)
 
@@ -169,6 +169,9 @@ Run Chat Wiki Endpoint
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -236,7 +239,7 @@ curl -X POST "$PIPELINE/chat-wiki/runs" \
 
 #### 2. 목적
 
-Run Reingest Pipeline Endpoint
+문서 재편입 pipeline run을 실행합니다.
 
 #### 3. Auth 필요 여부
 
@@ -247,7 +250,7 @@ Run Reingest Pipeline Endpoint
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`ReingestRunIn`)
 
@@ -283,6 +286,9 @@ Run Reingest Pipeline Endpoint
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -350,7 +356,7 @@ curl -X POST "$PIPELINE/pipeline/reingest-runs" \
 
 #### 2. 목적
 
-Run Pipeline Endpoint
+문서 ingest pipeline run을 실행합니다.
 
 #### 3. Auth 필요 여부
 
@@ -361,7 +367,7 @@ Run Pipeline Endpoint
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`PipelineRunIn`)
 
@@ -397,6 +403,9 @@ Run Pipeline Endpoint
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -464,7 +473,7 @@ curl -X POST "$PIPELINE/pipeline/runs" \
 
 #### 2. 목적
 
-Get Pipeline Run
+pipeline run의 상태와 결과를 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -476,7 +485,7 @@ Get Pipeline Run
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `run_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -491,6 +500,9 @@ Get Pipeline Run
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -550,7 +562,7 @@ curl -X GET "$PIPELINE/pipeline/runs/<value>" \
 
 #### 2. 목적
 
-Get Pipeline Logs
+pipeline run 로그를 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -562,7 +574,7 @@ Get Pipeline Logs
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `run_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -576,6 +588,9 @@ string
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -634,7 +649,7 @@ string
 
 #### 2. 목적
 
-Get Document
+pipeline 처리를 위한 문서 정보를 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -646,7 +661,7 @@ Get Document
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `document_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -661,6 +676,9 @@ Get Document
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -720,7 +738,7 @@ curl -X GET "$PIPELINE/documents/<value>" \
 
 #### 2. 목적
 
-Health
+ai-svc의 상태를 확인합니다.
 
 #### 3. Auth 필요 여부
 

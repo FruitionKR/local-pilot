@@ -17,7 +17,7 @@ Wiki 그래프·페이지·기여·유지보수 API다.
 | [`POST /api/workspaces/{workspace_id}/wiki/maintenance/lint`](#summary-post-api-workspaces-workspace-id-wiki-maintenance-lint) | 워크스페이스 Wiki 정합성 검사 실행을 비동기 대기열에 등록합니다. |
 | [`GET /api/workspaces/{workspace_id}/wiki/maintenance/runs/{run_id}`](#summary-get-api-workspaces-workspace-id-wiki-maintenance-runs-run-id) | 실행 중이거나 완료된 Wiki 정합성 검사 결과를 반환합니다. |
 | [`GET /api/workspaces/{workspace_id}/wiki/maintenance/status`](#summary-get-api-workspaces-workspace-id-wiki-maintenance-status) | 워크스페이스 Wiki 유지보수 작업의 현재 상태를 반환합니다. |
-| [`POST /internal/wiki/contributions`](#summary-post-internal-wiki-contributions) | 목적 설명 없음 |
+| [`POST /internal/wiki/contributions`](#summary-post-internal-wiki-contributions) | 요청한 Wiki 페이지의 기여 이력을 조회합니다. |
 
 ## 한눈에 보기
 
@@ -117,11 +117,11 @@ Wiki 그래프·페이지·기여·유지보수 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 목적 설명 없음 |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string`<br>**Body** — `ContributionRequest` |
-| 출력 | `200` OK — `object` |
+| 목적 | 요청한 Wiki 페이지의 기여 이력을 조회합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `ContributionRequest` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
+| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
 
 [상세 계약](#detail-post-internal-wiki-contributions)
 
@@ -882,7 +882,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/m
 
 #### 2. 목적
 
-목적 설명 없음
+요청한 Wiki 페이지의 기여 이력을 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -893,7 +893,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/m
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `string` | 아니요 | - |
+| header | `X-Internal-Token` | `string` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`ContributionRequest`)
 
@@ -917,6 +917,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/m
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
 
 - 명세에 별도 오류 응답이 정의되어 있지 않다.
 

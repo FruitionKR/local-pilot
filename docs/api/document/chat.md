@@ -78,7 +78,7 @@
 |---|---|
 | 목적 | 세션(full) 또는 선택 문답(partial)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 위키 생성은 파이프라인이 비동기로 수행합니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string`<br>**Body** — `ChatWikiExportRequest` |
-| 출력 | `200` OK — `ChatWikiExportResponse` |
+| 출력 | `200` 성공 — `ChatWikiExportResponse` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -91,7 +91,7 @@
 |---|---|
 | 목적 | 세션을 llmPipeline 입력용 Markdown으로 직렬화해 결과만 반환합니다. 저장/파이프라인 호출은 하지 않습니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string` |
-| 출력 | `200` OK — `string` |
+| 출력 | `200` 성공 — `string` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 

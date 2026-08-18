@@ -10,16 +10,16 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | API | 목적 |
 |---|---|
-| [`GET /wiki/documents/{document_id}/context`](#summary-get-wiki-documents-document-id-context) | Get Document Wiki Context |
-| [`GET /wiki/graph`](#summary-get-wiki-graph) | Get Wiki Graph |
-| [`POST /wiki/ingest-restore-runs`](#summary-post-wiki-ingest-restore-runs) | Restore Ingest Operation |
-| [`POST /wiki/lint-restore-runs`](#summary-post-wiki-lint-restore-runs) | Restore Lint Operation |
-| [`POST /wiki/maintenance/lint`](#summary-post-wiki-maintenance-lint) | Lint Wiki Workspace |
-| [`POST /wiki/pages/lookup`](#summary-post-wiki-pages-lookup) | Lookup Wiki Pages |
-| [`GET /wiki/pages/{page_id}`](#summary-get-wiki-pages-page-id) | Get Wiki Page |
-| [`PATCH /wiki/pages/{page_id}/rename`](#summary-patch-wiki-pages-page-id-rename) | Rename Wiki Page |
-| [`DELETE /wiki/workspaces/{workspace_id}/documents/{document_id}`](#summary-delete-wiki-workspaces-workspace-id-documents-document-id) | Delete Document Wiki Data |
-| [`GET /wiki/workspaces/{workspace_id}/last-updated`](#summary-get-wiki-workspaces-workspace-id-last-updated) | Get Last Wiki Updated |
+| [`GET /wiki/documents/{document_id}/context`](#summary-get-wiki-documents-document-id-context) | 문서와 연결된 Wiki 문맥을 조회합니다. |
+| [`GET /wiki/graph`](#summary-get-wiki-graph) | 워크스페이스 Wiki 그래프를 조회합니다. |
+| [`POST /wiki/ingest-restore-runs`](#summary-post-wiki-ingest-restore-runs) | ingest 작업의 Wiki 변경을 복원합니다. |
+| [`POST /wiki/lint-restore-runs`](#summary-post-wiki-lint-restore-runs) | lint 작업의 Wiki 변경을 복원합니다. |
+| [`POST /wiki/maintenance/lint`](#summary-post-wiki-maintenance-lint) | 워크스페이스 Wiki의 정합성을 검사합니다. |
+| [`POST /wiki/pages/lookup`](#summary-post-wiki-pages-lookup) | 조건에 맞는 Wiki 페이지를 조회합니다. |
+| [`GET /wiki/pages/{page_id}`](#summary-get-wiki-pages-page-id) | Wiki 페이지 상세 정보를 조회합니다. |
+| [`PATCH /wiki/pages/{page_id}/rename`](#summary-patch-wiki-pages-page-id-rename) | Wiki 페이지 이름을 변경합니다. |
+| [`DELETE /wiki/workspaces/{workspace_id}/documents/{document_id}`](#summary-delete-wiki-workspaces-workspace-id-documents-document-id) | 문서에서 파생된 Wiki 데이터를 삭제합니다. |
+| [`GET /wiki/workspaces/{workspace_id}/last-updated`](#summary-get-wiki-workspaces-workspace-id-last-updated) | 워크스페이스 Wiki의 마지막 갱신 시각을 조회합니다. |
 
 ## 한눈에 보기
 
@@ -28,11 +28,11 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Get Document Wiki Context |
-| 입력 | **Path** — `document_id`: `string`<br>**Query** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` / `null` |
-| 출력 | `200` Successful Response — `object` |
+| 목적 | 문서와 연결된 Wiki 문맥을 조회합니다. |
+| 입력 | **Path** — `document_id`: `string`<br>**Query** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>필터링: `workspace_id`<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-get-wiki-documents-document-id-context)
 
@@ -41,11 +41,11 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Get Wiki Graph |
-| 입력 | **Query** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` / `null` |
-| 출력 | `200` Successful Response — `object` |
+| 목적 | 워크스페이스 Wiki 그래프를 조회합니다. |
+| 입력 | **Query** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>필터링: `workspace_id`<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-get-wiki-graph)
 
@@ -54,11 +54,11 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Restore Ingest Operation |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `IngestOperationRestoreIn` |
-| 출력 | `200` Successful Response — `object` |
+| 목적 | ingest 작업의 Wiki 변경을 복원합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `IngestOperationRestoreIn` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-wiki-ingest-restore-runs)
 
@@ -67,11 +67,11 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Restore Lint Operation |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `LintOperationRestoreIn` |
-| 출력 | `200` Successful Response — `object` |
+| 목적 | lint 작업의 Wiki 변경을 복원합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `LintOperationRestoreIn` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-wiki-lint-restore-runs)
 
@@ -80,11 +80,11 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Lint Wiki Workspace |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `WikiLintIn` |
-| 출력 | `200` Successful Response — `WikiLintOut` |
+| 목적 | 워크스페이스 Wiki의 정합성을 검사합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `WikiLintIn` |
+| 출력 | `200` 성공 — `WikiLintOut` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-wiki-maintenance-lint)
 
@@ -93,11 +93,11 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Lookup Wiki Pages |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `WikiPageLookupIn` |
-| 출력 | `200` Successful Response — 배열<`object`> |
+| 목적 | 조건에 맞는 Wiki 페이지를 조회합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `WikiPageLookupIn` |
+| 출력 | `200` 성공 — 배열<`object`> |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-wiki-pages-lookup)
 
@@ -106,11 +106,11 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Get Wiki Page |
-| 입력 | **Path** — `page_id`: `string`<br>**Query** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` / `null` |
-| 출력 | `200` Successful Response — `object` |
+| 목적 | Wiki 페이지 상세 정보를 조회합니다. |
+| 입력 | **Path** — `page_id`: `string`<br>**Query** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>필터링: `workspace_id`<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-get-wiki-pages-page-id)
 
@@ -119,11 +119,11 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Rename Wiki Page |
-| 입력 | **Path** — `page_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `WikiPageRenameIn` |
-| 출력 | `200` Successful Response — `object` |
+| 목적 | Wiki 페이지 이름을 변경합니다. |
+| 입력 | **Path** — `page_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `WikiPageRenameIn` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-patch-wiki-pages-page-id-rename)
 
@@ -132,11 +132,11 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Delete Document Wiki Data |
-| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` / `null` |
-| 출력 | `200` Successful Response — `object` |
+| 목적 | 문서에서 파생된 Wiki 데이터를 삭제합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-delete-wiki-workspaces-workspace-id-documents-document-id)
 
@@ -145,11 +145,11 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Get Last Wiki Updated |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` / `null` |
-| 출력 | `200` Successful Response — `object` |
+| 목적 | 워크스페이스 Wiki의 마지막 갱신 시각을 조회합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-get-wiki-workspaces-workspace-id-last-updated)
 
@@ -164,7 +164,7 @@ Wiki 조회·ingest·lint·복구 내부 API다.
 
 #### 2. 목적
 
-Get Document Wiki Context
+문서와 연결된 Wiki 문맥을 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -177,7 +177,7 @@ Get Document Wiki Context
 |---|---|---|---|---|
 | path | `document_id` | `string` | 예 | - |
 | query | `workspace_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -192,6 +192,9 @@ Get Document Wiki Context
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -251,7 +254,7 @@ curl -X GET "$PIPELINE/wiki/documents/<value>/context?workspace_id=<value>" \
 
 #### 2. 목적
 
-Get Wiki Graph
+워크스페이스 Wiki 그래프를 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -263,7 +266,7 @@ Get Wiki Graph
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | query | `workspace_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -278,6 +281,9 @@ Get Wiki Graph
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -337,7 +343,7 @@ curl -X GET "$PIPELINE/wiki/graph?workspace_id=<value>" \
 
 #### 2. 목적
 
-Restore Ingest Operation
+ingest 작업의 Wiki 변경을 복원합니다.
 
 #### 3. Auth 필요 여부
 
@@ -348,7 +354,7 @@ Restore Ingest Operation
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`IngestOperationRestoreIn`)
 
@@ -392,6 +398,9 @@ Restore Ingest Operation
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -453,7 +462,7 @@ curl -X POST "$PIPELINE/wiki/ingest-restore-runs" \
 
 #### 2. 목적
 
-Restore Lint Operation
+lint 작업의 Wiki 변경을 복원합니다.
 
 #### 3. Auth 필요 여부
 
@@ -464,7 +473,7 @@ Restore Lint Operation
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`LintOperationRestoreIn`)
 
@@ -501,6 +510,9 @@ Restore Lint Operation
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -562,7 +574,7 @@ curl -X POST "$PIPELINE/wiki/lint-restore-runs" \
 
 #### 2. 목적
 
-Lint Wiki Workspace
+워크스페이스 Wiki의 정합성을 검사합니다.
 
 #### 3. Auth 필요 여부
 
@@ -573,7 +585,7 @@ Lint Wiki Workspace
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`WikiLintIn`)
 
@@ -632,6 +644,9 @@ Lint Wiki Workspace
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -725,7 +740,7 @@ curl -X POST "$PIPELINE/wiki/maintenance/lint" \
 
 #### 2. 목적
 
-Lookup Wiki Pages
+조건에 맞는 Wiki 페이지를 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -736,7 +751,7 @@ Lookup Wiki Pages
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`WikiPageLookupIn`)
 
@@ -762,6 +777,9 @@ Lookup Wiki Pages
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -825,7 +843,7 @@ curl -X POST "$PIPELINE/wiki/pages/lookup" \
 
 #### 2. 목적
 
-Get Wiki Page
+Wiki 페이지 상세 정보를 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -838,7 +856,7 @@ Get Wiki Page
 |---|---|---|---|---|
 | path | `page_id` | `string` | 예 | - |
 | query | `workspace_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -853,6 +871,9 @@ Get Wiki Page
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -912,7 +933,7 @@ curl -X GET "$PIPELINE/wiki/pages/<value>?workspace_id=<value>" \
 
 #### 2. 목적
 
-Rename Wiki Page
+Wiki 페이지 이름을 변경합니다.
 
 #### 3. Auth 필요 여부
 
@@ -924,7 +945,7 @@ Rename Wiki Page
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `page_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`WikiPageRenameIn`)
 
@@ -948,6 +969,9 @@ Rename Wiki Page
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -1009,7 +1033,7 @@ curl -X PATCH "$PIPELINE/wiki/pages/<value>/rename" \
 
 #### 2. 목적
 
-Delete Document Wiki Data
+문서에서 파생된 Wiki 데이터를 삭제합니다.
 
 #### 3. Auth 필요 여부
 
@@ -1022,7 +1046,7 @@ Delete Document Wiki Data
 |---|---|---|---|---|
 | path | `workspace_id` | `string` | 예 | - |
 | path | `document_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -1037,6 +1061,9 @@ Delete Document Wiki Data
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -1096,7 +1123,7 @@ curl -X DELETE "$PIPELINE/wiki/workspaces/<value>/documents/<value>" \
 
 #### 2. 목적
 
-Get Last Wiki Updated
+워크스페이스 Wiki의 마지막 갱신 시각을 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -1108,7 +1135,7 @@ Get Last Wiki Updated
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `workspace_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -1123,6 +1150,9 @@ Get Last Wiki Updated
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|

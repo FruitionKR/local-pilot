@@ -17,7 +17,7 @@
 | [`POST /api/workspaces/{workspace_id}/documents/{document_id}/duplicate`](#summary-post-api-workspaces-workspace-id-documents-document-id-duplicate) | 문서 소유자가 최신 Markdown 편집본을 같은 부모의 마지막 위치에 새 문서로 복제합니다. |
 | [`PATCH /api/workspaces/{workspace_id}/documents/{document_id}/position`](#summary-patch-api-workspaces-workspace-id-documents-document-id-position) | 문서를 대상 폴더와 정렬 위치로 이동합니다. base version과 Idempotency-Key로 동시 변경을 검증합니다. |
 | [`PATCH /api/workspaces/{workspace_id}/documents/{document_id}/rename`](#summary-patch-api-workspaces-workspace-id-documents-document-id-rename) | Notion의 page title처럼 표시 이름만 변경하며 본문과 Wiki 제목은 유지합니다. |
-| [`POST /internal/workspaces/{workspace_id}/initial-note`](#summary-post-internal-workspaces-workspace-id-initial-note) | 목적 설명 없음 |
+| [`POST /internal/workspaces/{workspace_id}/initial-note`](#summary-post-internal-workspaces-workspace-id-initial-note) | 새 워크스페이스에 기본 Markdown 문서를 생성합니다. |
 
 ## 한눈에 보기
 
@@ -117,11 +117,11 @@
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 목적 설명 없음 |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string`<br>**Body** — `InitialNoteRequest` |
-| 출력 | `200` OK — `object` |
+| 목적 | 새 워크스페이스에 기본 Markdown 문서를 생성합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `InitialNoteRequest` |
+| 출력 | `204` 생성 완료 — 본문 없음 |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
+| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
 
 [상세 계약](#detail-post-internal-workspaces-workspace-id-initial-note)
 
@@ -899,7 +899,7 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docu
 
 #### 2. 목적
 
-목적 설명 없음
+새 워크스페이스에 기본 Markdown 문서를 생성합니다.
 
 #### 3. Auth 필요 여부
 
@@ -911,7 +911,7 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docu
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `workspace_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `string` | 아니요 | - |
+| header | `X-Internal-Token` | `string` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`InitialNoteRequest`)
 
@@ -923,15 +923,13 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docu
 
 #### 5. Response body
 
-- HTTP `200`: OK
-- Content-Type: `*/*`
-
-```json
-{
-}
-```
+- HTTP `204`: 생성 완료
+- Body: 없음
+- 현재 OpenAPI snapshot은 `ResponseEntity<?>`를 `200`으로 추론하지만, controller 구현과 계약 테스트의 실제 응답은 `204`다.
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
 
 - 명세에 별도 오류 응답이 정의되어 있지 않다.
 
@@ -954,10 +952,7 @@ curl -X POST "$DOCUMENT/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/
   --data '{"user_id":"<value>"}'
 ```
 
-```json
-{
-}
-```
+응답 본문 없음.
 
 #### 10. 구현 파일
 

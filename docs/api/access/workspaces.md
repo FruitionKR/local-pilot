@@ -16,10 +16,10 @@
 | [`PATCH /api/workspaces/{workspace_id}`](#summary-patch-api-workspaces-workspace-id) | 로그인한 사용자가 소유한 워크스페이스의 이름을 변경합니다. |
 | [`DELETE /api/workspaces/{workspace_id}`](#summary-delete-api-workspaces-workspace-id) | 소유한 워크스페이스를 하위 데이터 변경 없이 소프트 삭제합니다. |
 | [`POST /api/workspaces/{workspace_id}/restore`](#summary-post-api-workspaces-workspace-id-restore) | 소프트 삭제한 워크스페이스와 기존 하위 데이터의 접근을 복구합니다. |
-| [`GET /internal/authz/workspaces/{workspace_id}/users/{user_id}`](#summary-get-internal-authz-workspaces-workspace-id-users-user-id) | 목적 설명 없음 |
-| [`GET /internal/users/{user_id}`](#summary-get-internal-users-user-id) | 목적 설명 없음 |
-| [`GET /internal/workspaces/{workspace_id}/ai-model-settings`](#summary-get-internal-workspaces-workspace-id-ai-model-settings) | 목적 설명 없음 |
-| [`PUT /internal/workspaces/{workspace_id}/ai-model-settings`](#summary-put-internal-workspaces-workspace-id-ai-model-settings) | 목적 설명 없음 |
+| [`GET /internal/authz/workspaces/{workspace_id}/users/{user_id}`](#summary-get-internal-authz-workspaces-workspace-id-users-user-id) | 워크스페이스에서 사용자의 활성 역할을 조회합니다. |
+| [`GET /internal/users/{user_id}`](#summary-get-internal-users-user-id) | 워크스페이스에서 사용자의 활성 역할을 조회합니다. |
+| [`GET /internal/workspaces/{workspace_id}/ai-model-settings`](#summary-get-internal-workspaces-workspace-id-ai-model-settings) | 내부 서비스가 사용자의 표시 이름을 조회합니다. |
+| [`PUT /internal/workspaces/{workspace_id}/ai-model-settings`](#summary-put-internal-workspaces-workspace-id-ai-model-settings) | 내부 서비스가 사용자의 표시 이름을 조회합니다. |
 
 ## 한눈에 보기
 
@@ -56,7 +56,7 @@
 |---|---|
 | 목적 | 소유자가 삭제한 워크스페이스를 반환합니다. |
 | 입력 | 없음 |
-| 출력 | `200` OK — `WorkspaceTrashResponse` |
+| 출력 | `200` 성공 — `WorkspaceTrashResponse` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -106,11 +106,11 @@
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 목적 설명 없음 |
-| 입력 | **Path** — `workspace_id`: `string`, `user_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` |
-| 출력 | `200` OK — `object` |
+| 목적 | 워크스페이스의 AI 모델 설정을 조회합니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `user_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
+| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
 
 [상세 계약](#detail-get-internal-authz-workspaces-workspace-id-users-user-id)
 
@@ -119,11 +119,11 @@
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 목적 설명 없음 |
-| 입력 | **Path** — `user_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` |
-| 출력 | `200` OK — `object` |
+| 목적 | 워크스페이스의 AI 모델 설정을 조회합니다. |
+| 입력 | **Path** — `user_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
+| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
 
 [상세 계약](#detail-get-internal-users-user-id)
 
@@ -132,11 +132,11 @@
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 목적 설명 없음 |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` |
-| 출력 | `200` OK — `object` |
+| 목적 | 워크스페이스의 AI 모델 설정을 변경합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
+| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
 
 [상세 계약](#detail-get-internal-workspaces-workspace-id-ai-model-settings)
 
@@ -145,11 +145,11 @@
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 목적 설명 없음 |
-| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string`<br>**Body** — `WorkspaceAiModelRequest` |
-| 출력 | `200` OK — `object` |
+| 목적 | 워크스페이스의 AI 모델 설정을 변경합니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `WorkspaceAiModelRequest` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
+| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
 
 [상세 계약](#detail-put-internal-workspaces-workspace-id-ai-model-settings)
 
@@ -691,7 +691,7 @@ curl -X POST "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/restore
 
 #### 2. 목적
 
-목적 설명 없음
+워크스페이스의 AI 모델 설정을 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -704,7 +704,7 @@ curl -X POST "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/restore
 |---|---|---|---|---|
 | path | `workspace_id` | `string` | 예 | - |
 | path | `user_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `string` | 아니요 | - |
+| header | `X-Internal-Token` | `string` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -719,6 +719,8 @@ curl -X POST "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/restore
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
 
 - 명세에 별도 오류 응답이 정의되어 있지 않다.
 
@@ -758,7 +760,7 @@ curl -X GET "$ACCESS/internal/authz/workspaces/ws_9d47a0e9a6324341b47562553b75f9
 
 #### 2. 목적
 
-목적 설명 없음
+워크스페이스의 AI 모델 설정을 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -770,7 +772,7 @@ curl -X GET "$ACCESS/internal/authz/workspaces/ws_9d47a0e9a6324341b47562553b75f9
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `user_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `string` | 아니요 | - |
+| header | `X-Internal-Token` | `string` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -785,6 +787,8 @@ curl -X GET "$ACCESS/internal/authz/workspaces/ws_9d47a0e9a6324341b47562553b75f9
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
 
 - 명세에 별도 오류 응답이 정의되어 있지 않다.
 
@@ -824,7 +828,7 @@ curl -X GET "$ACCESS/internal/users/<value>" \
 
 #### 2. 목적
 
-목적 설명 없음
+워크스페이스의 AI 모델 설정을 변경합니다.
 
 #### 3. Auth 필요 여부
 
@@ -836,7 +840,7 @@ curl -X GET "$ACCESS/internal/users/<value>" \
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `workspace_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `string` | 아니요 | - |
+| header | `X-Internal-Token` | `string` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -851,6 +855,8 @@ curl -X GET "$ACCESS/internal/users/<value>" \
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
 
 - 명세에 별도 오류 응답이 정의되어 있지 않다.
 
@@ -890,7 +896,7 @@ curl -X GET "$ACCESS/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-
 
 #### 2. 목적
 
-목적 설명 없음
+워크스페이스의 AI 모델 설정을 변경합니다.
 
 #### 3. Auth 필요 여부
 
@@ -902,7 +908,7 @@ curl -X GET "$ACCESS/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `workspace_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `string` | 아니요 | - |
+| header | `X-Internal-Token` | `string` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`WorkspaceAiModelRequest`)
 
@@ -926,6 +932,8 @@ curl -X GET "$ACCESS/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
 
 - 명세에 별도 오류 응답이 정의되어 있지 않다.
 

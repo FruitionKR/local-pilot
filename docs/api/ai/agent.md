@@ -10,13 +10,13 @@ Agent turn과 run·artifact·Tool 인가 내부 API다.
 
 | API | 목적 |
 |---|---|
-| [`POST /agent/turn`](#summary-post-agent-turn) | Handle Agent Turn |
-| [`POST /internal/agent/runs/artifacts/list`](#summary-post-internal-agent-runs-artifacts-list) | List Agent Artifacts |
-| [`POST /internal/agent/runs/artifacts/register`](#summary-post-internal-agent-runs-artifacts-register) | Register Agent Artifact |
-| [`POST /internal/agent/runs/artifacts/resolve`](#summary-post-internal-agent-runs-artifacts-resolve) | Resolve Agent Artifact |
-| [`POST /internal/agent/runs/tool-authorizations/execute`](#summary-post-internal-agent-runs-tool-authorizations-execute) | Authorize Agent Tool Execute |
-| [`POST /internal/agent/runs/tool-authorizations/read`](#summary-post-internal-agent-runs-tool-authorizations-read) | Authorize Agent Tool Read |
-| [`GET /internal/agent/runs/{run_id}`](#summary-get-internal-agent-runs-run-id) | Get Markdown Agent Run |
+| [`POST /agent/turn`](#summary-post-agent-turn) | Agent 요청을 분류하고 Query·문서 생성·편집 작업을 실행합니다. |
+| [`POST /internal/agent/runs/artifacts/list`](#summary-post-internal-agent-runs-artifacts-list) | Agent 실행에 등록된 artifact 목록을 조회합니다. |
+| [`POST /internal/agent/runs/artifacts/register`](#summary-post-internal-agent-runs-artifacts-register) | Agent 실행 결과 artifact를 등록합니다. |
+| [`POST /internal/agent/runs/artifacts/resolve`](#summary-post-internal-agent-runs-artifacts-resolve) | Agent artifact의 저장 위치와 메타데이터를 확인합니다. |
+| [`POST /internal/agent/runs/tool-authorizations/execute`](#summary-post-internal-agent-runs-tool-authorizations-execute) | Agent Tool 변경 작업의 실행 권한을 검증합니다. |
+| [`POST /internal/agent/runs/tool-authorizations/read`](#summary-post-internal-agent-runs-tool-authorizations-read) | Agent Tool 읽기 작업의 실행 권한을 검증합니다. |
+| [`GET /internal/agent/runs/{run_id}`](#summary-get-internal-agent-runs-run-id) | Markdown Agent 실행 상태와 결과를 조회합니다. |
 
 ## 한눈에 보기
 
@@ -25,11 +25,11 @@ Agent turn과 run·artifact·Tool 인가 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Handle Agent Turn |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `AgentTurnRequestBody` |
-| 출력 | `200` Successful Response — `AgentTurnResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 목적 | Agent 요청을 분류하고 Query·문서 생성·편집 작업을 실행합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`, `X-Agent-Service-Token`(조건부 필수: `AGENT_SKILLS_ENABLED=true`): `string` / `null`<br>**Body** — `AgentTurnRequestBody` |
+| 출력 | `200` 성공 — `AgentTurnResponse` |
+| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>`AGENT_SKILLS_ENABLED=true`이면 Agent 서비스 토큰도 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 또는 Agent 서비스 인증 토큰 누락·불일치<br>`503` 내부 또는 Agent 서비스 인증 미설정 |
 
 [상세 계약](#detail-post-agent-turn)
 
@@ -38,11 +38,11 @@ Agent turn과 run·artifact·Tool 인가 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | List Agent Artifacts |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `AgentArtifactListRequest` |
-| 출력 | `200` Successful Response — 배열<`AgentArtifactResponse`> |
+| 목적 | Agent 실행에 등록된 artifact 목록을 조회합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentArtifactListRequest` |
+| 출력 | `200` 성공 — 배열<`AgentArtifactResponse`> |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-internal-agent-runs-artifacts-list)
 
@@ -51,11 +51,11 @@ Agent turn과 run·artifact·Tool 인가 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Register Agent Artifact |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `AgentArtifactRegisterRequest` |
-| 출력 | `200` Successful Response — `AgentArtifactResponse` |
+| 목적 | Agent 실행 결과 artifact를 등록합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentArtifactRegisterRequest` |
+| 출력 | `200` 성공 — `AgentArtifactResponse` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-internal-agent-runs-artifacts-register)
 
@@ -64,11 +64,11 @@ Agent turn과 run·artifact·Tool 인가 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Resolve Agent Artifact |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `AgentArtifactResolveRequest` |
-| 출력 | `200` Successful Response — `AgentArtifactResolveResponse` |
+| 목적 | Agent artifact의 저장 위치와 메타데이터를 확인합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentArtifactResolveRequest` |
+| 출력 | `200` 성공 — `AgentArtifactResolveResponse` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-internal-agent-runs-artifacts-resolve)
 
@@ -77,11 +77,11 @@ Agent turn과 run·artifact·Tool 인가 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Authorize Agent Tool Execute |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `AgentToolExecuteAuthorizationRequest` |
-| 출력 | `204` Successful Response |
+| 목적 | Agent Tool 변경 작업의 실행 권한을 검증합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentToolExecuteAuthorizationRequest` |
+| 출력 | `204` 성공 |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-internal-agent-runs-tool-authorizations-execute)
 
@@ -90,11 +90,11 @@ Agent turn과 run·artifact·Tool 인가 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Authorize Agent Tool Read |
-| 입력 | **Header** — `X-Internal-Token`(선택): `string` / `null`<br>**Body** — `AgentToolReadAuthorizationRequest` |
-| 출력 | `204` Successful Response |
+| 목적 | Agent Tool 읽기 작업의 실행 권한을 검증합니다. |
+| 입력 | **Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `AgentToolReadAuthorizationRequest` |
+| 출력 | `204` 성공 |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-post-internal-agent-runs-tool-authorizations-read)
 
@@ -103,11 +103,11 @@ Agent turn과 run·artifact·Tool 인가 내부 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | Get Markdown Agent Run |
-| 입력 | **Path** — `run_id`: `string`<br>**Query** — `workspace_id`: `string`, `user_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` / `null` |
-| 출력 | `200` Successful Response — `MarkdownAgentRunStatusResponse` |
+| 목적 | Markdown Agent 실행 상태와 결과를 조회합니다. |
+| 입력 | **Path** — `run_id`: `string`<br>**Query** — `workspace_id`: `string`, `user_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` / `null` |
+| 출력 | `200` 성공 — `MarkdownAgentRunStatusResponse` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>필터링: `workspace_id`, `user_id`<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` Validation Error — `HTTPValidationError` |
+| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
 
 [상세 계약](#detail-get-internal-agent-runs-run-id)
 
@@ -122,18 +122,20 @@ Agent turn과 run·artifact·Tool 인가 내부 API다.
 
 #### 2. 목적
 
-Handle Agent Turn
+Agent 요청을 분류하고 Query·문서 생성·편집 작업을 실행합니다.
 
 #### 3. Auth 필요 여부
 
 - 필요
 - 서비스 간 내부 인증 토큰을 검증한다.
+- `AGENT_SKILLS_ENABLED=true`이면 `X-Agent-Service-Token`도 검증한다.
 
 #### 4. Request body
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
+| header | `X-Agent-Service-Token` | `string` | 조건부 (`AGENT_SKILLS_ENABLED=true`) | - |
 
 - Content-Type: `application/json` (`AgentTurnRequestBody`)
 
@@ -351,6 +353,9 @@ LLM에 한 번 재요청한다. 두 번째 응답도 계약을 만족하지 못�
 
 #### 6. Error response
 
+- HTTP `401`: 내부 또는 Agent 서비스 인증 토큰 누락·불일치
+- HTTP `503`: 내부 또는 Agent 서비스 인증 미설정
+
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
 | `422` | Validation Error | `HTTPValidationError` |
@@ -381,6 +386,7 @@ LLM에 한 번 재요청한다. 두 번째 응답도 계약을 만족하지 못�
 #### 8. 권한 규칙
 
 - 올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.
+- `AGENT_SKILLS_ENABLED=true`이면 올바른 Agent 서비스 토큰도 필요하다.
 - 요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다.
 
 #### 9. 예시 요청/응답
@@ -388,6 +394,7 @@ LLM에 한 번 재요청한다. 두 번째 응답도 계약을 만족하지 못�
 ```bash
 curl -X POST "$PIPELINE/agent/turn" \
   -H 'X-Internal-Token: <value>' \
+  -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"active_markdown_context":{"markdown":"<value>","target":null},"allow_web_search":true,"base_version":3,"conversation_context":{"pending_skill_proposal":null,"recent_conversation_summary":null,"recent_messages":[null],"reference_context":null},"document_id":"doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83","message":"<value>","model":"<value>","output_language":"ko","provider":"<value>","response_length":"concise","skill_authoring_mode":"preserve","skill_draft_excluded_literals":["<value>"]}'
 ```
@@ -556,7 +563,7 @@ curl -X POST "$PIPELINE/agent/turn" \
 
 #### 2. 목적
 
-List Agent Artifacts
+Agent 실행에 등록된 artifact 목록을 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -567,7 +574,7 @@ List Agent Artifacts
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`AgentArtifactListRequest`)
 
@@ -599,6 +606,9 @@ List Agent Artifacts
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -669,7 +679,7 @@ curl -X POST "$PIPELINE/internal/agent/runs/artifacts/list" \
 
 #### 2. 목적
 
-Register Agent Artifact
+Agent 실행 결과 artifact를 등록합니다.
 
 #### 3. Auth 필요 여부
 
@@ -680,7 +690,7 @@ Register Agent Artifact
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`AgentArtifactRegisterRequest`)
 
@@ -718,6 +728,9 @@ Register Agent Artifact
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -786,7 +799,7 @@ curl -X POST "$PIPELINE/internal/agent/runs/artifacts/register" \
 
 #### 2. 목적
 
-Resolve Agent Artifact
+Agent artifact의 저장 위치와 메타데이터를 확인합니다.
 
 #### 3. Auth 필요 여부
 
@@ -797,7 +810,7 @@ Resolve Agent Artifact
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`AgentArtifactResolveRequest`)
 
@@ -835,6 +848,9 @@ Resolve Agent Artifact
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -904,7 +920,7 @@ curl -X POST "$PIPELINE/internal/agent/runs/artifacts/resolve" \
 
 #### 2. 목적
 
-Authorize Agent Tool Execute
+Agent Tool 변경 작업의 실행 권한을 검증합니다.
 
 #### 3. Auth 필요 여부
 
@@ -915,7 +931,7 @@ Authorize Agent Tool Execute
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`AgentToolExecuteAuthorizationRequest`)
 
@@ -940,6 +956,9 @@ Authorize Agent Tool Execute
 - Body: 없음
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -1001,7 +1020,7 @@ curl -X POST "$PIPELINE/internal/agent/runs/tool-authorizations/execute" \
 
 #### 2. 목적
 
-Authorize Agent Tool Read
+Agent Tool 읽기 작업의 실행 권한을 검증합니다.
 
 #### 3. Auth 필요 여부
 
@@ -1012,7 +1031,7 @@ Authorize Agent Tool Read
 
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`AgentToolReadAuthorizationRequest`)
 
@@ -1030,6 +1049,9 @@ Authorize Agent Tool Read
 - Body: 없음
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
@@ -1091,7 +1113,7 @@ curl -X POST "$PIPELINE/internal/agent/runs/tool-authorizations/read" \
 
 #### 2. 목적
 
-Get Markdown Agent Run
+Markdown Agent 실행 상태와 결과를 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -1105,7 +1127,7 @@ Get Markdown Agent Run
 | path | `run_id` | `string` | 예 | - |
 | query | `workspace_id` | `string` | 예 | - |
 | query | `user_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `X-Internal-Token` | 아니요 | - |
+| header | `X-Internal-Token` | `X-Internal-Token` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -1128,6 +1150,9 @@ Get Markdown Agent Run
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
+- HTTP `503`: 내부 인증 미설정
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|

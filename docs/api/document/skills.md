@@ -17,7 +17,7 @@ Skill 작성·게시·설정과 참조 문서 읽기 API다.
 | [`PATCH /api/workspaces/{workspace_id}/skills/{skill_id}`](#summary-patch-api-workspaces-workspace-id-skills-skill-id) | Skill의 정의를 수정합니다. |
 | [`POST /api/workspaces/{workspace_id}/skills/{skill_id}/disable`](#summary-post-api-workspaces-workspace-id-skills-skill-id-disable) | Skill을 Agent 실행 대상에서 제외합니다. |
 | [`POST /api/workspaces/{workspace_id}/skills/{skill_id}/enable`](#summary-post-api-workspaces-workspace-id-skills-skill-id-enable) | Skill을 Agent 실행 대상에 포함합니다. |
-| [`POST /internal/agent/skill-authoring/references/read`](#summary-post-internal-agent-skill-authoring-references-read) | 목적 설명 없음 |
+| [`POST /internal/agent/skill-authoring/references/read`](#summary-post-internal-agent-skill-authoring-references-read) | Skill 작성에 사용할 참조 문서의 범위와 권한을 검증한 뒤 본문을 반환합니다. |
 
 ## 한눈에 보기
 
@@ -117,11 +117,11 @@ Skill 작성·게시·설정과 참조 문서 읽기 API다.
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 목적 설명 없음 |
-| 입력 | **Body** — `SkillReferenceReadRequest` |
-| 출력 | `200` OK — `SkillReferenceReadResponse` |
+| 목적 | Skill 작성에 사용할 참조 문서의 범위와 권한을 검증한 뒤 본문을 반환합니다. |
+| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string`<br>**Body** — `SkillReferenceReadRequest` |
+| 출력 | `200` 성공 — `SkillReferenceReadResponse` |
 | 조건 | 인증 필요<br>`X-Agent-Service-Token`을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
+| 주요 오류 | `401` Agent 서비스 인증 토큰 누락 또는 불일치 |
 
 [상세 계약](#detail-post-internal-agent-skill-authoring-references-read)
 
@@ -1154,7 +1154,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 #### 2. 목적
 
-목적 설명 없음
+Skill 작성에 사용할 참조 문서의 범위와 권한을 검증한 뒤 본문을 반환합니다.
 
 #### 3. Auth 필요 여부
 
@@ -1163,7 +1163,9 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 #### 4. Request body
 
-- Parameters: 없음
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| header | `X-Agent-Service-Token` | `string` | 예 (인증 계층 검증) | - |
 
 - Content-Type: `application/json` (`SkillReferenceReadRequest`)
 
@@ -1189,6 +1191,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 #### 6. Error response
 
+- HTTP `401`: Agent 서비스 인증 토큰 누락 또는 불일치
+
 - 명세에 별도 오류 응답이 정의되어 있지 않다.
 
 #### 7. Pagination / filtering
@@ -1205,6 +1209,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 ```bash
 curl -X POST "$DOCUMENT/internal/agent/skill-authoring/references/read" \
+  -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"document_id":"<value>","user_id":"<value>","workspace_id":"<value>"}'
 ```

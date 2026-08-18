@@ -18,7 +18,7 @@
 | [`PUT /api/workspaces/{workspace_id}/documents/{document_id}/content`](#summary-put-api-workspaces-workspace-id-documents-document-id-content) | 전체 Markdown과 신규 이미지를 저장합니다. base_revision이 현재 편집 revision과 일치할 때만 반영하며 revision_write_id 재시도는 기존 결과를 반환합니다. 이미지 포함 저장은 metadata part를 사용합니다. |
 | [`GET /api/workspaces/{workspace_id}/documents/{document_id}/export`](#summary-get-api-workspaces-workspace-id-documents-document-id-export) | 최신 Markdown 편집본을 내보냅니다. 관리 이미지가 있으면 이미지와 Markdown을 ZIP으로 반환합니다. |
 | [`GET /api/workspaces/{workspace_id}/documents/{document_id}/original`](#summary-get-api-workspaces-workspace-id-documents-document-id-original) | MinIO에 저장된 원본 파일을 스트리밍합니다. PDF는 inline, 그 외는 attachment로 반환됩니다. |
-| [`GET /internal/documents/{document_id}/pipeline-source`](#summary-get-internal-documents-document-id-pipeline-source) | 목적 설명 없음 |
+| [`GET /internal/documents/{document_id}/pipeline-source`](#summary-get-internal-documents-document-id-pipeline-source) | AI pipeline이 사용할 문서 원본 위치와 소유 범위를 조회합니다. |
 
 ## 한눈에 보기
 
@@ -55,7 +55,7 @@
 |---|---|
 | 목적 | 편집기 종료 시 호출한다. 보유자 본인의 잠금만 해제하며 멱등이다. |
 | 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `200` OK |
+| 출력 | `200` 성공 |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -131,11 +131,11 @@
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 목적 설명 없음 |
-| 입력 | **Path** — `document_id`: `string`<br>**Header** — `X-Internal-Token`(선택): `string` |
-| 출력 | `200` OK — `object` |
+| 목적 | AI pipeline이 사용할 문서 원본 위치와 소유 범위를 조회합니다. |
+| 입력 | **Path** — `document_id`: `string`<br>**Header** — `X-Internal-Token`(필수, 인증 계층 검증): `string` |
+| 출력 | `200` 성공 — `object` |
 | 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | 공통 오류 계약 적용 |
+| 주요 오류 | `401` 내부 인증 토큰 누락 또는 불일치 |
 
 [상세 계약](#detail-get-internal-documents-document-id-pipeline-source)
 
@@ -822,7 +822,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 #### 2. 목적
 
-목적 설명 없음
+AI pipeline이 사용할 문서 원본 위치와 소유 범위를 조회합니다.
 
 #### 3. Auth 필요 여부
 
@@ -834,7 +834,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `document_id` | `string` | 예 | - |
-| header | `X-Internal-Token` | `string` | 아니요 | - |
+| header | `X-Internal-Token` | `string` | 예 (인증 계층 검증) | - |
 
 - Body: 없음
 
@@ -849,6 +849,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 ```
 
 #### 6. Error response
+
+- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
 
 - 명세에 별도 오류 응답이 정의되어 있지 않다.
 
