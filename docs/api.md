@@ -10726,6 +10726,10 @@ Agent 실행 계획에는 별도의 권한·tool·승인 검사를 계속 적용
 
 `conversation_context.recent_messages[].action`은 이전 assistant 응답의 action을 전달하는 선택 필드다.
 라우터는 이를 멀티턴 연속성 힌트로만 사용하며 현재 요청의 명시적 의도를 우선한다.
+복합 요청은 `retrieval_source`(`none|workspace|web`),
+`document_operation`(`none|create|edit`), `persist`로 분해한 뒤 전체 조합을 대표하는 action을
+선택한다. 서버는 이 의미를 문장 패턴으로 덮어쓰지 않고, action과 필드 조합이 모순될 때만
+LLM에 한 번 재요청한다. 두 번째 응답도 계약을 만족하지 못하면 HTTP 422로 종료한다.
 응답 action은 내부 문서 근거 조회인 `chat_answer`, 대화 맥락만으로 작성·형식을 이어가는
 `conversation_reply`, 열린 Markdown을 변경하는 `markdown_edit`를 구분한다.
 내부 문서 근거 조회와 새 문서 저장 또는 열린 문서 편집을 함께 요청하면 Query 파이프라인이 먼저
@@ -10846,8 +10850,11 @@ Agent 실행 계획에는 별도의 권한·tool·승인 검사를 계속 적용
   "route": {
     "action": "chat_answer",
     "confidence": 1,
+    "document_operation": "none",
     "edit_goal": "string",
+    "persist": false,
     "reason": "string",
+    "retrieval_source": "workspace",
     "selected_skill_id": "string",
     "skill_candidates": [
       "string"
@@ -11036,8 +11043,11 @@ curl -X POST "$PIPELINE/agent/turn" \
   "route": {
     "action": "chat_answer",
     "confidence": 1,
+    "document_operation": "none",
     "edit_goal": "string",
+    "persist": false,
     "reason": "string",
+    "retrieval_source": "workspace",
     "selected_skill_id": "string",
     "skill_candidates": [
       "string"

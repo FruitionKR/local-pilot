@@ -31,6 +31,9 @@ class _Client:
             return {
                 "action": "chat_answer",
                 "confidence": 1.0,
+                "retrieval_source": "workspace",
+                "document_operation": "none",
+                "persist": False,
                 "reason": "질문 응답",
                 "edit_goal": None,
             }

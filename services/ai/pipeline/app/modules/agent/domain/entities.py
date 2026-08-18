@@ -30,6 +30,8 @@ AgentAction = Literal[
     "reject",
 ]
 SkillMode = Literal["auto", "explicit", "off"]
+RetrievalSource = Literal["none", "workspace", "web"]
+DocumentOperation = Literal["none", "create", "edit"]
 
 
 @dataclass(frozen=True)
@@ -98,7 +100,9 @@ class AgentTurnRoute:
     edit_goal: str | None = None
     selected_skill_id: str | None = None
     skill_candidates: tuple[str, ...] = ()
-    requires_grounded_retrieval: bool = False
+    retrieval_source: RetrievalSource = "none"
+    document_operation: DocumentOperation = "none"
+    persist: bool = False
 
 
 @dataclass(frozen=True)

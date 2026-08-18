@@ -41,6 +41,7 @@ class FixedAgentUseCase:
                 confidence=0.92,
                 reason="create markdown from chat",
                 edit_goal="create_from_chat",
+                document_operation="create",
             ),
             generated_markdown=GeneratedMarkdownDocument(
                 title="Agent 설계 메모",
@@ -61,6 +62,7 @@ class FixedInsertAfterUseCase:
                 confidence=1.0,
                 reason="insert after request",
                 edit_goal="insert_after",
+                document_operation="edit",
             ),
             edit=MarkdownEditOperation(
                 operation="insert_after",
@@ -153,6 +155,7 @@ class QueuedAgentRunUseCase:
                 action="folder_organize",
                 confidence=0.9,
                 reason="folder request",
+                persist=True,
             ),
             run_id="run-1",
             run_status="queued",
@@ -398,6 +401,9 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(body["action"], "markdown_create")
         self.assertIsNone(body["edit"])
         self.assertEqual(body["route"]["edit_goal"], "create_from_chat")
+        self.assertEqual(body["route"]["retrieval_source"], "none")
+        self.assertEqual(body["route"]["document_operation"], "create")
+        self.assertFalse(body["route"]["persist"])
         self.assertEqual(body["generated_markdown"]["title"], "Agent 설계 메모")
         self.assertIn("# Agent 설계 메모", body["generated_markdown"]["markdown"])
         self.assertEqual(body["updated_conversation_summary"], "갱신된 대화 요약")

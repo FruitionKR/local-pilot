@@ -520,13 +520,30 @@ components:
         confidence:
           title: Confidence
           type: number
+        document_operation:
+          enum:
+          - none
+          - create
+          - edit
+          title: Document Operation
+          type: string
         edit_goal:
           anyOf:
           - type: string
           - type: 'null'
           title: Edit Goal
+        persist:
+          title: Persist
+          type: boolean
         reason:
           title: Reason
+          type: string
+        retrieval_source:
+          enum:
+          - none
+          - workspace
+          - web
+          title: Retrieval Source
           type: string
         selected_skill_id:
           anyOf:
@@ -542,6 +559,9 @@ components:
       - action
       - confidence
       - reason
+      - retrieval_source
+      - document_operation
+      - persist
       title: AgentTurnRouteResponse
       type: object
     ChatWikiRunIn:

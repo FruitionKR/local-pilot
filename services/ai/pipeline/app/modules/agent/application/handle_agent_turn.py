@@ -113,17 +113,14 @@ class HandleAgentTurnUseCase:
                 skill_candidates=candidates,
             )
         if route.action == "markdown_create":
+            reference_context = self._resolve_reference_context(request, route)
             result = self._markdown_create_use_case.execute(
                 MarkdownCreateRequest(
                     instruction=request.message,
                     workspace_id=request.workspace_id,
                     user_id=request.user_id,
                     conversation_summary=_conversation_context_text(request),
-                    reference_context=(
-                        request.conversation_context.reference_context
-                        if request.conversation_context
-                        else {}
-                    ),
+                    reference_context=reference_context,
                     skill_instructions=_skill_instructions(selected_skill),
                     output_language=request.output_language,
                 )
@@ -232,7 +229,17 @@ class HandleAgentTurnUseCase:
                     skill_draft_excluded_literals=(),
                 )
             )
-            if direct_route.action != route.action:
+            if (
+                direct_route.action,
+                direct_route.retrieval_source,
+                direct_route.document_operation,
+                direct_route.persist,
+            ) != (
+                route.action,
+                route.retrieval_source,
+                route.document_operation,
+                route.persist,
+            ):
                 return AgentTurnResult(
                     action="clarify",
                     route=replace(
@@ -240,8 +247,12 @@ class HandleAgentTurnUseCase:
                         action="clarify",
                         confidence=0.0,
                         reason="Direct mutation intent was not confirmed.",
+                        edit_goal=None,
                         selected_skill_id=None,
                         skill_candidates=(),
+                        retrieval_source="none",
+                        document_operation="none",
+                        persist=False,
                     ),
                     message=CLARIFY_MUTATION_INTENT_MESSAGE,
                 )
@@ -251,7 +262,7 @@ class HandleAgentTurnUseCase:
                 else None
             )
             content = None
-            if route.action == "workspace_workflow" and route.edit_goal == "create_from_chat":
+            if route.action == "workspace_workflow" and route.document_operation == "create":
                 reference_context = self._resolve_reference_context(request, route)
                 creation_markdown = self._markdown_create_use_case.execute(
                     MarkdownCreateRequest(
@@ -265,7 +276,7 @@ class HandleAgentTurnUseCase:
                     )
                 ).document.markdown
                 content = StartAgentRunContent(markdown=creation_markdown)
-            elif route.action == "workspace_workflow" and route.edit_goal is not None:
+            elif route.action == "workspace_workflow" and route.document_operation == "edit":
                 markdown_context = request.active_markdown_context
                 if (
                     markdown_context is None
@@ -275,7 +286,12 @@ class HandleAgentTurnUseCase:
                 ):
                     return AgentTurnResult(
                         action="clarify",
-                        route=replace(route, action="clarify"),
+                        route=replace(
+                            route,
+                            action="clarify",
+                            retrieval_source="none",
+                            persist=False,
+                        ),
                         message=CLARIFY_MARKDOWN_DOCUMENT_MESSAGE,
                     )
                 target = markdown_context.target or _whole_document_target(markdown_context.markdown)
@@ -385,10 +401,15 @@ class HandleAgentTurnUseCase:
                 message=self._conversation_replier.reply(request),
             )
 
-        answer = self._answer_query(request)
+        answer = self._answer_query(request, route.retrieval_source)
         return AgentTurnResult(action="chat_answer", route=route, query_answer=answer)
 
-    def _answer_query(self, request: AgentTurnRequest) -> QueryAnswer:
+    def _answer_query(
+        self,
+        request: AgentTurnRequest,
+        retrieval_source: str,
+    ) -> QueryAnswer:
+        allow_web_search = retrieval_source == "web"
         query_kwargs: dict[str, object] = {
             "workspace_id": request.workspace_id or "",
             "user_id": request.user_id,
@@ -398,11 +419,10 @@ class HandleAgentTurnUseCase:
             query_kwargs["output_language"] = request.output_language
         if request.response_length is not None:
             query_kwargs["response_length"] = request.response_length
-        if request.allow_web_search is not None:
-            query_kwargs["allow_web_search"] = request.allow_web_search
+        query_kwargs["allow_web_search"] = allow_web_search
         query_use_case = (
             self._web_search_query_use_case_factory()
-            if request.allow_web_search is True and self._web_search_query_use_case_factory is not None
+            if allow_web_search is True and self._web_search_query_use_case_factory is not None
             else self._query_use_case
         )
         return query_use_case.execute(request.message, **query_kwargs)
@@ -417,9 +437,9 @@ class HandleAgentTurnUseCase:
             if request.conversation_context
             else {}
         )
-        if not route.requires_grounded_retrieval:
+        if route.retrieval_source == "none":
             return reference_context
-        grounded_answer = self._answer_query(request)
+        grounded_answer = self._answer_query(request, route.retrieval_source)
         reference_context["grounded_query"] = {
             "answer": grounded_answer.answer.content,
             "evidence_snippets": [
@@ -578,6 +598,9 @@ def _reject_unsafe_workspace_mutation(route: AgentTurnRoute) -> AgentTurnResult:
             edit_goal=None,
             selected_skill_id=None,
             skill_candidates=(),
+            retrieval_source="none",
+            document_operation="none",
+            persist=False,
         ),
         message="보안상 위험한 지시나 민감정보를 Workspace에 추가하는 요청은 처리할 수 없습니다.",
     )

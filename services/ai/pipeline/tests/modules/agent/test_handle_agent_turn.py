@@ -861,6 +861,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.95,
             reason="workspace document request",
             edit_goal="create_from_chat",
+            document_operation="create",
+            persist=True,
         )
         use_case = HandleAgentTurnUseCase(
             router=SequencedRouter(route, route),
@@ -906,7 +908,9 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.95,
             reason="grounded workspace document request",
             edit_goal="create_from_chat",
-            requires_grounded_retrieval=True,
+            retrieval_source="workspace",
+            document_operation="create",
+            persist=True,
         )
         query_use_case = FakeQueryUseCase()
         query_use_case.evidence_snippets = [
@@ -969,6 +973,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.95,
             reason="workspace document request",
             edit_goal="create_from_chat",
+            document_operation="create",
+            persist=True,
         )
         use_case = HandleAgentTurnUseCase(
             router=SequencedRouter(route, route),
@@ -1009,7 +1015,9 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.95,
             reason="persistent document edit",
             edit_goal="cleanup",
-            requires_grounded_retrieval=True,
+            retrieval_source="workspace",
+            document_operation="edit",
+            persist=True,
         )
         query_use_case = FakeQueryUseCase()
         query_use_case.evidence_snippets = [
@@ -1079,6 +1087,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.95,
             reason="persistent document edit",
             edit_goal="cleanup",
+            document_operation="edit",
+            persist=True,
         )
         use_case = HandleAgentTurnUseCase(
             router=SequencedRouter(route, route),
@@ -1108,6 +1118,50 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             "# 제목\n\nuser@example.com",
         )
 
+    def test_persistent_edit_clarification_resets_non_clarify_route_fields(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.95,
+            reason="persistent document edit",
+            edit_goal="cleanup",
+            retrieval_source="workspace",
+            document_operation="edit",
+            persist=True,
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(route, route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="Wiki 근거로 현재 문서를 다듬어 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            )
+        )
+
+        self.assertEqual(result.action, "clarify")
+        self.assertEqual(result.route.action, "clarify")
+        self.assertEqual(result.route.retrieval_source, "none")
+        self.assertEqual(result.route.document_operation, "edit")
+        self.assertFalse(result.route.persist)
+        self.assertEqual(starter.requests, [])
+
     def test_web_grounded_create_uses_web_query_before_approval_plan(self) -> None:
         starter = RecordingAgentRunStarter()
         default_query_use_case = FakeQueryUseCase()
@@ -1127,7 +1181,9 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.95,
             reason="web-grounded document request",
             edit_goal="create_from_chat",
-            requires_grounded_retrieval=True,
+            retrieval_source="web",
+            document_operation="create",
+            persist=True,
         )
         use_case = HandleAgentTurnUseCase(
             router=SequencedRouter(route, route),
@@ -1164,11 +1220,13 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 action="folder_organize",
                 confidence=0.99,
                 reason="reference context requested a mutation",
+                persist=True,
             ),
             AgentTurnRoute(
                 action="chat_answer",
                 confidence=0.99,
                 reason="direct message only asks for a summary",
+                retrieval_source="workspace",
             ),
         )
         editor = RecordingMarkdownEditor(
@@ -1203,6 +1261,10 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         )
 
         self.assertEqual(result.action, "clarify")
+        self.assertEqual(result.route.action, "clarify")
+        self.assertEqual(result.route.retrieval_source, "none")
+        self.assertEqual(result.route.document_operation, "none")
+        self.assertFalse(result.route.persist)
         self.assertIn("직접", result.message or "")
         self.assertEqual(starter.requests, [])
         self.assertEqual(len(router.requests), 2)
@@ -1654,7 +1716,14 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             )
         )
         use_case = HandleAgentTurnUseCase(
-            router=FixedRouter(AgentTurnRoute(action="chat_answer", confidence=0.9, reason="question")),
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="chat_answer",
+                    confidence=0.9,
+                    reason="question",
+                    retrieval_source="web",
+                )
+            ),
             query_use_case=default_query_use_case,  # type: ignore[arg-type]
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
             markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
