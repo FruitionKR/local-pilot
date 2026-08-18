@@ -98,6 +98,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "edit_goal": scoped_request.edit_goal,
             "requested_operation": requested_operation,
             "conversation_summary": scoped_request.conversation_summary,
+            "reference_context": scoped_request.reference_context or {},
             "requested_target": {
                 "type": scoped_request.target.type,
                 "start_line": scoped_request.target.start_line,
@@ -151,6 +152,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "instruction": request.instruction,
             "edit_goal": request.edit_goal,
             "conversation_summary": request.conversation_summary,
+            "reference_context": request.reference_context or {},
             "target": {
                 "type": request.target.type,
                 "start_line": request.target.start_line,

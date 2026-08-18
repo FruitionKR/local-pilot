@@ -14,7 +14,6 @@ from app.modules.agent.infrastructure.chat_completions_turn_router import (
     ChatCompletionsTurnRouter,
     _local_guard,
 )
-from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
 from app.modules.query.domain.entities import ConversationMessage
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
@@ -33,78 +32,25 @@ class SequenceJsonClient:
 
 
 def route_response(action: str = "markdown_edit") -> dict[str, object]:
+    retrieval_source = "workspace" if action == "chat_answer" else "none"
+    document_operation = {
+        "markdown_create": "create",
+        "markdown_edit": "edit",
+    }.get(action, "none")
+    persist = action in {"folder_organize", "workspace_workflow"}
+    edit_goal = {
+        "markdown_create": "create_from_chat",
+        "markdown_edit": "cleanup",
+    }.get(action)
     return {
         "action": action,
         "confidence": 0.9,
-        "edit_goal": "cleanup",
+        "retrieval_source": retrieval_source,
+        "document_operation": document_operation,
+        "persist": persist,
+        "edit_goal": edit_goal,
         "reason": "Markdown cleanup request",
     }
-
-
-TECHNICAL_SUBJECTS = ("Wiki", "ingest", "pipeline", "Query", "Agent")
-GROUNDED_ROUTING_MESSAGES = (
-    tuple(
-        template.format(subject=subject)
-        for subject in TECHNICAL_SUBJECTS
-        for template in (
-            "{subject}는 어떤 단계로 동작해?",
-            "{subject}는 어떻게 작동해?",
-            "{subject}는 어떤 단계로 처리돼?",
-            "{subject}는 어떤 단계로 진행됩니까?",
-        )
-    )
-    + tuple(
-        template.format(subject=subject)
-        for subject in TECHNICAL_SUBJECTS
-        for template in (
-            "How does {subject} work?",
-            "How does the {subject} process work?",
-            "What are the stages of {subject}?",
-            "What is the process for {subject}?",
-        )
-    )
-    + tuple(
-        template.format(source=source)
-        for source in ("내부 문서", "워크스페이스", "Wiki", "workspace", "document")
-        for template in (
-            "{source}에서 근거를 찾아줘",
-            "{source} 기준으로 검색해줘",
-        )
-    )
-    + tuple(
-        template.format(source=source)
-        for source in ("internal document", "workspace", "Wiki", "document", "workspace document")
-        for template in (
-            "Search the {source} for the answer",
-            "Find supporting evidence in the {source}",
-        )
-    )
-)
-CONVERSATION_ROUTING_MESSAGES = tuple(
-    template.format(content=content)
-    for content in ("이 문장을", "오늘 회의를", "일기 제목을", "Wiki 스타일 제목을", "pipeline 설명을")
-    for template in (
-        "{content} 어떻게 다듬으면 자연스러울까?",
-        "{content} 어떤 순서로 작성하면 좋을까?",
-        "{content} 어떻게 처리하면 좋을까?",
-        "{content} 워크스페이스 느낌으로 바꿔줘",
-    )
-) + tuple(
-    template.format(content=content)
-    for content in (
-        "this wording",
-        "today's meeting notes",
-        "this diary title",
-        "this Wiki title",
-        "the pipeline description",
-    )
-    for template in (
-        "How should I improve {content}?",
-        "How do I make {content} work?",
-        "What process should I use to revise {content}?",
-        "Rewrite {content} in a workspace style",
-    )
-)
 
 
 class ChatCompletionsTurnRouterTest(unittest.TestCase):
@@ -144,209 +90,71 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             "conversation_reply",
         )
 
-    def test_retries_query_misroute_for_conversation_format_refinement(self) -> None:
-        first = route_response("chat_answer")
-        first["edit_goal"] = None
-        second = route_response("conversation_reply")
-        second["edit_goal"] = None
-        client = SequenceJsonClient([first, second])
+    def test_keeps_structured_compound_route_without_semantic_rewrite(self) -> None:
+        response = route_response("workspace_workflow")
+        response.update(
+            retrieval_source="web",
+            document_operation="create",
+            persist=True,
+            edit_goal="create_from_chat",
+        )
+        client = SequenceJsonClient([response])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
 
         route = router.route(
             AgentTurnRequest(
-                message="오늘날짜-날씨-이모지 한 개 형식으로 만들어줘",
-                conversation_context=AgentConversationContext(
-                    recent_messages=(
-                        ConversationMessage(
-                            role="assistant",
-                            content="제목의 맥락을 알려주세요.",
-                            action="conversation_reply",
-                        ),
-                        ConversationMessage(role="user", content="덥고 습한 여름이야"),
-                    ),
-                ),
+                message="웹에서 최신 자료를 찾아 새 문서로 저장해줘",
+                allow_web_search=True,
             )
-        )
-
-        self.assertEqual(route.action, "conversation_reply")
-        retry_payload = json.loads(client.calls[1][1])
-        self.assertIn(
-            "must use conversation_reply",
-            retry_payload["contract_failures"][0],
-        )
-
-    def test_retries_standalone_conversational_advice_misroute(self) -> None:
-        messages = (
-            "How do I make today's meeting notes work?",
-            "What process should I use to revise the pipeline description?",
-        )
-
-        for message in messages:
-            with self.subTest(message=message):
-                first = route_response("chat_answer")
-                first["edit_goal"] = None
-                second = route_response("conversation_reply")
-                second["edit_goal"] = None
-                client = SequenceJsonClient([first, second])
-                router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
-
-                route = router.route(AgentTurnRequest(message=message))
-
-                self.assertEqual(route.action, "conversation_reply")
-                self.assertEqual(len(client.calls), 2)
-
-    def test_retries_active_markdown_advice_misroute_as_markdown_edit(self) -> None:
-        first = route_response("chat_answer")
-        first["edit_goal"] = None
-        client = SequenceJsonClient([first, route_response("markdown_edit")])
-        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
-
-        route = router.route(
-            AgentTurnRequest(
-                message="How do I make this wording work?",
-                active_markdown_context=ActiveMarkdownContext(markdown="# Existing title"),
-            )
-        )
-
-        self.assertEqual(route.action, "markdown_edit")
-        retry_payload = json.loads(client.calls[1][1])
-        self.assertIn("must use markdown_edit", retry_payload["contract_failures"][0])
-
-    def test_explicit_grounded_request_wins_over_previous_conversation_action(self) -> None:
-        first = route_response("conversation_reply")
-        first["edit_goal"] = None
-        client = SequenceJsonClient([first])
-        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
-
-        route = router.route(
-            AgentTurnRequest(
-                message="내부 문서 기준으로 제목 형식을 만들어줘",
-                conversation_context=AgentConversationContext(
-                    recent_messages=(
-                        ConversationMessage(
-                            role="assistant",
-                            content="제목의 맥락을 알려주세요.",
-                            action="conversation_reply",
-                        ),
-                    ),
-                ),
-            )
-        )
-
-        self.assertEqual(route.action, "chat_answer")
-        self.assertEqual(len(client.calls), 1)
-
-    def test_factual_process_question_wins_over_previous_clarify(self) -> None:
-        messages = GROUNDED_ROUTING_MESSAGES
-        responses = [route_response("clarify") for _ in messages]
-        for response in responses:
-            response["edit_goal"] = None
-        client = SequenceJsonClient(responses)
-        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
-
-        for message in messages:
-            with self.subTest(message=message):
-                route = router.route(
-                    AgentTurnRequest(
-                        message=message,
-                        conversation_context=AgentConversationContext(
-                            recent_messages=(
-                                ConversationMessage(
-                                    role="assistant",
-                                    content="어떤 작업을 말씀하시나요?",
-                                    action="clarify",
-                                ),
-                            ),
-                        ),
-                    )
-                )
-
-                self.assertEqual(route.action, "chat_answer")
-
-    def test_conversational_processing_request_is_not_promoted_to_chat_answer(self) -> None:
-        self.assertEqual(len(GROUNDED_ROUTING_MESSAGES) + len(CONVERSATION_ROUTING_MESSAGES), 100)
-        messages = CONVERSATION_ROUTING_MESSAGES + (
-            "Find a better title for this documentary",
-            "Use a groundbreaking Wiki title",
-        )
-        responses = [route_response("conversation_reply") for _ in messages]
-        for response in responses:
-            response["edit_goal"] = None
-        client = SequenceJsonClient(responses)
-        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
-
-        for message in messages:
-            with self.subTest(message=message):
-                route = router.route(AgentTurnRequest(message=message))
-
-                self.assertEqual(route.action, "conversation_reply")
-
-    def test_grounded_lookup_overrides_non_persistent_workspace_workflow(self) -> None:
-        messages = (
-            "Find supporting evidence in the workspace document",
-            "Search the workspace for the answer",
-            "workspace에서 근거를 찾아줘",
-            "워크스페이스 기준으로 검색해줘",
-        )
-        responses = [route_response("workspace_workflow") for _ in messages]
-        for response in responses:
-            response["edit_goal"] = None
-        client = SequenceJsonClient(responses)
-        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
-
-        for message in messages:
-            with self.subTest(message=message):
-                route = router.route(AgentTurnRequest(message=message))
-
-                self.assertEqual(route.action, "chat_answer")
-
-    def test_grounded_lookup_with_explicit_save_keeps_workspace_workflow(self) -> None:
-        messages = (
-            "워크스페이스 검색 결과를 저장해줘",
-            "워크스페이스에서 근거를 찾아 새 문서로 만들어줘",
-            "Search the workspace and create a summary document",
-        )
-        client = SequenceJsonClient(
-            [route_response("workspace_workflow") for _ in messages]
-        )
-        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
-
-        for message in messages:
-            with self.subTest(message=message):
-                route = router.route(AgentTurnRequest(message=message))
-
-                self.assertEqual(route.action, "workspace_workflow")
-
-    def test_promotes_persistent_markdown_edit_to_workspace_workflow(self) -> None:
-        client = SequenceJsonClient([route_response("markdown_edit")])
-        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
-
-        route = router.route(
-            AgentTurnRequest(message="현재 문서를 다듬어서 워크스페이스에 저장해줘")
         )
 
         self.assertEqual(route.action, "workspace_workflow")
-        self.assertEqual(route.edit_goal, "cleanup")
+        self.assertEqual(route.retrieval_source, "web")
+        self.assertEqual(route.document_operation, "create")
+        self.assertTrue(route.persist)
+        self.assertEqual(len(client.calls), 1)
 
-    def test_routes_document_display_name_change_to_folder_organize_without_llm(self) -> None:
-        client = SequenceJsonClient([route_response("markdown_edit")])
+    def test_retries_structurally_inconsistent_route_without_changing_its_meaning(self) -> None:
+        inconsistent = route_response("workspace_workflow")
+        inconsistent.update(document_operation="create", persist=False, edit_goal="create_from_chat")
+        corrected = {**inconsistent, "persist": True}
+        client = SequenceJsonClient([inconsistent, corrected])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
 
-        route = router.route(
-            AgentTurnRequest(message="E2E 이동 문서의 표시 이름을 승인 문서로 바꿔줘")
+        route = router.route(AgentTurnRequest(message="새 문서로 저장해줘"))
+
+        self.assertTrue(route.persist)
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn(
+            "persist must be true for action workspace_workflow",
+            retry_payload["contract_failures"],
         )
 
-        self.assertEqual(route.action, "folder_organize")
-        self.assertEqual(client.calls, [])
-
-    def test_leaves_markdown_heading_rename_to_llm(self) -> None:
-        client = SequenceJsonClient([route_response("markdown_edit")])
+    def test_rejects_repeated_structural_inconsistency(self) -> None:
+        inconsistent = route_response("workspace_workflow")
+        inconsistent.update(document_operation="create", persist=False, edit_goal="create_from_chat")
+        client = SequenceJsonClient([inconsistent, inconsistent])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
 
-        route = router.route(AgentTurnRequest(message="현재 문서의 H1 제목을 바꿔줘"))
+        with self.assertRaises(AgentTurnRouteContractError):
+            router.route(AgentTurnRequest(message="새 문서로 저장해줘"))
 
-        self.assertEqual(route.action, "markdown_edit")
-        self.assertEqual(len(client.calls), 1)
+    def test_web_route_requires_explicit_permission_instead_of_fallback_rewrite(self) -> None:
+        response = route_response("chat_answer")
+        response["retrieval_source"] = "web"
+        client = SequenceJsonClient([response, response])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        with self.assertRaises(AgentTurnRouteContractError):
+            router.route(
+                AgentTurnRequest(message="웹에서 찾아줘", allow_web_search=False)
+            )
+
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn(
+            "web retrieval requires allow_web_search true",
+            retry_payload["contract_failures"],
+        )
 
     def test_document_rename_skill_request_keeps_skill_authoring_precedence(self) -> None:
         client = SequenceJsonClient([route_response("skill_authoring")])
@@ -683,10 +491,12 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertNotIn("secret malformed route", client.calls[1][1])
 
     def test_retries_unsupported_action_once(self) -> None:
+        clarification = route_response("clarify")
+        clarification.update(document_operation="edit", edit_goal="other")
         client = SequenceJsonClient(
             [
                 route_response("unsupported_action"),
-                route_response("clarify"),
+                clarification,
             ]
         )
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
@@ -701,6 +511,9 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         expected_failures = {
             "action": "action must be a supported value",
             "confidence": "confidence must be a number between 0 and 1",
+            "retrieval_source": "retrieval_source must be none, workspace, or web",
+            "document_operation": "document_operation must be none, create, or edit",
+            "persist": "persist must be a boolean",
             "edit_goal": "edit_goal is required",
             "reason": "reason must be a non-empty string",
         }
@@ -757,81 +570,15 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertIn(injected_instruction, sent_user_prompt)
         self.assertEqual(json.loads(sent_user_prompt)["recent_messages"][0]["content"], "이전 질문")
 
-    def test_router_prompt_defines_precedence_and_action_specific_edit_goal(self) -> None:
+    def test_router_prompt_defines_structured_route_contract(self) -> None:
         prompt = DEFAULT_AGENT_TURN_ROUTER_PROMPT.read_text(encoding="utf-8")
 
         self.assertIn("Apply these routing precedences", prompt)
-        self.assertIn('"방금 방식대로 Skill로 만들어줘"', prompt)
-        self.assertIn("the Skill's reference input", prompt)
-        self.assertIn("set `edit_goal` to null", prompt)
         self.assertIn("concrete personal data", prompt)
-        self.assertIn("Do not create a mutation plan", prompt)
         self.assertIn("conversation_reply", prompt)
         self.assertIn("previous action is only a hint", prompt)
-
-    def test_allows_general_whole_document_edit(self) -> None:
-        request = AgentTurnRequest(
-            message="전체 문서의 문체를 공식적으로 바꿔줘.",
-            active_markdown_context=ActiveMarkdownContext(markdown="# 제목\n\n본문"),
-        )
-
-        self.assertIsNone(_local_guard(request))
-
-    def test_allows_structure_preserving_edit(self) -> None:
-        request = AgentTurnRequest(
-            message="원문 구조는 그대로 유지하고 문장만 정리해줘.",
-            active_markdown_context=ActiveMarkdownContext(markdown="# 제목\n\n본문"),
-        )
-
-        self.assertIsNone(_local_guard(request))
-
-    def test_defers_explicit_template_transform(self) -> None:
-        request = AgentTurnRequest(
-            message="회사 템플릿에 맞춰 문서를 재구성해줘.",
-            active_markdown_context=ActiveMarkdownContext(markdown="# 제목\n\n본문"),
-        )
-
-        route = _local_guard(request)
-
-        self.assertIsNotNone(route)
-        self.assertEqual(route.action, "clarify")
-        self.assertEqual(route.edit_goal, "template_transform")
-
-    def test_routes_insert_after_for_current_section(self) -> None:
-        request = AgentTurnRequest(
-            message="이 섹션 아래에 문제 해결 절을 추가해줘.",
-            active_markdown_context=ActiveMarkdownContext(
-                markdown="# 제목\n\n본문",
-                target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
-            ),
-        )
-
-        route = _local_guard(request)
-
-        self.assertIsNotNone(route)
-        self.assertEqual(route.action, "markdown_edit")
-        self.assertEqual(route.edit_goal, "insert_after")
-
-    def test_asks_for_current_section_before_insert_after(self) -> None:
-        request = AgentTurnRequest(
-            message="이 섹션 아래에 문제 해결 절을 추가해줘.",
-            active_markdown_context=ActiveMarkdownContext(markdown="# 제목\n\n본문"),
-        )
-
-        route = _local_guard(request)
-
-        self.assertIsNotNone(route)
-        self.assertEqual(route.action, "clarify")
-        self.assertEqual(route.edit_goal, "insert_after")
-
-    def test_does_not_treat_below_content_reference_as_insert_after(self) -> None:
-        request = AgentTurnRequest(
-            message="아래 내용을 표로 작성해줘.",
-            active_markdown_context=ActiveMarkdownContext(markdown="# 제목\n\n본문"),
-        )
-
-        self.assertIsNone(_local_guard(request))
-
+        self.assertIn("three independent fields", prompt)
+        self.assertIn("never rewrites their meaning", prompt)
 
 if __name__ == "__main__":
     unittest.main()

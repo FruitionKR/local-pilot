@@ -164,6 +164,9 @@ class AgentTurnRouteResponse(BaseModel):
     edit_goal: str | None = None
     selected_skill_id: str | None = None
     skill_candidates: list[str] = Field(default_factory=list)
+    retrieval_source: Literal["none", "workspace", "web"]
+    document_operation: Literal["none", "create", "edit"]
+    persist: bool
 
 
 class SkillCandidateResponse(BaseModel):

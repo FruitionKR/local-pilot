@@ -1,7 +1,6 @@
 import json
 import os
 import re
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -14,19 +13,19 @@ from app.core.llm_env import (
     resolve_llm_selection,
 )
 from app.modules.agent.application.ports import AgentTurnRouterPort
-from app.modules.agent.domain.entities import AgentAction, AgentTurnRequest, AgentTurnRoute
+from app.modules.agent.domain.entities import (
+    AgentAction,
+    AgentTurnRequest,
+    AgentTurnRoute,
+    DocumentOperation,
+    RetrievalSource,
+)
 from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
 
 DEFAULT_AGENT_TURN_ROUTER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "agent_turn_router.system.md"
-TEMPLATE_DEFERRED_MARKERS = (
-    "template",
-    "템플릿",
-)
-INSERT_AFTER_POSITION_MARKERS = ("아래에", "아래로", "뒤에", "뒤로", "after", "below")
-INSERT_AFTER_ACTION_MARKERS = ("추가", "삽입", "붙여", "insert", "append", "add")
 NEW_SKILL_REQUEST_PATTERN = re.compile(
     r"(?:스킬|skill)(?:을|를)?\s*(?:(?:하나|새로|새로운|신규로|직접)\s*){0,2}"
     r"(?:만들어|생성해|정의해|작성해)|"
@@ -56,50 +55,6 @@ PENDING_SKILL_FOLLOWUP_PATTERN = re.compile(
     r"(?:개인|팀)(?:\s*(?:스킬|skill))?(?:로|으로)?\s*(?:해|바꿔|변경|수정)",
     re.IGNORECASE,
 )
-DOCUMENT_DISPLAY_NAME_PATTERN = re.compile(
-    r"(?:문서\s*트리|display_name|표시\s*이름|문서(?:\s*파일)?(?:의)?\s*이름).{0,80}"
-    r"(?:바꿔|변경|수정|rename)",
-    re.IGNORECASE,
-)
-PERSISTENT_EDIT_PATTERN = re.compile(
-    r"(?:워크스페이스.{0,20}(?:저장|반영)|영구.{0,20}(?:적용|반영|저장)|"
-    r"(?:저장|반영)(?:해|해줘|해주세요)|승인\s*(?:후|뒤)|"
-    r"(?:persist|save|apply).{0,30}(?:workspace|approval|permanent))",
-    re.IGNORECASE,
-)
-WORKSPACE_MUTATION_PATTERN = re.compile(
-    r"(?:저장|반영|적용|생성|작성|수정|변경|이동|삭제|복사)(?:해|해줘|해주세요)|"
-    r"(?:만들어|바꿔|옮겨)(?:줘|주세요)|"
-    r"\b(?:save|apply|create|write|edit|rename|move|delete|copy)\b",
-    re.IGNORECASE,
-)
-CONVERSATION_REFINEMENT_PATTERN = re.compile(
-    r"(?:형식|말투|길이|이모지|제목|문구).{0,40}(?:만들어|바꿔|변경|수정|써줘|해줘)|"
-    r"(?:format|tone|length|emoji|title|wording).{0,40}(?:make|change|revise|write)|"
-    r"how\s+do\s+i\s+make.{0,60}\bwork|"
-    r"what\s+process\s+should\s+i\s+use\s+to",
-    re.IGNORECASE,
-)
-GROUNDED_RETRIEVAL_PATTERN = re.compile(
-    r"(?:내부\s*문서|워크스페이스|위키|(?a:\b(?:wiki|workspace|document)\b)).{0,40}"
-    r"(?:기준|근거|찾아|검색|조회|(?a:\b(?:search|find|retrieve|ground)\b))|"
-    r"(?:기준|근거|찾아|검색|조회|(?a:\b(?:search|find|retrieve|ground)\b)).{0,40}"
-    r"(?:내부\s*문서|워크스페이스|위키|(?a:\b(?:wiki|workspace|document)\b))",
-    re.IGNORECASE,
-)
-TECHNICAL_PROCESS_QUESTION_PATTERN = re.compile(
-    r"(?:위키|워크스페이스|(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)).{0,40}"
-    r"(?:어떤\s*단계로.{0,20}(?:동작|작동|진행|처리)|"
-    r"어떻게.{0,20}(?:동작|작동))"
-    r"(?:해|하나요|합니까|돼|되나요|됩니까)(?:\?+)?$|"
-    r"how\s+(?:does|do)\s+(?:the\s+)?"
-    r"(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b).{0,30}\bwork(?:\?+)?$|"
-    r"what\s+are\s+the\s+stages\s+of\s+(?:the\s+)?"
-    r"(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)(?:\?+)?$|"
-    r"what\s+is\s+the\s+process\s+(?:of|for)\s+(?:the\s+)?"
-    r"(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)(?:\s+\w+){0,3}(?:\?+)?$",
-    re.IGNORECASE,
-)
 ALLOWED_ACTIONS = {
     "chat_answer",
     "conversation_reply",
@@ -112,6 +67,8 @@ ALLOWED_ACTIONS = {
     "clarify",
     "reject",
 }
+ALLOWED_RETRIEVAL_SOURCES = {"none", "workspace", "web"}
+ALLOWED_DOCUMENT_OPERATIONS = {"none", "create", "edit"}
 JSON_OBJECT_CONTRACT_FAILURE = "model output must be a JSON object"
 
 
@@ -174,6 +131,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             "skill_mode": request.skill_mode,
             "skill_scope_type": request.skill_scope_type,
             "skill_authoring_mode": request.skill_authoring_mode,
+            "allow_web_search": request.allow_web_search,
             "available_skills": [
                 {
                     "id": skill.id,
@@ -186,8 +144,6 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             ],
         }
         route, failures = self._complete_route(payload)
-        route = _promote_persistent_edit(route, request)
-        route = _promote_grounded_query(route, request)
         failures.extend(_route_failures(route, request))
         failures.extend(_skill_authoring_failures(route, request))
         if not failures:
@@ -199,8 +155,6 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
         }
         retried_route, retry_failures = self._complete_route(retry_payload)
-        retried_route = _promote_persistent_edit(retried_route, request)
-        retried_route = _promote_grounded_query(retried_route, request)
         retry_failures.extend(_route_failures(retried_route, request))
         retry_failures.extend(_skill_authoring_failures(retried_route, request))
         if retry_failures:
@@ -261,113 +215,59 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
             confidence=1.0,
             reason="explicit approval for pending Skill proposal",
         )
-    requests_new_skill = _requests_new_skill(lowered)
-    if (
-        not requests_new_skill
-        and DOCUMENT_DISPLAY_NAME_PATTERN.search(request.message)
-        and not re.search(r"(?:h1|heading|본문)", request.message, re.IGNORECASE)
-    ):
-        return AgentTurnRoute(
-            action="folder_organize",
-            confidence=1.0,
-            reason="document display name change",
-        )
-    has_template_skill = any("template" in skill.capabilities for skill in request.available_skills)
-    if (
-        not requests_new_skill
-        and not has_template_skill
-        and any(marker in lowered for marker in TEMPLATE_DEFERRED_MARKERS)
-    ):
-        return AgentTurnRoute(
-            action="clarify",
-            confidence=1.0,
-            reason="template/full-document transform is deferred",
-            edit_goal="template_transform",
-        )
-    requests_insert_after = any(marker in lowered for marker in INSERT_AFTER_POSITION_MARKERS) and any(
-        marker in lowered for marker in INSERT_AFTER_ACTION_MARKERS
-    )
-    if requests_insert_after:
-        target = request.active_markdown_context.target if request.active_markdown_context else None
-        return AgentTurnRoute(
-            action="markdown_edit" if target and target.type == "current_section" else "clarify",
-            confidence=1.0,
-            reason="insert_after request requires a current section target",
-            edit_goal="insert_after",
-        )
     return None
-
-
-def _promote_persistent_edit(
-    route: AgentTurnRoute,
-    request: AgentTurnRequest,
-) -> AgentTurnRoute:
-    if route.action not in {"markdown_edit", "workspace_workflow"}:
-        return route
-    if PERSISTENT_EDIT_PATTERN.search(request.message) is None:
-        return route
-    return replace(
-        route,
-        action="workspace_workflow",
-        edit_goal=route.edit_goal or "other",
-    )
-
-
-def _promote_grounded_query(
-    route: AgentTurnRoute,
-    request: AgentTurnRequest,
-) -> AgentTurnRoute:
-    if request.active_markdown_context is not None or not _requests_grounded_retrieval(request.message):
-        return route
-    if route.action == "workspace_workflow" and WORKSPACE_MUTATION_PATTERN.search(request.message):
-        return route
-    if route.action not in {"conversation_reply", "clarify", "workspace_workflow"}:
-        return route
-    return replace(
-        route,
-        action="chat_answer",
-        edit_goal=None,
-        selected_skill_id=None,
-        skill_candidates=(),
-    )
 
 
 def _requests_new_skill(message: str) -> bool:
     return NEW_SKILL_REQUEST_PATTERN.search(message) is not None
 
 
-def _requests_grounded_retrieval(message: str) -> bool:
-    return bool(
-        GROUNDED_RETRIEVAL_PATTERN.search(message)
-        or TECHNICAL_PROCESS_QUESTION_PATTERN.search(message)
-    )
-
-
 def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:
+    failures: list[str] = []
     if (
         route.action == "clarify"
         and route.edit_goal is None
         and not route.skill_candidates
     ):
-        return [
+        failures.append(
             "clarify requires a supported Markdown target reason or ambiguous Skill candidates; "
             "use conversation_reply when a conversational task needs more user context"
-        ]
-    if (
-        route.action == "chat_answer"
-        and CONVERSATION_REFINEMENT_PATTERN.search(request.message)
-        and not _requests_grounded_retrieval(request.message)
-    ):
-        expected_action = (
-            "markdown_edit"
-            if request.active_markdown_context and request.active_markdown_context.markdown.strip()
-            else "conversation_reply"
         )
-        return [
-            "a format or wording refinement must use "
-            f"{expected_action} unless the current message explicitly requests grounded retrieval"
-        ]
-    return []
+    expected_persist = route.action in {"folder_organize", "workspace_workflow"}
+    if route.persist != expected_persist:
+        failures.append(
+            f"persist must be {str(expected_persist).lower()} for action {route.action}"
+        )
+    allowed_document_operations = {
+        "markdown_create": {"create"},
+        "markdown_edit": {"edit"},
+        "workspace_workflow": {"none", "create", "edit"},
+        "clarify": {"none", "edit"},
+    }.get(route.action, {"none"})
+    if route.document_operation not in allowed_document_operations:
+        failures.append(
+            f"document_operation {route.document_operation} is inconsistent with action {route.action}"
+        )
+    if route.document_operation == "create" and route.edit_goal != "create_from_chat":
+        failures.append("document_operation create requires edit_goal create_from_chat")
+    if route.document_operation == "edit" and route.edit_goal in {None, "create_from_chat"}:
+        failures.append("document_operation edit requires a non-create edit_goal")
+    if route.document_operation == "none" and route.edit_goal is not None:
+        failures.append("document_operation none requires edit_goal null")
+    if route.retrieval_source != "none" and route.action not in {
+        "chat_answer",
+        "markdown_create",
+        "markdown_edit",
+        "workspace_workflow",
+    }:
+        failures.append(
+            f"retrieval_source {route.retrieval_source} is inconsistent with action {route.action}"
+        )
+    if route.action == "chat_answer" and route.retrieval_source == "none":
+        failures.append("chat_answer requires workspace or web retrieval_source")
+    if route.retrieval_source == "web" and request.allow_web_search is not True:
+        failures.append("web retrieval requires allow_web_search true")
+    return failures
 
 
 def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:
@@ -438,6 +338,27 @@ def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:
     else:
         edit_goal = _optional_text(raw_edit_goal)
 
+    raw_retrieval_source = value.get("retrieval_source")
+    if not isinstance(raw_retrieval_source, str) or raw_retrieval_source not in ALLOWED_RETRIEVAL_SOURCES:
+        failures.append("retrieval_source must be none, workspace, or web")
+        retrieval_source: RetrievalSource = "none"
+    else:
+        retrieval_source = raw_retrieval_source
+
+    raw_document_operation = value.get("document_operation")
+    if not isinstance(raw_document_operation, str) or raw_document_operation not in ALLOWED_DOCUMENT_OPERATIONS:
+        failures.append("document_operation must be none, create, or edit")
+        document_operation: DocumentOperation = "none"
+    else:
+        document_operation = raw_document_operation
+
+    raw_persist = value.get("persist")
+    if not isinstance(raw_persist, bool):
+        failures.append("persist must be a boolean")
+        persist = False
+    else:
+        persist = raw_persist
+
     raw_selected_skill_id = value.get("selected_skill_id")
     if raw_selected_skill_id is not None and not isinstance(raw_selected_skill_id, str):
         failures.append("selected_skill_id must be a string or null")
@@ -461,12 +382,15 @@ def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:
         edit_goal=edit_goal,
         selected_skill_id=selected_skill_id,
         skill_candidates=skill_candidates,
+        retrieval_source=retrieval_source,
+        document_operation=document_operation,
+        persist=persist,
     ), failures
 
 
 def _fallback_route() -> AgentTurnRoute:
     return AgentTurnRoute(
-        action="chat_answer",
+        action="conversation_reply",
         confidence=0.0,
         reason="",
     )

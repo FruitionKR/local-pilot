@@ -96,9 +96,14 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
         client,
         Path(DEFAULT_AGENT_TURN_ROUTER_PROMPT).read_text(encoding="utf-8"),
     ).route(AgentTurnRequest(message="RAG가 무엇인지 한 문장으로 설명해줘."))
-    if route.action != "chat_answer":
+    if (
+        route.action,
+        route.retrieval_source,
+        route.document_operation,
+        route.persist,
+    ) != ("chat_answer", "workspace", "none", False):
         raise RuntimeError(
-            f"Agent router contract expected chat_answer, got {route.action}"
+            "Agent router contract returned an unexpected structured route"
         )
 
 

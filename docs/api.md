@@ -2843,8 +2843,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 모두 생략하며, 적용할 대상이 없어 AI는 답변·되물음만 낸다. 셋은 함께 있거나 함께 없어야 하고
 하나만 오면 `400`이다.
 
-열린 문서에서 저장·반영을 명시한 편집 요청은 전체 Markdown을 다시 보안 검사한 뒤
-`workspace_workflow` AgentRun으로 전환한다. 이때 편집 대상 문서와 기준 버전을 계획에 고정하고,
+열린 문서에서 저장·반영을 명시한 편집 요청은 `workspace_workflow` AgentRun으로 전환한다.
+이때 편집 대상 문서와 기준 버전을 계획에 고정하고,
 사용자가 그 계획을 승인해야 실제 문서에 반영한다. 저장을 명시하지 않은 편집 요청은 기존처럼
 `markdown_edit` 미리보기만 반환한다.
 
@@ -2863,7 +2863,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 | body | `documentId` | `string` | 아니오 | 편집 대상 문서. 생략하면 `baseVersion`·`editorSnapshot`도 함께 생략한다 |
 | body | `baseVersion` | `integer` | 아니오 | 편집 기준 문서 버전 |
 | body | `editorSnapshot` | `object` | 아니오 | 편집 시작 시점의 에디터 상태 |
-| body | `allow_web_search` | `boolean` | 아니오 | AI가 질의로 판정했을 때 웹 검색을 허용할지. 편집·Skill 갈래에는 영향이 없다 |
+| body | `allow_web_search` | `boolean` | 아니오 | Query와 웹 근거 기반 새 문서 생성에서 웹 검색을 허용할지. 편집·Skill 갈래에는 영향이 없다 |
 | body | `conversationContext.selected_pair_ids` | `string[]` | 아니오 | 맥락으로 쓸 문답 ID(최대 20개). 비우면 세션의 최근 완결 문답을 쓴다 |
 
 - Content-Type: `application/json` (`AgentTurnRequest`)
@@ -10715,14 +10715,28 @@ Handle Agent Turn
 ```
 
 저장·반영을 명시한 열린 문서 편집을 승인 계획으로 만들 때는 `active_markdown_context`와 함께
-`document_id`·`base_version`을 전달한다. 파이프라인은 생성된 전체 Markdown을 다시 보안 검사하고,
-해당 문서와 버전에만 적용 가능한 `apply_document_edit` 아티팩트를 만들어 계획 범위를 제한한다.
+`document_id`·`base_version`을 전달한다. 파이프라인은 해당 문서와 버전에만 적용 가능한
+`apply_document_edit` 아티팩트를 만들어 계획 범위를 제한한다.
 미리보기만 필요한 일반 편집은 두 필드를 생략할 수 있다.
+
+Query·Markdown·Ingest·Lint의 LLM 호출은 공통 client에서 문서·검색·대화 내용을 untrusted data로
+격리하고 숫자 개인정보를 provider 전송 전에 마스킹한다. 일반 문서 안의 보안 예문이나 연락처는
+Skill 지시문처럼 실행 가능한 명령으로 간주하지 않으며, 저장은 승인 계획을 거친다. Skill 지시문과
+Agent 실행 계획에는 별도의 권한·tool·승인 검사를 계속 적용한다.
 
 `conversation_context.recent_messages[].action`은 이전 assistant 응답의 action을 전달하는 선택 필드다.
 라우터는 이를 멀티턴 연속성 힌트로만 사용하며 현재 요청의 명시적 의도를 우선한다.
+복합 요청은 `retrieval_source`(`none|workspace|web`),
+`document_operation`(`none|create|edit`), `persist`로 분해한 뒤 전체 조합을 대표하는 action을
+선택한다. 서버는 이 의미를 문장 패턴으로 덮어쓰지 않고, action과 필드 조합이 모순될 때만
+LLM에 한 번 재요청한다. 두 번째 응답도 계약을 만족하지 못하면 HTTP 422로 종료한다.
 응답 action은 내부 문서 근거 조회인 `chat_answer`, 대화 맥락만으로 작성·형식을 이어가는
 `conversation_reply`, 열린 Markdown을 변경하는 `markdown_edit`를 구분한다.
+내부 문서 근거 조회와 새 문서 저장 또는 열린 문서 편집을 함께 요청하면 Query 파이프라인이 먼저
+평가한 답변과 evidence snippet을 Markdown 생성·편집 입력에 포함한다. 허용된 웹 검색은 새 문서
+생성 요청에서 같은 흐름을 사용하며 `allow_web_search=true`일 때만 실행한다. 생성 결과는
+`create_document`, 편집 결과는 `apply_document_edit` 아티팩트로 `workspace_workflow` 승인 계획에
+전달한다.
 
 #### 5. Response body
 
@@ -10836,8 +10850,11 @@ Handle Agent Turn
   "route": {
     "action": "chat_answer",
     "confidence": 1,
+    "document_operation": "none",
     "edit_goal": "string",
+    "persist": false,
     "reason": "string",
+    "retrieval_source": "workspace",
     "selected_skill_id": "string",
     "skill_candidates": [
       "string"
@@ -11026,8 +11043,11 @@ curl -X POST "$PIPELINE/agent/turn" \
   "route": {
     "action": "chat_answer",
     "confidence": 1,
+    "document_operation": "none",
     "edit_goal": "string",
+    "persist": false,
     "reason": "string",
+    "retrieval_source": "workspace",
     "selected_skill_id": "string",
     "skill_candidates": [
       "string"
