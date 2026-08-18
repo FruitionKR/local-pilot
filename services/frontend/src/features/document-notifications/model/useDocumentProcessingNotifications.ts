@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useUserPreferences } from "@/entities/user";
 import type { DocumentItemResponse } from "@/entities/document";
 import type { DocumentStatus } from "@/entities/tree";
+import { buildFailedDocumentsNotice } from "./failedDocumentsNotice";
 import { publishNotice, subscribeNotices, type NoticePayload } from "./noticeBus";
 
 export type DocumentProcessingNotice = NoticePayload & { id: string };
@@ -14,16 +15,10 @@ function wasProcessing(status: DocumentStatus | undefined) {
   return status === "uploaded" || status === "processing";
 }
 
-function noticeText(kind: DocumentProcessingNotice["kind"], count: number) {
-  if (kind === "completed") {
-    return {
-      title: "문서 처리 완료",
-      message: count === 1 ? "문서 분석이 완료되었습니다." : `${count}개 문서 분석이 완료되었습니다.`
-    };
-  }
+function completedNoticeText(count: number) {
   return {
-    title: "문서 처리 실패",
-    message: count === 1 ? "문서를 처리하지 못했습니다." : `${count}개 문서를 처리하지 못했습니다.`
+    title: "문서 처리 완료",
+    message: count === 1 ? "문서 분석이 완료되었습니다." : `${count}개 문서 분석이 완료되었습니다.`
   };
 }
 
@@ -74,20 +69,22 @@ export function useDocumentProcessingNotifications(documents: DocumentItemRespon
     previousStatusesRef.current = currentStatuses;
     if (!previousStatuses) return;
 
-    const counts = { completed: 0, failed: 0 };
+    let completedCount = 0;
+    const failedDocuments: DocumentItemResponse[] = [];
     documents.forEach((document) => {
       const previousStatus = previousStatuses.get(document.id);
       if (!wasProcessing(previousStatus)) return;
-      if (document.status === "completed") counts.completed += 1;
-      if (document.status === "failed") counts.failed += 1;
+      if (document.status === "completed") completedCount += 1;
+      if (document.status === "failed") failedDocuments.push(document);
     });
 
-    (["completed", "failed"] as const).forEach((kind) => {
-      const enabled = kind === "completed" ? completedNotifications : failedNotifications;
-      if (counts[kind] === 0 || !enabled) return;
-      // 버스를 거쳐야 알림 패널 히스토리에도 남는다. 카드 표시는 구독 경로(pushNotice)가 처리한다.
-      publishNotice({ kind, ...noticeText(kind, counts[kind]) });
-    });
+    if (completedCount > 0 && completedNotifications) {
+      publishNotice({ kind: "completed", ...completedNoticeText(completedCount) });
+    }
+    // 문서별 카드 대신 요약 카드 하나만 발행한다 (대량 실패 시 스택 넘침 방지).
+    if (failedNotifications && failedDocuments.length > 0) {
+      publishNotice(buildFailedDocumentsNotice(failedDocuments));
+    }
   }, [documents, completedNotifications, failedNotifications]);
 
   return { notices, dismissNotice };
