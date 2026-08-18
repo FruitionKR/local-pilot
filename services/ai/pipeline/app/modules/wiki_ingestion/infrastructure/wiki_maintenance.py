@@ -10,7 +10,7 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
 )
-from app.core.llm_env import provider_api_endpoint, resolve_llm_provider_defaults
+from app.core.llm_env import resolve_llm_provider_defaults
 from app.modules.wiki_ingestion.application.models import (
     WikiMaintenanceCommand,
     WikiMaintenanceConfigurationError,
@@ -140,7 +140,6 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
 
 def _lint_api_client(command: WikiMaintenanceCommand) -> ChatCompletionsJsonClient:
     defaults = resolve_llm_provider_defaults(provider=command.provider, model=command.model)
-    endpoint = provider_api_endpoint(defaults.base_url, defaults.provider)
     if not defaults.api_key:
         raise WikiMaintenanceConfigurationError(
             f"Missing API key. Set {defaults.api_key_env}"
@@ -151,7 +150,6 @@ def _lint_api_client(command: WikiMaintenanceCommand) -> ChatCompletionsJsonClie
         )
     return ChatCompletionsJsonClient(
         ChatClientConfig(
-            endpoint=endpoint,
             api_key=defaults.api_key,
             model=defaults.model,
             temperature=None,

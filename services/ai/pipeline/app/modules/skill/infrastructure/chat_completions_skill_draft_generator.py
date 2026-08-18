@@ -4,7 +4,6 @@ from pathlib import Path
 
 from app.core.llm_env import (
     api_key_from_env,
-    chat_completions_endpoint,
     int_env,
     provider_api_key_env,
     resolve_llm_selection,
@@ -66,14 +65,10 @@ def build_skill_draft_generator(
     )
     if not api_key or not resolved_model:
         raise RuntimeError(f"Set {provider_api_key_env(resolved_provider)} and pass a model.")
-    endpoint = chat_completions_endpoint(
-        provider=resolved_provider,
-    )
     prompt_path = Path(os.environ.get("SKILL_DRAFT_SYSTEM_PROMPT", str(DEFAULT_PROMPT)))
     return ChatCompletionsSkillDraftGenerator(
         ChatCompletionsJsonClient(
             ChatClientConfig(
-                endpoint=endpoint,
                 api_key=api_key,
                 model=resolved_model,
                 temperature=None,

@@ -2,7 +2,6 @@ from collections.abc import Callable
 
 from app.core.llm_env import (
     api_key_from_env,
-    chat_completions_endpoint,
     float_env,
     int_env,
     optional_int_env,
@@ -138,7 +137,6 @@ def _config_from_env(
     if not api_key:
         raise RuntimeError(f"Set {provider_api_key_env(resolved_provider)} before enabling query answer generation.")
     return ChatClientConfig(
-        endpoint=_endpoint(resolved_provider),
         api_key=api_key,
         model=resolved_model,
         temperature=None,
@@ -146,12 +144,6 @@ def _config_from_env(
         max_tokens=_optional_int_env("QUERY_LLM_MAX_TOKENS"),
         json_mode=False,
         provider=resolved_provider,
-    )
-
-
-def _endpoint(provider: str | None = None) -> str:
-    return chat_completions_endpoint(
-        provider=provider,
     )
 
 

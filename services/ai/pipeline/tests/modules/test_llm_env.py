@@ -4,14 +4,11 @@ from unittest.mock import patch
 from app.core.llm_env import (
     SUPPORTED_LLM_MODELS,
     api_key_from_env,
-    chat_completions_endpoint,
     float_env,
     inference_profile,
     int_env,
     optional_int_env,
-    provider_api_endpoint,
     provider_api_key_env,
-    provider_base_url,
     resolve_llm_provider,
     resolve_llm_provider_defaults,
     resolve_llm_selection,
@@ -43,26 +40,19 @@ class LlmEnvTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     resolve_llm_selection(provider, model)
 
-    def test_provider_endpoints_and_api_key_envs_are_fixed(self) -> None:
+    def test_provider_api_key_envs_are_fixed(self) -> None:
         expected = {
-            "openai": ("https://api.openai.com/v1/chat/completions", "OPENAI_API_KEY"),
-            "gemini": (
-                "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-                "GEMINI_API_KEY",
-            ),
-            "claude": ("https://api.anthropic.com/v1/messages", "ANTHROPIC_API_KEY"),
+            "openai": "OPENAI_API_KEY",
+            "gemini": "GEMINI_API_KEY",
+            "claude": "ANTHROPIC_API_KEY",
         }
-        for provider, (endpoint, key_env) in expected.items():
+        for provider, key_env in expected.items():
             with self.subTest(provider=provider):
-                self.assertEqual(chat_completions_endpoint(provider=provider), endpoint)
-                self.assertEqual(provider_api_endpoint(provider_base_url(provider), provider), endpoint)
                 self.assertEqual(provider_api_key_env(provider), key_env)
 
-    def test_provider_defaults_reject_endpoint_and_key_env_overrides(self) -> None:
+    def test_provider_defaults_reject_key_env_override(self) -> None:
         with self.assertRaisesRegex(ValueError, "fixed to OPENAI_API_KEY"):
             resolve_llm_provider_defaults(provider="openai", api_key_env="LLM_API_KEY")
-        with self.assertRaisesRegex(ValueError, "base URL is fixed"):
-            resolve_llm_provider_defaults(provider="openai", base_url="https://example.test/v1")
 
     def test_api_key_is_read_only_from_selected_provider_env(self) -> None:
         with patch.dict(

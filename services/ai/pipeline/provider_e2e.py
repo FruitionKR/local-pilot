@@ -9,8 +9,6 @@ from pathlib import Path
 
 from app.core.llm_env import (
     SUPPORTED_LLM_PROVIDERS,
-    provider_api_endpoint,
-    provider_base_url,
     resolve_llm_selection,
     resolve_llm_provider_defaults,
 )
@@ -187,7 +185,6 @@ def main() -> None:
         )
     client = ChatCompletionsJsonClient(
         ChatClientConfig(
-            endpoint=provider_api_endpoint(provider_base_url(defaults.provider), defaults.provider),
             api_key=defaults.api_key,
             model=defaults.model or args.model,
             temperature=None,

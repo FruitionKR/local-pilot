@@ -4,7 +4,7 @@ from app.modules.wiki_ingestion.infrastructure.wiki_maintenance import (
 )
 
 
-def test_claude_lint_client_uses_messages_endpoint_and_provider(
+def test_claude_lint_client_uses_selected_provider(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
@@ -18,5 +18,4 @@ def test_claude_lint_client_uses_messages_endpoint_and_provider(
         )
     )
 
-    assert client.config.endpoint == "https://api.anthropic.com/v1/messages"
     assert client.provider == "claude"

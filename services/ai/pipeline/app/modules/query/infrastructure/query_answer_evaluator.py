@@ -5,7 +5,6 @@ from typing import Any
 
 from app.core.llm_env import (
     api_key_from_env,
-    chat_completions_endpoint,
     float_env,
     int_env,
     optional_int_env,
@@ -96,7 +95,6 @@ def build_query_answer_evaluator(
     return QueryAnswerEvaluator(
         ChatCompletionsJsonClient(
             ChatClientConfig(
-                endpoint=_endpoint(resolved_provider),
                 api_key=api_key,
                 model=resolved_model,
                 temperature=None,
@@ -143,12 +141,6 @@ def _normalize_evaluation(
         feedback=feedback,
         web_query=web_query,
         warnings=[str(item).strip() for item in value.get("warnings", []) if str(item).strip()],
-    )
-
-
-def _endpoint(provider: str | None = None) -> str:
-    return chat_completions_endpoint(
-        provider=provider,
     )
 
 

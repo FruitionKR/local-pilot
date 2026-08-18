@@ -55,7 +55,6 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
             config = _config_from_env(provider="gemini", model="gemini-3.1-flash-lite")
 
         self.assertEqual(config.model, "gemini-3.1-flash-lite")
-        self.assertEqual(config.endpoint, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
         self.assertEqual(config.api_key, "secret")
         self.assertEqual(config.provider, "gemini")
 
@@ -99,7 +98,6 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
 
     def test_conversation_summarizer_uses_request_snapshot(self) -> None:
         config = ChatClientConfig(
-            endpoint="https://example.test/chat",
             api_key="test-key",
             model="gpt-5-nano",
             provider="openai",

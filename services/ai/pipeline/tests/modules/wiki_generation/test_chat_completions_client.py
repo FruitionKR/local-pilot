@@ -1,233 +1,285 @@
-import json
 import unittest
+from contextlib import nullcontext
 from unittest.mock import patch
 
+from langchain_core.messages import AIMessage
+
+from app.modules.wiki_generation.infrastructure import chat_completions_llm
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
 )
 
 
-class _Response:
-    def __init__(self, result: str = "ok", provider: str = "openai") -> None:
-        self.result = result
-        self.provider = provider
+class _Model:
+    def __init__(
+        self,
+        response: AIMessage | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.response = response or AIMessage(content='{"result":"ok"}')
+        self.error = error
+        self.bind_kwargs: dict[str, object] = {}
+        self.messages: list[object] = []
 
-    def __enter__(self):
+    def bind(self, **kwargs: object) -> "_Model":
+        self.bind_kwargs = kwargs
         return self
 
-    def __exit__(self, *_args: object) -> None:
-        return None
+    def invoke(self, messages: list[object]) -> AIMessage:
+        self.messages = messages
+        if self.error is not None:
+            raise self.error
+        return self.response
 
-    def read(self) -> bytes:
-        content = {
-            "content": [
-                {"type": "text", "text": '{"result": '},
-                {"type": "text", "text": json.dumps(self.result) + "}"},
-            ]
-        }
-        if self.provider != "claude":
-            content = {
-                "choices": [{"message": {"content": '{"result": ' + json.dumps(self.result) + "}"}}]
-            }
-        return json.dumps(content).encode()
+
+class _HttpError(RuntimeError):
+    status_code = 429
 
 
 class ChatCompletionsJsonClientTest(unittest.TestCase):
-    def test_normalizes_transport_and_response_decode_errors(self) -> None:
-        client = ChatCompletionsJsonClient(
-            ChatClientConfig(
-                endpoint="https://example.test/chat",
-                api_key="test-key",
-                model="gpt-5-nano",
-                provider="openai",
-            )
+    def test_temperature_is_omitted_unless_caller_sets_it(self) -> None:
+        config = ChatClientConfig(
+            api_key="provider-key",
+            model="claude-sonnet-5",
+            provider="claude",
         )
 
-        with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
-            with self.assertRaisesRegex(RuntimeError, "transport or response error"):
-                client.complete_text("system prompt", "user prompt")
+        self.assertIsNone(config.temperature)
 
-        with (
-            patch("urllib.request.urlopen", return_value=_Response()),
-            patch(
-                "app.modules.wiki_generation.infrastructure.chat_completions_llm.json.loads",
-                return_value={"choices": []},
+    def test_provider_models_receive_generation_and_retry_config(self) -> None:
+        cases = (
+            (
+                "openai",
+                "gpt-5-nano",
+                "ChatOpenAI",
+                {"reasoning_effort": "medium"},
             ),
-        ):
-            with self.assertRaisesRegex(RuntimeError, "Unexpected chat-completions response"):
-                client.complete_text("system prompt", "user prompt")
-
-        with (
-            patch("urllib.request.urlopen", return_value=_Response()),
-            patch(
-                "app.modules.wiki_generation.infrastructure.chat_completions_llm.json.loads",
-                side_effect=json.JSONDecodeError("invalid JSON", "", 0),
+            (
+                "gemini",
+                "gemini-3.1-flash-lite",
+                "ChatGoogleGenerativeAI",
+                {"thinking_level": "low"},
             ),
+            ("claude", "claude-sonnet-5", "ChatAnthropic", {}),
+        )
+        for provider, model_name, class_name, provider_options in cases:
+            with self.subTest(provider=provider):
+                model = _Model()
+                with patch.object(
+                    chat_completions_llm,
+                    class_name,
+                    return_value=model,
+                    create=True,
+                ) as constructor:
+                    ChatCompletionsJsonClient(
+                        ChatClientConfig(
+                            api_key="provider-key",
+                            model=model_name,
+                            temperature=0.0,
+                            timeout_seconds=17,
+                            max_tokens=321,
+                            max_retries=3,
+                            provider=provider,
+                        )
+                    )
+
+                constructor.assert_called_once_with(
+                    model=model_name,
+                    api_key="provider-key",
+                    temperature=0.0,
+                    timeout=17,
+                    max_tokens=321,
+                    max_retries=3,
+                    **provider_options,
+                )
+
+    def test_json_mode_uses_each_provider_contract(self) -> None:
+        cases = (
+            ("openai", "gpt-5-nano", "ChatOpenAI"),
+            ("gemini", "gemini-3.1-flash-lite", "ChatGoogleGenerativeAI"),
+            ("claude", "claude-sonnet-5", "ChatAnthropic"),
+        )
+        for provider, model_name, class_name in cases:
+            with self.subTest(provider=provider):
+                model = _Model()
+                with patch.object(
+                    chat_completions_llm,
+                    class_name,
+                    return_value=model,
+                    create=True,
+                ) as constructor:
+                    client = ChatCompletionsJsonClient(
+                        ChatClientConfig(
+                            api_key="provider-key",
+                            model=model_name,
+                            json_mode=True,
+                            provider=provider,
+                        )
+                    )
+                    self.assertEqual(
+                        client.complete_json("system prompt", "user prompt"),
+                        {"result": "ok"},
+                    )
+
+                system_content = model.messages[0].content  # type: ignore[attr-defined]
+                if provider == "openai":
+                    self.assertEqual(
+                        model.bind_kwargs,
+                        {"response_format": {"type": "json_object"}},
+                    )
+                elif provider == "gemini":
+                    self.assertEqual(
+                        constructor.call_args.kwargs["response_mime_type"],
+                        "application/json",
+                    )
+                else:
+                    self.assertIn("Return only one valid JSON object", system_content)
+
+    def test_masks_request_and_response_numeric_personal_data(self) -> None:
+        model = _Model(AIMessage(content="연락처는 010-1234-5678입니다."))
+        with patch.object(
+            chat_completions_llm,
+            "ChatOpenAI",
+            return_value=model,
+            create=True,
         ):
-            with self.assertRaisesRegex(RuntimeError, "transport or response error"):
-                client.complete_text("system prompt", "user prompt")
-
-    def test_converts_claude_messages_request_and_response(self) -> None:
-        client = ChatCompletionsJsonClient(
-            ChatClientConfig(
-                endpoint="https://api.anthropic.com/v1/messages",
-                api_key="secret",
-                model="claude-sonnet-5",
-                json_mode=True,
-                provider="claude",
+            client = ChatCompletionsJsonClient(
+                ChatClientConfig(
+                    api_key="provider-key",
+                    model="gpt-5-nano",
+                    provider="openai",
+                )
             )
-        )
-
-        with patch(
-            "urllib.request.urlopen",
-            return_value=_Response(provider="claude"),
-        ) as urlopen:
-            result = client.complete_json("system prompt", "user prompt")
-
-        request = urlopen.call_args.args[0]
-        body = json.loads(request.data)
-        self.assertEqual(request.headers["X-api-key"], "secret")
-        self.assertEqual(request.headers["Anthropic-version"], "2023-06-01")
-        self.assertNotIn("Authorization", request.headers)
-        self.assertIn("Return only one valid JSON object", body["system"])
-        self.assertIn("highest-priority", body["system"])
-        self.assertEqual(body["messages"], [{"role": "user", "content": "user prompt"}])
-        self.assertEqual(body["max_tokens"], 4096)
-        self.assertEqual(result, {"result": "ok"})
-
-    def test_redacts_numeric_personal_data_before_request(self) -> None:
-        client = ChatCompletionsJsonClient(
-            ChatClientConfig(
-                endpoint="https://api.anthropic.com/v1/messages",
-                api_key="secret",
-                model="claude-sonnet-5",
-                json_mode=True,
-                provider="claude",
+            content = client.complete_text(
+                "system prompt",
+                "연락처는 010-9876-5432입니다.",
             )
-        )
 
-        with patch("urllib.request.urlopen", return_value=_Response(provider="claude")) as urlopen:
-            client.complete_json("system prompt", "연락처는 010-1234-5678입니다.")
-
-        request = urlopen.call_args.args[0]
-        body = json.loads(request.data)
-        self.assertNotIn("010-1234-5678", body["messages"][0]["content"])
-        self.assertIn("[NUMERIC_PERSONAL_DATA]", body["messages"][0]["content"])
+        self.assertIn("highest-priority", model.messages[0].content)  # type: ignore[attr-defined]
+        self.assertNotIn("010-9876-5432", model.messages[1].content)  # type: ignore[attr-defined]
+        self.assertIn("[NUMERIC_PERSONAL_DATA]", model.messages[1].content)  # type: ignore[attr-defined]
+        self.assertEqual(content, "연락처는 [NUMERIC_PERSONAL_DATA]입니다.")
 
     def test_preserves_trusted_identifier_in_request_and_response(self) -> None:
         document_id = "doc_5d1d66f111584257813657ddae1a4eea"
-        client = ChatCompletionsJsonClient(
-            ChatClientConfig(
-                endpoint="https://api.anthropic.com/v1/messages",
-                api_key="secret",
-                model="claude-sonnet-5",
-                json_mode=True,
-                provider="claude",
+        model = _Model(AIMessage(content=f'{{"result":"{document_id}"}}'))
+        with patch.object(
+            chat_completions_llm,
+            "ChatOpenAI",
+            return_value=model,
+            create=True,
+        ):
+            client = ChatCompletionsJsonClient(
+                ChatClientConfig(
+                    api_key="provider-key",
+                    model="gpt-5-nano",
+                    json_mode=True,
+                    provider="openai",
+                )
             )
-        )
-
-        with patch(
-            "urllib.request.urlopen",
-            return_value=_Response(document_id, provider="claude"),
-        ) as urlopen:
             result = client.complete_json(
                 "system prompt",
                 f"target {document_id}, 카드 4111 1111 1111 1111",
                 trusted_identifiers=(document_id,),
             )
 
-        body = json.loads(urlopen.call_args.args[0].data)
-        self.assertIn(document_id, body["messages"][0]["content"])
-        self.assertNotIn("4111 1111 1111 1111", body["messages"][0]["content"])
+        user_content = model.messages[1].content  # type: ignore[attr-defined]
+        self.assertIn(document_id, user_content)
+        self.assertNotIn("4111 1111 1111 1111", user_content)
         self.assertEqual(result, {"result": document_id})
 
-    def test_redacts_numeric_personal_data_in_response(self) -> None:
-        client = ChatCompletionsJsonClient(
-            ChatClientConfig(
-                endpoint="https://api.anthropic.com/v1/messages",
-                api_key="secret",
-                model="claude-sonnet-5",
-                json_mode=True,
-                provider="claude",
+    def test_uses_message_text_for_gemini_content_blocks(self) -> None:
+        model = _Model(
+            AIMessage(
+                content=[
+                    {
+                        "type": "text",
+                        "text": '{"result":"ok"}',
+                        "extras": {"signature": "signed"},
+                    }
+                ]
             )
         )
-
-        with patch(
-            "urllib.request.urlopen",
-            return_value=_Response("연락처는 010-1234-5678입니다.", provider="claude"),
+        with patch.object(
+            chat_completions_llm,
+            "ChatGoogleGenerativeAI",
+            return_value=model,
+            create=True,
         ):
-            result = client.complete_json("system prompt", "user prompt")
-
-        self.assertEqual(result, {"result": "연락처는 [NUMERIC_PERSONAL_DATA]입니다."})
-
-    def test_provider_reasoning_parameters_are_sent_without_claude_thinking(self) -> None:
-        cases = (
-            ("openai", "gpt-5-nano", {"reasoning_effort": "medium"}),
-            ("gemini", "gemini-3.1-flash-lite", {"reasoning_effort": "low"}),
-            ("claude", "claude-sonnet-5", {}),
-        )
-        for provider, model, expected_profile in cases:
-            with self.subTest(provider=provider):
-                endpoint = (
-                    "https://api.anthropic.com/v1/messages"
-                    if provider == "claude"
-                    else "https://example.test/chat"
+            client = ChatCompletionsJsonClient(
+                ChatClientConfig(
+                    api_key="provider-key",
+                    model="gemini-3.1-flash-lite",
+                    provider="gemini",
                 )
-                client = ChatCompletionsJsonClient(
-                    ChatClientConfig(
-                        endpoint=endpoint,
-                        api_key="secret",
-                        model=model,
-                        provider=provider,
-                    )
-                )
-                with patch(
-                    "urllib.request.urlopen",
-                    return_value=_Response(provider=provider),
-                ) as urlopen:
-                    client.complete_text("system prompt", "user prompt")
-                body = json.loads(urlopen.call_args.args[0].data)
-                self.assertEqual(body["model"], model)
-                self.assertEqual(
-                    {key: body[key] for key in body if key == "reasoning_effort"},
-                    expected_profile,
-                )
-                self.assertNotIn("thinking", body)
-
-    def test_langsmith_metadata_excludes_endpoint(self) -> None:
-        client = ChatCompletionsJsonClient(
-            ChatClientConfig(
-                endpoint="https://example.test/chat",
-                api_key="secret",
-                model="gpt-5-nano",
-                provider="openai",
             )
-        )
+
+            self.assertEqual(client.complete_text("system", "user"), '{"result":"ok"}')
+
+    def test_normalizes_model_errors_without_leaking_numeric_data(self) -> None:
+        model = _Model(error=_HttpError("retry after calling 010-1234-5678"))
+        with patch.object(
+            chat_completions_llm,
+            "ChatOpenAI",
+            return_value=model,
+            create=True,
+        ):
+            client = ChatCompletionsJsonClient(
+                ChatClientConfig(
+                    api_key="provider-key",
+                    model="gpt-5-nano",
+                    provider="openai",
+                )
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "LLM API HTTP 429") as raised:
+                client.complete_text("system", "user")
+
+        self.assertNotIn("010-1234-5678", str(raised.exception))
+        self.assertIn("[NUMERIC_PERSONAL_DATA]", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertTrue(raised.exception.__suppress_context__)
+
+    def test_langsmith_trace_contains_only_sanitized_wrapper_result(self) -> None:
+        model = _Model(AIMessage(content="결과 010-1234-5678"))
         captured: dict[str, object] = {}
 
-        def fake_traceable(**kwargs):
+        def fake_traceable(**kwargs: object):
             captured.update(kwargs)
             return lambda function: function
 
         with (
-            patch(
-                "app.modules.wiki_generation.infrastructure.chat_completions_llm.traceable",
-                side_effect=fake_traceable,
+            patch.object(
+                chat_completions_llm,
+                "ChatOpenAI",
+                return_value=model,
+                create=True,
             ),
-            patch(
-                "app.modules.wiki_generation.infrastructure.chat_completions_llm.langsmith_tracing_enabled",
-                return_value=True,
-            ),
-            patch.object(client, "_send_chat_completion", return_value='{"ok": true}'),
+            patch.object(chat_completions_llm, "traceable", side_effect=fake_traceable),
+            patch.object(chat_completions_llm, "langsmith_tracing_enabled", return_value=True),
+            patch.object(
+                chat_completions_llm,
+                "tracing_context",
+                return_value=nullcontext(),
+                create=True,
+            ) as tracing,
         ):
-            client.complete_text("system", "user")
+            client = ChatCompletionsJsonClient(
+                ChatClientConfig(
+                    api_key="provider-key",
+                    model="gpt-5-nano",
+                    provider="openai",
+                )
+            )
+            result = client.complete_text("system", "user 010-9876-5432")
 
-        assert captured["metadata"] == {
-            "provider": "openai",
-            "model": "gpt-5-nano",
-            "json_mode": False,
-        }
+        self.assertEqual(result, "결과 [NUMERIC_PERSONAL_DATA]")
+        self.assertEqual(
+            captured["metadata"],
+            {"provider": "openai", "model": "gpt-5-nano", "json_mode": False},
+        )
+        tracing.assert_called_once_with(enabled=False)
 
 
 if __name__ == "__main__":

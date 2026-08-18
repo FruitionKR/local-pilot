@@ -6,7 +6,6 @@ from zoneinfo import ZoneInfo
 
 from app.core.llm_env import (
     api_key_from_env,
-    chat_completions_endpoint,
     int_env,
     optional_int_env,
     provider_api_key_env,
@@ -87,7 +86,6 @@ def build_conversation_replier(
     return ChatCompletionsConversationReplier(
         ChatCompletionsJsonClient(
             ChatClientConfig(
-                endpoint=chat_completions_endpoint(provider=resolved_provider),
                 api_key=api_key,
                 model=resolved_model,
                 temperature=None,
