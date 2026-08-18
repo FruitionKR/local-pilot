@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import {
   fetchAiModels,
   fetchWorkspaceAiModelSettings,
+  isSameSelection,
   resolveProviderModel,
   updateWorkspaceAiModelSettings,
   type AiModel,
@@ -57,6 +58,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const [aiModelSelection, setAiModelSelection] = useState<AiModelSelection | null>(null);
   const [aiModelError, setAiModelError] = useState<string | null>(null);
   const [isAiModelSaving, setIsAiModelSaving] = useState(false);
+  // PUT /ai-model-settings는 OWNER 전용이다. 설정 로드 전에는 안전하게 읽기 전용으로 둔다.
+  const [canUpdateAiModel, setCanUpdateAiModel] = useState(false);
 
   async function toggleNotification(key: NotificationKey) {
     const nextValue = !preferences.notifications[key];
@@ -93,7 +96,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       });
     fetchWorkspaceAiModelSettings()
       .then((settings) => {
-        if (!cancelled) setAiModelSelection(settings.ingest_lint);
+        if (cancelled) return;
+        setAiModelSelection(settings.ingest_lint);
+        setCanUpdateAiModel(settings.can_update === true);
       })
       .catch((error: unknown) => {
         if (!cancelled) setAiModelError(getErrorMessage(error, "LLM Provider 설정을 불러오지 못했습니다."));
@@ -113,8 +118,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const wsName = workspaceName ?? "워크스페이스";
 
   async function selectAiProvider(provider: string) {
+    if (!canUpdateAiModel) return;
     const selected = resolveProviderModel(aiModels, provider, aiModelSelection);
-    if (!selected || selected.provider === aiModelSelection?.provider || isAiModelSaving) return;
+    // provider만 같고 model이 catalog에서 빠진 경우에도 유효 조합으로 복구해야 하므로 전체를 비교한다.
+    if (!selected || isSameSelection(selected, aiModelSelection) || isAiModelSaving) return;
     setIsAiModelSaving(true);
     setAiModelError(null);
     try {
@@ -123,6 +130,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         model: selected.model
       });
       setAiModelSelection(settings.ingest_lint);
+      setCanUpdateAiModel(settings.can_update === true);
     } catch (error: unknown) {
       setAiModelError(getErrorMessage(error, "LLM Provider 설정을 저장하지 못했습니다."));
     } finally {
@@ -306,7 +314,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                           className={`${styles["provider-button"]} ${
                             aiModelSelection?.provider === provider.id ? styles["is-selected"] : ""
                           }`}
-                          disabled={isAiModelSaving}
+                          disabled={isAiModelSaving || !canUpdateAiModel}
                           onClick={() => void selectAiProvider(provider.id)}
                         >
                           <SvgIcon src={provider.icon} className={styles["provider-icon"]} />
@@ -314,6 +322,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                         </button>
                       ))}
                   </div>
+                  {!canUpdateAiModel && aiModelSelection && (
+                    <small className={styles["provider-readonly"]}>
+                      Provider 변경은 워크스페이스 OWNER만 할 수 있습니다.
+                    </small>
+                  )}
                   {aiModelError && <small className={styles["model-error"]} role="alert">{aiModelError}</small>}
                 </div>
               </div>

@@ -369,6 +369,13 @@ button.nav-row:focus-visible {
   height: 28px;
 }
 
+.provider-readonly {
+  max-width: 260px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
 .model-error {
   max-width: 260px;
   color: #ff7a7a;

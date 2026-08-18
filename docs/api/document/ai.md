@@ -158,9 +158,11 @@ ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와
 
 - HTTP `200`: 조회 성공
 - Content-Type: `*/*` (`SettingsResponse`)
+- `can_update`: 호출자가 이 설정을 변경할 수 있는지(워크스페이스 OWNER 여부). MEMBER는 `false`를 받고 UI는 읽기 전용으로 표시한다.
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -192,7 +194,6 @@ ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와
 
 - 인증된 사용자만 호출할 수 있다.
 - path의 `workspace_id`에 대한 활성 멤버십을 검증한다.
-- 워크스페이스 OWNER 권한이 필요하다.
 
 #### 9. 예시 요청/응답
 
@@ -203,6 +204,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -273,6 +275,7 @@ ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있�
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -325,6 +328,7 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"

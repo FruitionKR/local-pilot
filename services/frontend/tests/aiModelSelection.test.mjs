@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveInitialModel, resolveProviderModel } from "../src/entities/ai/model/aiModel.ts";
+import { isSameSelection, resolveInitialModel, resolveProviderModel } from "../src/entities/ai/model/aiModel.ts";
 
 const CATALOG = [
   { provider: "openai", model: "gpt-5-nano", display_name: "GPT-5 nano" },
@@ -37,4 +37,29 @@ test("Provider 변경 시 해당 회사의 첫 활성 모델을 선택한다", (
 
 test("활성 모델이 없는 Provider는 선택하지 않는다", () => {
   assert.equal(resolveProviderModel(CATALOG, "unknown", null), null);
+});
+
+test("저장 model이 catalog에서 빠지면 같은 provider의 첫 활성 모델로 복구한다", () => {
+  assert.deepEqual(
+    resolveProviderModel(CATALOG, "openai", { provider: "openai", model: "retired-model" }),
+    CATALOG[0]
+  );
+});
+
+test("provider와 model이 모두 같아야 같은 선택으로 본다", () => {
+  assert.equal(
+    isSameSelection(
+      { provider: "openai", model: "gpt-5-nano" },
+      { provider: "openai", model: "gpt-5-nano" }
+    ),
+    true
+  );
+  assert.equal(
+    isSameSelection(
+      { provider: "openai", model: "gpt-5-nano" },
+      { provider: "openai", model: "retired-model" }
+    ),
+    false
+  );
+  assert.equal(isSameSelection({ provider: "openai", model: "gpt-5-nano" }, null), false);
 });

@@ -12,6 +12,8 @@ export type AiModelSelection = { provider: string; model: string };
 
 export type WorkspaceAiModelSettings = {
   ingest_lint: AiModelSelection;
+  /** 호출자가 이 설정을 변경할 수 있는지(워크스페이스 OWNER 여부). */
+  can_update: boolean;
 };
 
 /**
@@ -27,6 +29,11 @@ export function resolveInitialModel(
     ? catalog.find((item) => item.provider === stored.provider && item.model === stored.model)
     : undefined;
   return matched ?? catalog[0];
+}
+
+/** 저장된 선택과 provider·model이 모두 같은 조합인지 비교한다. */
+export function isSameSelection(selected: AiModelSelection, current: AiModelSelection | null): boolean {
+  return selected.provider === current?.provider && selected.model === current?.model;
 }
 
 /** Provider만 고르는 설정 UI에서 서버에 저장할 유효한 provider/model 쌍을 정한다. */
