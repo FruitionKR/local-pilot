@@ -253,34 +253,17 @@ public class SkillController {
 
     @Schema(name = "SkillAuthoringResponse", requiredProperties = "status")
     private static final class SkillAuthoringResponseSchema {
-        @Schema(allowableValues = {"clarification_required", "blocked", "proposal_ready", "published"})
         public String status;
-        @Schema(nullable = true)
         public String question;
-        @Schema(nullable = true)
         public String skill_id;
-        @Schema(nullable = true)
         public String version_id;
-        @Schema(nullable = true, allowableValues = {"personal", "team"})
         public String scope_type;
-        @Schema(nullable = true)
         public String name;
-        @Schema(nullable = true)
         public String description;
-        @Schema(nullable = true)
         public String instructions_markdown;
-        @Schema(nullable = true)
         public String skill_markdown;
-        @ArraySchema(schema = @Schema(allowableValues = {
-            "document-create", "document-edit", "folder-organize", "template"
-        }))
         public java.util.List<String> capabilities;
-        @ArraySchema(schema = @Schema(allowableValues = {
-            "list_root_items", "list_folder_children", "search_hierarchy", "get_breadcrumb",
-            "get_document_metadata", "get_document_content", "create_folder", "rename_folder",
-            "move_folder", "move_document", "rename_document", "create_document", "apply_document_edit"
-        }))
         public java.util.List<String> allowed_tools;
-        public java.util.List<java.util.Map<String, Object>> issues;
+        public java.util.List<Object> issues;
     }
 }

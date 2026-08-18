@@ -6029,76 +6029,31 @@ components:
           type: array
           items:
             type: string
-            enum:
-            - list_root_items
-            - list_folder_children
-            - search_hierarchy
-            - get_breadcrumb
-            - get_document_metadata
-            - get_document_content
-            - create_folder
-            - rename_folder
-            - move_folder
-            - move_document
-            - rename_document
-            - create_document
-            - apply_document_edit
         capabilities:
           type: array
           items:
             type: string
-            enum:
-            - document-create
-            - document-edit
-            - folder-organize
-            - template
         description:
-          oneOf:
-          - type: string
-          - type: "null"
+          type: string
         instructions_markdown:
-          oneOf:
-          - type: string
-          - type: "null"
+          type: string
         issues:
           type: array
-          items:
-            type: object
-            additionalProperties: {}
+          items: {}
         name:
-          oneOf:
-          - type: string
-          - type: "null"
+          type: string
         question:
-          oneOf:
-          - type: string
-          - type: "null"
+          type: string
         scope_type:
-          oneOf:
-          - type: string
-            enum:
-            - personal
-            - team
-          - type: "null"
+          type: string
         skill_id:
-          oneOf:
-          - type: string
-          - type: "null"
+          type: string
         skill_markdown:
-          oneOf:
-          - type: string
-          - type: "null"
+          type: string
         status:
           type: string
-          enum:
-          - clarification_required
-          - blocked
-          - proposal_ready
-          - published
         version_id:
-          oneOf:
-          - type: string
-          - type: "null"
+          type: string
       required:
       - status
     SkillDraftSourceSelector:
