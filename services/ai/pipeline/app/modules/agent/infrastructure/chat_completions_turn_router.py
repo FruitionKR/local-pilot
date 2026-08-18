@@ -87,6 +87,25 @@ GROUNDED_RETRIEVAL_PATTERN = re.compile(
     r"(?:내부\s*문서|워크스페이스|위키|(?a:\b(?:wiki|workspace|document)\b))",
     re.IGNORECASE,
 )
+WEB_RETRIEVAL_PATTERN = re.compile(
+    r"(?:웹|인터넷|온라인).{0,40}(?:검색|찾|조사|조회)|"
+    r"(?:검색|찾|조사|조회).{0,40}(?:웹|인터넷|온라인)|"
+    r"(?:최신|최근|오늘).{0,30}(?:정보|동향|뉴스|자료).{0,30}(?:검색|찾|조사|조회)|"
+    r"(?a:\b(?:web|internet|online)\b).{0,40}(?a:\b(?:search|find|research|look\s+up)\b)|"
+    r"(?a:\b(?:search|find|research|look\s+up)\b).{0,40}(?a:\b(?:web|internet|online)\b)|"
+    r"(?a:\b(?:latest|recent|current)\b).{0,30}(?a:\b(?:information|trends|news|sources)\b)"
+    r".{0,30}(?a:\b(?:search|find|research|look\s+up)\b)",
+    re.IGNORECASE,
+)
+DOCUMENT_CREATION_PATTERN = re.compile(
+    r"(?:새(?:로운)?\s*문서|문서(?:를|로)|보고서(?:를|로)|markdown(?:을|으로)).{0,30}"
+    r"(?:만들|생성|작성|저장)|"
+    r"(?:만들|생성|작성).{0,30}(?:새(?:로운)?\s*문서|문서(?:를|로)|보고서(?:를|로)|markdown)|"
+    r"(?:검색|조회)\s*결과.{0,20}저장|"
+    r"(?a:\b(?:create|write|draft|save)\b).{0,30}"
+    r"(?a:\b(?:new\s+)?(?:document|markdown|report)\b)",
+    re.IGNORECASE,
+)
 TECHNICAL_PROCESS_QUESTION_PATTERN = re.compile(
     r"(?:위키|워크스페이스|(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)).{0,40}"
     r"(?:어떤\s*단계로.{0,20}(?:동작|작동|진행|처리)|"
@@ -179,6 +198,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             "skill_mode": request.skill_mode,
             "skill_scope_type": request.skill_scope_type,
             "skill_authoring_mode": request.skill_authoring_mode,
+            "allow_web_search": request.allow_web_search,
             "available_skills": [
                 {
                     "id": skill.id,
@@ -322,15 +342,50 @@ def _promote_grounded_query(
     route: AgentTurnRoute,
     request: AgentTurnRequest,
 ) -> AgentTurnRoute:
-    if not _requests_grounded_retrieval(request.message):
-        return route
+    requests_web_retrieval = WEB_RETRIEVAL_PATTERN.search(request.message) is not None
     requests_current_edit = bool(
         request.active_markdown_context
         and CURRENT_MARKDOWN_EDIT_PATTERN.search(request.message)
     )
-    if route.action == "markdown_edit":
-        return replace(route, requires_grounded_retrieval=True)
-    if route.action == "markdown_create" and requests_current_edit:
+    requests_document_creation = DOCUMENT_CREATION_PATTERN.search(request.message) is not None
+    if (
+        requests_web_retrieval
+        and request.allow_web_search is not True
+        and requests_document_creation
+        and route.action in {
+            "chat_answer",
+            "conversation_reply",
+            "markdown_edit",
+            "markdown_create",
+            "workspace_workflow",
+            "clarify",
+        }
+    ):
+        return replace(
+            route,
+            action="chat_answer",
+            edit_goal=None,
+            selected_skill_id=None,
+            skill_candidates=(),
+            requires_grounded_retrieval=False,
+        )
+    if not (
+        _requests_grounded_retrieval(request.message)
+        or (
+            requests_web_retrieval
+            and requests_document_creation
+            and request.allow_web_search is True
+        )
+    ):
+        return route
+    if requests_current_edit and route.action in {
+        "chat_answer",
+        "conversation_reply",
+        "markdown_edit",
+        "markdown_create",
+        "workspace_workflow",
+        "clarify",
+    }:
         return replace(
             route,
             action=(
@@ -339,8 +394,28 @@ def _promote_grounded_query(
                 else "markdown_edit"
             ),
             edit_goal="other",
+            selected_skill_id=None,
+            skill_candidates=(),
             requires_grounded_retrieval=True,
         )
+    if requests_document_creation and route.action in {
+        "chat_answer",
+        "conversation_reply",
+        "markdown_edit",
+        "markdown_create",
+        "workspace_workflow",
+        "clarify",
+    }:
+        return replace(
+            route,
+            action="workspace_workflow",
+            edit_goal="create_from_chat",
+            selected_skill_id=None,
+            skill_candidates=(),
+            requires_grounded_retrieval=True,
+        )
+    if route.action == "markdown_edit":
+        return replace(route, requires_grounded_retrieval=True)
     if route.action == "markdown_create":
         return replace(
             route,
@@ -349,12 +424,8 @@ def _promote_grounded_query(
             requires_grounded_retrieval=True,
         )
     if route.action == "workspace_workflow" and WORKSPACE_MUTATION_PATTERN.search(request.message):
-        edit_goal = route.edit_goal
-        if edit_goal == "create_from_chat" and requests_current_edit:
-            edit_goal = "other"
         return replace(
             route,
-            edit_goal=edit_goal,
             requires_grounded_retrieval=True,
         )
     if route.action not in {"conversation_reply", "clarify", "workspace_workflow"}:

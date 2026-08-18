@@ -945,7 +945,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         )
         self.assertIsNotNone(starter.requests[0].content)
 
-    def test_create_from_chat_rejects_unsafe_generated_markdown_before_agent_run(self) -> None:
+    def test_create_from_chat_keeps_generated_document_data_in_approval_plan(self) -> None:
         starter = RecordingAgentRunStarter()
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(
@@ -986,9 +986,11 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(result.action, "reject")
-        self.assertIn("보안", result.message or "")
-        self.assertEqual(starter.requests, [])
+        self.assertEqual(result.action, "workspace_workflow")
+        self.assertEqual(
+            getattr(starter.requests[0].content, "markdown"),
+            "# 연락처\n\nuser@example.com",
+        )
 
     def test_grounded_persistent_edit_starts_run_with_evidence(self) -> None:
         starter = RecordingAgentRunStarter()
@@ -1060,7 +1062,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         )
         self.assertEqual(getattr(content, "markdown"), "# 제목\n\nEDIT_AFTER_MARKER")
 
-    def test_persistent_edit_rejects_unsafe_generated_markdown_before_agent_run(self) -> None:
+    def test_persistent_edit_keeps_generated_document_data_in_approval_plan(self) -> None:
         starter = RecordingAgentRunStarter()
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(
@@ -1100,8 +1102,60 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(result.action, "reject")
-        self.assertEqual(starter.requests, [])
+        self.assertEqual(result.action, "workspace_workflow")
+        self.assertEqual(
+            getattr(starter.requests[0].content, "markdown"),
+            "# 제목\n\nuser@example.com",
+        )
+
+    def test_web_grounded_create_uses_web_query_before_approval_plan(self) -> None:
+        starter = RecordingAgentRunStarter()
+        default_query_use_case = FakeQueryUseCase()
+        web_query_use_case = FakeQueryUseCase()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.95,
+            reason="web-grounded document request",
+            edit_goal="create_from_chat",
+            requires_grounded_retrieval=True,
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(route, route),
+            query_use_case=default_query_use_case,  # type: ignore[arg-type]
+            web_search_query_use_case_factory=lambda: web_query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="웹에서 최신 AI 동향을 찾아 새 문서로 만들어 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                allow_web_search=True,
+            )
+        )
+
+        self.assertEqual(result.action, "workspace_workflow")
+        self.assertEqual(default_query_use_case.questions, [])
+        self.assertEqual(
+            web_query_use_case.questions,
+            ["웹에서 최신 AI 동향을 찾아 새 문서로 만들어 저장해줘"],
+        )
+        self.assertTrue(web_query_use_case.kwargs[0]["allow_web_search"])
+        self.assertIn("grounded_query", editor.create_requests[0].reference_context)
+        self.assertIsNotNone(starter.requests[0].content)
 
     def test_indirect_context_cannot_start_mutation_without_direct_intent(self) -> None:
         starter = RecordingAgentRunStarter()

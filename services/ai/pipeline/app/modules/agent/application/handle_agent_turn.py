@@ -264,8 +264,6 @@ class HandleAgentTurnUseCase:
                         output_language=request.output_language,
                     )
                 ).document.markdown
-                if inspect_skill_instructions(creation_markdown):
-                    return _reject_unsafe_workspace_mutation(route)
                 content = StartAgentRunContent(markdown=creation_markdown)
             elif route.action == "workspace_workflow" and route.edit_goal is not None:
                 markdown_context = request.active_markdown_context
@@ -297,8 +295,6 @@ class HandleAgentTurnUseCase:
                     )
                 ).edit
                 edited_markdown = apply_markdown_edit(markdown_context.markdown, edit)
-                if inspect_skill_instructions(edited_markdown):
-                    return _reject_unsafe_workspace_mutation(route)
                 actual_target = edit.actual_target
                 content = StartAgentRunContent(
                     markdown=edited_markdown,

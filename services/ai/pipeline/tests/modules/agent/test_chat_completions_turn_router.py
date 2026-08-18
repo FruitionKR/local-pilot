@@ -105,6 +105,20 @@ CONVERSATION_ROUTING_MESSAGES = tuple(
         "Rewrite {content} in a workspace style",
     )
 )
+WEB_DOCUMENT_ROUTING_MESSAGES = (
+    "웹에서 최신 AI 동향을 찾아 새 문서로 만들어 저장해줘",
+    "인터넷 검색 결과를 새 문서로 저장해줘",
+    "온라인에서 자료를 조사해 보고서로 작성해줘",
+    "최신 보안 정보를 찾아 Markdown으로 만들어줘",
+    "최근 데이터베이스 뉴스를 검색해서 문서로 작성해줘",
+    "오늘 AI 동향을 조사해 새 문서로 만들어줘",
+    "Search the web and create a new document",
+    "Find sources online and write a report",
+    "Research the internet and draft a Markdown document",
+    "Look up recent news online and save it as a document",
+    "Find current PostgreSQL information on the internet and write a report",
+    "Search online for recent RAG trends and create a document",
+)
 
 
 class ChatCompletionsTurnRouterTest(unittest.TestCase):
@@ -330,6 +344,42 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertEqual(route.action, "workspace_workflow")
         self.assertEqual(route.edit_goal, "create_from_chat")
         self.assertTrue(route.requires_grounded_retrieval)
+
+    def test_promotes_web_grounded_document_creation_to_workspace_workflow(self) -> None:
+        for message in WEB_DOCUMENT_ROUTING_MESSAGES:
+            for llm_action in ("chat_answer", "conversation_reply", "markdown_create", "workspace_workflow"):
+                with self.subTest(message=message, llm_action=llm_action):
+                    response = route_response(llm_action)
+                    response["edit_goal"] = None
+                    client = SequenceJsonClient([response])
+                    router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+                    route = router.route(
+                        AgentTurnRequest(
+                            message=message,
+                            allow_web_search=True,
+                        )
+                    )
+
+                    self.assertEqual(route.action, "workspace_workflow")
+                    self.assertEqual(route.edit_goal, "create_from_chat")
+                    self.assertTrue(route.requires_grounded_retrieval)
+
+    def test_does_not_create_web_grounded_document_when_web_search_is_disabled(self) -> None:
+        response = route_response("markdown_create")
+        response["edit_goal"] = "create_from_chat"
+        client = SequenceJsonClient([response])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="웹에서 최신 AI 동향을 찾아 새 문서로 만들어 저장해줘",
+                allow_web_search=False,
+            )
+        )
+
+        self.assertEqual(route.action, "chat_answer")
+        self.assertFalse(route.requires_grounded_retrieval)
 
     def test_marks_grounded_persistent_current_markdown_edit(self) -> None:
         for llm_action in ("workspace_workflow", "markdown_create"):
