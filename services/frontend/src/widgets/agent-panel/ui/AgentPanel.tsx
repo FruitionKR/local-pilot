@@ -8,7 +8,9 @@ import { MarkdownCreatePreview } from "@/features/agent-chat/ui/MarkdownCreatePr
 import { MarkdownEditPreview } from "@/features/agent-chat/ui/MarkdownEditPreview";
 import { useChatThread } from "@/features/agent-chat/model/useChatThread";
 import { WikiExportConfirmCard } from "@/features/wiki-export/ui/WikiExportConfirmCard";
+import { fetchAiModels, resolveInitialModel, type AiModel } from "@/entities/ai";
 import { fetchCurrentChatSessionId } from "@/entities/chat";
+import { useUserPreferences } from "@/entities/user";
 import { requestAgentTurn } from "@/features/agent-chat";
 import { exportChatWiki, fetchChatWikiExportPreview, type ChatWikiExportResponse } from "@/features/wiki-export";
 import { getErrorMessage } from "@/shared/lib/errors";
@@ -70,6 +72,10 @@ export function AgentPanel({
   const [markdownCreateErrorMessage, setMarkdownCreateErrorMessage] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeSessionTitle, setActiveSessionTitle] = useState<string | null>(null);
+  const [aiModels, setAiModels] = useState<AiModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<AiModel | null>(null);
+  const [aiModelsErrorMessage, setAiModelsErrorMessage] = useState<string | null>(null);
+  const { preferences, preferencesReady, updatePreferences } = useUserPreferences();
   const { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, queryStages, submitQuery } = useChatThread(activeSessionId);
   const isSubmitting = isLoading || isAgentTurnLoading || isCreatingMarkdown;
   const hasAssistantMessage = messages.some((message) => message.role !== "user");
@@ -93,6 +99,19 @@ export function AgentPanel({
   useEffect(() => {
     fetchCurrentChatSessionId().then(setActiveSessionId).catch(() => undefined);
   }, []);
+  // 선택 가능한 모델은 백엔드 카탈로그가 정한다. 프론트에 목록을 고정하지 않는다.
+  useEffect(() => {
+    fetchAiModels()
+      .then(setAiModels)
+      .catch((error: unknown) => {
+        setAiModelsErrorMessage(getErrorMessage(error, "AI 모델 목록을 불러오지 못했습니다."));
+      });
+  }, []);
+  // 카탈로그와 저장된 설정이 모두 준비된 뒤 초기 선택을 확정한다.
+  useEffect(() => {
+    if (!preferencesReady || aiModels.length === 0 || selectedModel) return;
+    setSelectedModel(resolveInitialModel(aiModels, preferences.aiModel));
+  }, [aiModels, preferences.aiModel, preferencesReady, selectedModel]);
   const lastQuestion = activeTurn?.question ?? findLastUserMessage(messages)?.content;
   const sessionTitle = lastQuestion ? buildSessionTitle(lastQuestion) : (activeSessionTitle ?? "새 채팅");
   const composerPlaceholder = "AI 에이전트에게 무엇이든 물어보세요.";
@@ -140,12 +159,23 @@ export function AgentPanel({
   function handleSubmit() {
     const question = composerValue.trim();
     if (!question || isSubmitting) return;
-    setComposerValue("");
     if (markdownEditContext) {
+      setComposerValue("");
       submitAgentTurn(question, markdownEditContext, buildSelectedConversationSummary(messages, selectedPairIds));
       return;
     }
-    void submitQuery(question);
+    // 질의 경로는 provider/model 쌍이 반드시 필요하다. 카탈로그를 못 받았으면 입력을 지우지 않고 멈춘다.
+    if (!selectedModel) return;
+    setComposerValue("");
+    void submitQuery(question, { provider: selectedModel.provider, model: selectedModel.model });
+  }
+
+  function handleModelChange(model: AiModel) {
+    setSelectedModel(model);
+    updatePreferences((current) => ({
+      ...current,
+      aiModel: { provider: model.provider, model: model.model }
+    }));
   }
 
   function dismissAgentTurnResult() {
@@ -252,7 +282,7 @@ export function AgentPanel({
         messages={messages}
         isLoading={isSubmitting}
         activeTurn={activeTurn}
-        queryErrorMessage={agentTurnErrorMessage ?? queryErrorMessage}
+        queryErrorMessage={agentTurnErrorMessage ?? aiModelsErrorMessage ?? queryErrorMessage}
         chatLoadErrorMessage={chatLoadErrorMessage}
         animatedMessageId={animatedMessageId}
         queryStages={queryStages}
@@ -329,6 +359,9 @@ export function AgentPanel({
         value={composerValue}
         isLoading={isSubmitting}
         placeholder={composerPlaceholder}
+        models={aiModels}
+        selectedModel={selectedModel}
+        onModelChange={handleModelChange}
         onChange={setComposerValue}
         onSubmit={handleSubmit}
       />

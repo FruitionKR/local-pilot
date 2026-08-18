@@ -6,6 +6,8 @@ export type EditorMode = Exclude<EditorDefaultMode, "last">;
 export type UserPreferences = {
   motion: MotionPreference;
   documentFont: DocumentFontPreference;
+  // 채팅 composer에서 마지막으로 고른 AI 모델. 카탈로그와 대조 후에만 사용한다.
+  aiModel: { provider: string; model: string } | null;
   editor: {
     defaultMode: EditorDefaultMode;
     lastMode: EditorMode;
@@ -35,6 +37,7 @@ export type UserPreferences = {
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   motion: "system",
   documentFont: "system-sans",
+  aiModel: null,
   editor: {
     defaultMode: "last",
     lastMode: "wysiwyg",
@@ -73,6 +76,15 @@ function enumValue<T extends string>(value: unknown, values: readonly T[], fallb
   return typeof value === "string" && values.includes(value as T) ? value as T : fallback;
 }
 
+/** provider/model이 모두 비어있지 않은 문자열일 때만 통과시킨다. 그 외에는 null. */
+function aiModelValue(value: unknown): UserPreferences["aiModel"] {
+  if (!isRecord(value)) return null;
+  const { provider, model } = value;
+  if (typeof provider !== "string" || provider.length === 0) return null;
+  if (typeof model !== "string" || model.length === 0) return null;
+  return { provider, model };
+}
+
 export function normalizeUserPreferences(value: unknown): UserPreferences {
   if (!isRecord(value)) return DEFAULT_USER_PREFERENCES;
 
@@ -99,6 +111,7 @@ export function normalizeUserPreferences(value: unknown): UserPreferences {
       ["system-sans", "readable-sans", "serif"],
       DEFAULT_USER_PREFERENCES.documentFont
     ),
+    aiModel: aiModelValue(value.aiModel),
     editor: {
       defaultMode: enumValue(
         editor.defaultMode,
