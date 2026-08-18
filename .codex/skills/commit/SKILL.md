@@ -22,7 +22,7 @@ Stop before commit if real secrets are found.
 - Dated issue docs (`docs/issue/`) and role changelogs (`docs/changelog/`) were retired on 2026-08-07 and archived under `docs/backlog/`. Never create new ones (root `CLAUDE.md` §8).
 - Instead, when the commit changes behavior that current docs describe, update the matching doc in the same commit:
   - Service boundary, communication, authorization, or deployment changes -> `docs/architecture.md`
-  - API contract changes -> `docs/api.md`
+  - API contract changes -> the matching service/domain file under `docs/api/`
   - Storage, table, or ownership changes -> `docs/data-model.md`
   - Run or demo procedure changes -> `docs/script.md`
   - Significant architecture decisions -> `docs/adr/NNNN-<kebab-title>.md`
