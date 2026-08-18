@@ -61,10 +61,22 @@ class QueryRewrite:
 
 
 @dataclass(frozen=True)
+class ConversationAgentRoute:
+    action: str
+    retrieval_source: Literal["none", "workspace", "web"]
+    document_operation: Literal["none", "create", "edit"]
+    persist: bool
+    edit_goal: str | None = None
+    selected_skill_id: str | None = None
+
+
+@dataclass(frozen=True)
 class ConversationMessage:
     role: ConversationRole
     content: str
     action: str | None = None
+    run_id: str | None = None
+    agent_route: ConversationAgentRoute | None = None
 
 
 @dataclass(frozen=True)

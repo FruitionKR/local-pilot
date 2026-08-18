@@ -70,6 +70,7 @@ class FixedInsertAfterUseCase:
                 summary="문제 해결 절을 추가했습니다.",
                 replacement_markdown="## 문제 해결\n\n로그를 확인합니다.",
             ),
+            source_markdown_sha256="a" * 64,
         )
 
 
@@ -295,6 +296,15 @@ class AgentRoutesTest(unittest.TestCase):
                         "role": "assistant",
                         "content": "날씨를 알려주세요.",
                         "action": "conversation_reply",
+                        "run_id": "agent_preview_1",
+                        "agent_route": {
+                            "action": "conversation_reply",
+                            "retrieval_source": "none",
+                            "document_operation": "none",
+                            "persist": False,
+                            "edit_goal": None,
+                            "selected_skill_id": None,
+                        },
                     }
                 ]
             },
@@ -303,6 +313,14 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(
             request.conversation_context.recent_messages[0].action,  # type: ignore[union-attr]
             "conversation_reply",
+        )
+        self.assertEqual(
+            request.conversation_context.recent_messages[0].run_id,  # type: ignore[union-attr]
+            "agent_preview_1",
+        )
+        self.assertEqual(
+            request.conversation_context.recent_messages[0].agent_route.document_operation,  # type: ignore[union-attr]
+            "none",
         )
 
     def test_agent_turn_validates_skill_mode_and_id_combinations(self) -> None:
@@ -385,6 +403,7 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(body["edit"]["requested_target"]["type"], "current_section")
         self.assertEqual(body["edit"]["actual_target"]["type"], "current_section")
         self.assertFalse(body["edit"]["scope_expanded"])
+        self.assertEqual(body["source_markdown_sha256"], "a" * 64)
 
     def test_agent_turn_returns_generated_markdown(self) -> None:
         response = handle_agent_turn(
