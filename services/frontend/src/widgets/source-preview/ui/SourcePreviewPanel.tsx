@@ -73,6 +73,7 @@ export function SourcePreviewPanel({
   const [titleInput, setTitleInput] = useState(() => getMarkdownDocumentTitle(title));
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
+  const skipNextTitleCommitRef = useRef(false);
   const [sourceMode, setSourceMode] = useState(false);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -428,12 +429,22 @@ export function SourcePreviewPanel({
               value={titleInput}
               disabled={isRenaming}
               spellCheck={false}
-              onChange={(event) => setTitleInput(event.target.value)}
-              onBlur={() => void commitTitle()}
+              onChange={(event) => {
+                skipNextTitleCommitRef.current = false;
+                setTitleInput(event.target.value);
+              }}
+              onBlur={() => {
+                if (skipNextTitleCommitRef.current) {
+                  skipNextTitleCommitRef.current = false;
+                  return;
+                }
+                void commitTitle();
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.currentTarget.blur();
                 } else if (event.key === "Escape") {
+                  skipNextTitleCommitRef.current = true;
                   setTitleInput(visibleTitle);
                   event.currentTarget.blur();
                 }

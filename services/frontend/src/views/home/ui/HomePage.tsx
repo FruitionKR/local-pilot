@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { HomeWorkspace } from "@/widgets/workspace";
 import { fetchMe } from "@/entities/user";
 import { clearAuth, getAccessToken, getSelectedWorkspaceId } from "@/shared/lib/auth";
+import { LoadingOverlay } from "@/shared/ui/LoadingOverlay";
 
 export default function HomePage() {
   const router = useRouter();
@@ -37,6 +38,6 @@ export default function HomePage() {
     };
   }, [router]);
 
-  if (!isReady) return null;
+  if (!isReady) return <LoadingOverlay message="워크스페이스 불러오는 중…" />;
   return <HomeWorkspace />;
 }

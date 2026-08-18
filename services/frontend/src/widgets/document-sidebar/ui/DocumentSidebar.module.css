@@ -575,6 +575,15 @@
   font-size: 18px;
   font-weight: 600;
   line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.project-title:hover .project-add-file,
+.project-title:focus-within .project-add-file {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .project-add-file:hover,
@@ -859,17 +868,6 @@
   background: #323232;
 }
 
-.tree-row.is-selected {
-  color: #f0f0f0;
-  background: #323232;
-  outline: 0;
-}
-
-.tree-row.is-selected .tree-asset,
-.tree-row.is-selected svg {
-  color: var(--subdued);
-}
-
 .tree-row:focus-visible {
   outline: 2px solid rgba(90, 118, 160, 0.28);
   outline-offset: 1px;
@@ -895,18 +893,15 @@
   justify-content: center;
 }
 
-.tree-asset.raw,
-.tree-row.is-selected .tree-asset.raw {
+.tree-asset.raw {
   color: #c4c4c4;
 }
 
-.tree-asset.source,
-.tree-row.is-selected .tree-asset.source {
+.tree-asset.source {
   color: var(--source-page);
 }
 
-.tree-asset.concept,
-.tree-row.is-selected .tree-asset.concept {
+.tree-asset.concept {
   color: var(--concept-page);
 }
 

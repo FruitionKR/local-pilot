@@ -169,7 +169,6 @@ export function HomeWorkspace() {
 
   function handleViewChange(view: RailView) {
     setActiveView(view);
-    if (view === "home" && firstSidebarNote) selection.selectTreeGraphNode(firstSidebarNote);
   }
 
   function openSourceBlocks(documentId: string, title: string, highlights: SourceBlockHighlight[]) {
@@ -204,7 +203,7 @@ export function HomeWorkspace() {
   async function handleGraphIngest(targets: DocumentItemResponse[]) {
     if (wikiActionPending || targets.length === 0) return;
     setWikiActionPending("ingest");
-    // 한 문서가 실패해도 나머지는 계속 보낸다(NotificationsPanel과 동일).
+    // 한 문서가 실패해도 나머지 문서의 요청은 계속 보낸다.
     const results = await Promise.allSettled(
       targets.map((target) => reflectDocumentToWiki(target.id, target.document_role))
     );
@@ -217,7 +216,7 @@ export function HomeWorkspace() {
     const startedCount = targets.length - failures.length;
 
     if (startedCount > 0) {
-      void refreshBackendData();
+      await refreshBackendData();
       publishNotice({
         kind: "completed",
         title: "위키 반영 요청",
@@ -238,7 +237,7 @@ export function HomeWorkspace() {
     if (wikiActionPending) return;
     setWikiActionPending("lint");
     try {
-      // 마지막 다듬기 이후 위키 변경이 있을 때만 실제 lint를 보낸다(NotificationsPanel과 동일).
+      // 마지막 다듬기 이후 위키 변경이 있을 때만 실제 lint를 보낸다.
       const { needs_lint } = await fetchWikiMaintenanceStatus();
       if (!needs_lint) {
         publishNotice({ kind: "info", title: "Lint 요청", message: "수정 된 Wiki의 구성요소가 없습니다." });
@@ -346,6 +345,13 @@ export function HomeWorkspace() {
         onConvertContextTarget={projectTree.convertContextTargetToMarkdown}
         onDeleteContextTarget={projectTree.deleteContextTarget}
       />
+
+      {isHomeView && apiError && (
+        <div className="workspace-api-error" role="alert">
+          <span>{apiError}</span>
+          <button type="button" onClick={() => void refreshBackendData()}>다시 시도</button>
+        </div>
+      )}
 
       {/* 홈: 최근 문서를 메인으로 여는 문서 열람 화면. 문서가 없으면 빈 화면. */}
       {isHomeView && (

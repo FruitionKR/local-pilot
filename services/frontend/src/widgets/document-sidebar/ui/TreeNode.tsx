@@ -91,7 +91,6 @@ export function TreeNode({
         className={cx(
           styles["tree-row"],
           item.active && styles["is-active"],
-          selectedItemId === item.id && styles["is-selected"],
           draggedItemId === item.id && styles["is-dragging"],
           isFileDropTarget && styles["is-file-drop-target"],
           item.type === "folder" ? styles["is-folder"] : styles["is-note"],

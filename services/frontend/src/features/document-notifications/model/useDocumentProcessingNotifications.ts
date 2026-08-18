@@ -74,20 +74,27 @@ export function useDocumentProcessingNotifications(documents: DocumentItemRespon
     previousStatusesRef.current = currentStatuses;
     if (!previousStatuses) return;
 
-    const counts = { completed: 0, failed: 0 };
+    let completedCount = 0;
+    const failedDocuments: DocumentItemResponse[] = [];
     documents.forEach((document) => {
       const previousStatus = previousStatuses.get(document.id);
       if (!wasProcessing(previousStatus)) return;
-      if (document.status === "completed") counts.completed += 1;
-      if (document.status === "failed") counts.failed += 1;
+      if (document.status === "completed") completedCount += 1;
+      if (document.status === "failed") failedDocuments.push(document);
     });
 
-    (["completed", "failed"] as const).forEach((kind) => {
-      const enabled = kind === "completed" ? completedNotifications : failedNotifications;
-      if (counts[kind] === 0 || !enabled) return;
-      // 버스를 거쳐야 알림 패널 히스토리에도 남는다. 카드 표시는 구독 경로(pushNotice)가 처리한다.
-      publishNotice({ kind, ...noticeText(kind, counts[kind]) });
-    });
+    if (completedCount > 0 && completedNotifications) {
+      publishNotice({ kind: "completed", ...noticeText("completed", completedCount) });
+    }
+    if (failedNotifications) {
+      failedDocuments.forEach((document) => {
+        publishNotice({
+          kind: "failed",
+          title: "문서 처리 실패",
+          message: `"${document.filename}" 처리에 실패했습니다. ${document.error_message ?? "실패 사유를 확인해 주세요."}`
+        });
+      });
+    }
   }, [documents, completedNotifications, failedNotifications]);
 
   return { notices, dismissNotice };

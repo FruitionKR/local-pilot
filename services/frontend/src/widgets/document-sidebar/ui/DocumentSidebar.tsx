@@ -195,7 +195,7 @@ export function DocumentSidebar({
         <SvgIcon src={chatBubbleIcon} />
         채팅 시작
       </button>
-      <SidebarProfile projects={projects} />
+      <SidebarProfile />
       <button
         type="button"
         className={styles["sidebar-resize-handle"]}
