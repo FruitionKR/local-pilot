@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentBody } from "@/features/agent-chat/ui/AgentBody";
-import { AgentComposer } from "@/features/agent-chat/ui/AgentComposer";
+import { AgentComposer, type AiModelCatalogStatus } from "@/features/agent-chat/ui/AgentComposer";
 import { AgentHeader } from "@/features/agent-chat/ui/AgentHeader";
 import { MarkdownCreatePreview } from "@/features/agent-chat/ui/MarkdownCreatePreview";
 import { MarkdownEditPreview } from "@/features/agent-chat/ui/MarkdownEditPreview";
@@ -74,6 +74,7 @@ export function AgentPanel({
   const [activeSessionTitle, setActiveSessionTitle] = useState<string | null>(null);
   const [aiModels, setAiModels] = useState<AiModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<AiModel | null>(null);
+  const [aiModelCatalogStatus, setAiModelCatalogStatus] = useState<AiModelCatalogStatus>("loading");
   const [aiModelsErrorMessage, setAiModelsErrorMessage] = useState<string | null>(null);
   const { preferences, preferencesReady, updatePreferences } = useUserPreferences();
   const { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, queryStages, submitQuery } = useChatThread(activeSessionId);
@@ -102,8 +103,17 @@ export function AgentPanel({
   // 선택 가능한 모델은 백엔드 카탈로그가 정한다. 프론트에 목록을 고정하지 않는다.
   useEffect(() => {
     fetchAiModels()
-      .then(setAiModels)
+      .then((models) => {
+        setAiModels(models);
+        if (models.length === 0) {
+          setAiModelCatalogStatus("empty");
+          setAiModelsErrorMessage("사용 가능한 AI 모델이 없습니다.");
+          return;
+        }
+        setAiModelCatalogStatus("ready");
+      })
       .catch((error: unknown) => {
+        setAiModelCatalogStatus("error");
         setAiModelsErrorMessage(getErrorMessage(error, "AI 모델 목록을 불러오지 못했습니다."));
       });
   }, []);
@@ -282,7 +292,7 @@ export function AgentPanel({
         messages={messages}
         isLoading={isSubmitting}
         activeTurn={activeTurn}
-        queryErrorMessage={agentTurnErrorMessage ?? aiModelsErrorMessage ?? queryErrorMessage}
+        queryErrorMessage={agentTurnErrorMessage ?? (markdownEditContext ? null : aiModelsErrorMessage) ?? queryErrorMessage}
         chatLoadErrorMessage={chatLoadErrorMessage}
         animatedMessageId={animatedMessageId}
         queryStages={queryStages}
@@ -361,6 +371,8 @@ export function AgentPanel({
         placeholder={composerPlaceholder}
         models={aiModels}
         selectedModel={selectedModel}
+        modelCatalogStatus={aiModelCatalogStatus}
+        canSubmit={Boolean(markdownEditContext) || selectedModel !== null}
         onModelChange={handleModelChange}
         onChange={setComposerValue}
         onSubmit={handleSubmit}

@@ -5,6 +5,8 @@ import { cx } from "@/shared/lib/classNames";
 import { claudeIcon, geminiIcon, gptIcon, SvgIcon, type SvgAsset } from "@/shared/ui/SvgIcon";
 import styles from "./AgentChat.module.css";
 
+export type AiModelCatalogStatus = "loading" | "ready" | "empty" | "error";
+
 // provider별 아이콘 (Figma 787:2312 model_list): 아이콘 먼저, 이름이 뒤따른다.
 const PROVIDER_ICONS: Record<string, SvgAsset> = {
   claude: claudeIcon,
@@ -23,6 +25,8 @@ export function AgentComposer({
   placeholder = "AI 에이전트에게 무엇이든 물어보세요.",
   models,
   selectedModel,
+  modelCatalogStatus,
+  canSubmit,
   onModelChange,
   onChange,
   onSubmit
@@ -32,6 +36,8 @@ export function AgentComposer({
   placeholder?: string;
   models: AiModel[];
   selectedModel: AiModel | null;
+  modelCatalogStatus: AiModelCatalogStatus;
+  canSubmit: boolean;
   onModelChange: (model: AiModel) => void;
   onChange: (value: string) => void;
   onSubmit: () => void;
@@ -53,15 +59,23 @@ export function AgentComposer({
 
   function submitComposer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canSubmit) return;
     onSubmit();
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
+      if (!canSubmit) return;
       onSubmit();
     }
   }
+
+  const emptyModelLabel = modelCatalogStatus === "empty"
+    ? "사용 가능한 모델 없음"
+    : modelCatalogStatus === "error"
+      ? "모델 불러오기 실패"
+      : "모델 불러오는 중";
 
   return (
     <form className={styles.composer} onSubmit={submitComposer}>
@@ -86,7 +100,7 @@ export function AgentComposer({
             {selectedModel && PROVIDER_ICONS[selectedModel.provider] && (
               <SvgIcon src={PROVIDER_ICONS[selectedModel.provider]} className={styles["composer-model-icon"]} />
             )}
-            <span>{selectedModel?.display_name ?? "모델 불러오는 중"}</span>
+            <span>{selectedModel?.display_name ?? emptyModelLabel}</span>
             <ChevronDown size={8} className={cx(isModelListOpen && styles["is-open"])} />
           </button>
           {isModelListOpen && (
@@ -116,7 +130,7 @@ export function AgentComposer({
           type="submit"
           className={styles["composer-send"]}
           aria-label="전송"
-          disabled={isLoading || !selectedModel || value.trim().length === 0}
+          disabled={isLoading || !canSubmit || value.trim().length === 0}
         >
           <ArrowUp size={15} />
         </button>
