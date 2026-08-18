@@ -733,6 +733,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 #### 5. Response body
 
 - HTTP `200`: 문서 편집 복구 즉시 완료
+- HTTP `202`: Wiki 복구 작업이 대기열에 등록됨
 - Content-Type: `*/*` (`RestoreExecuteResponse`)
 
 ```json

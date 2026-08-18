@@ -965,12 +965,12 @@ paths:
               $ref: "#/components/schemas/ChatWikiExportRequest"
         required: true
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ChatWikiExportResponse"
-          description: OK
+          description: Wiki 생성 작업이 대기열에 등록됨
       summary: 채팅 Wiki page화
       tags:
       - Chat Sessions
@@ -1640,8 +1640,8 @@ paths:
         schema:
           type: string
       responses:
-        "200":
-          description: OK
+        "204":
+          description: 잠금 해제 성공
       summary: 편집 잠금 해제
       tags:
       - Document Edit Lock
@@ -3648,12 +3648,8 @@ paths:
               $ref: "#/components/schemas/InitialNoteRequest"
         required: true
       responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                type: object
-          description: OK
+        "204":
+          description: 초기 노트 생성 완료
       tags:
       - internal-document-controller
 components:

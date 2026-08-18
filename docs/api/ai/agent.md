@@ -330,6 +330,8 @@ curl -X POST "$PIPELINE/agent/turn" \
 
 #### 5. Response body
 
+- HTTP `200`: 조회 성공
+
 ```json
 {
   "id": "run_123",
@@ -437,6 +439,7 @@ curl "$PIPELINE/agent/runs/run_123?workspace_id=workspace_123&user_id=user_123" 
 
 #### 5. Response body
 
+- HTTP `200`: 승인 성공
 - `AgentRunResponse`; 승인 성공 직후 `status`는 `executing`입니다.
 
 ```json
@@ -516,6 +519,7 @@ curl -X POST "$PIPELINE/agent/runs/run_123/approve" \
 
 #### 5. Response body
 
+- HTTP `200`: 취소 성공
 - `AgentRunResponse`; 성공 시 `status=cancelled`
 
 ```json
@@ -595,6 +599,7 @@ curl -X POST "$PIPELINE/agent/runs/run_123/cancel" \
 
 #### 5. Response body
 
+- HTTP `200`: 거절 성공
 - `AgentRunResponse`; 성공 시 `status=rejected`
 
 ```json
@@ -678,6 +683,7 @@ curl -X POST "$PIPELINE/agent/runs/run_123/reject" \
 
 #### 5. Response body
 
+- HTTP `200`: 수정 요청 접수 성공
 - `AgentRunResponse`; 성공 시 `status=queued`, `plan=null`
 
 ```json
@@ -968,7 +974,7 @@ Agent 실행 결과 artifact를 등록합니다.
 curl -X POST "$PIPELINE/internal/agent/runs/artifacts/register" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"artifact_id":"<value>","base_version":1.0,"content_hash":"<value>","document_id":"<value>","markdown":"<value>","purpose":"<value>","run_id":"<value>","target":{},"user_id":"<value>","workspace_id":"<value>"}'
+  --data '{"artifact_id":"<value>","base_version":1,"content_hash":"sha256:50d858e0985ecc7f60418aaf0cc5ab587f42c2570a884095a9e8ccacd0f6545c","document_id":"<value>","markdown":"example","purpose":"<value>","run_id":"<value>","target":{},"user_id":"<value>","workspace_id":"<value>"}'
 ```
 
 ```json
@@ -1106,7 +1112,7 @@ Agent artifact의 저장 위치와 메타데이터를 확인합니다.
 curl -X POST "$PIPELINE/internal/agent/runs/artifacts/resolve" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"artifact_id":"<value>","base_version":1.0,"content_hash":"<value>","document_id":"<value>","purpose":"<value>","run_id":"<value>","target":{},"user_id":"<value>","workspace_id":"<value>"}'
+  --data '{"artifact_id":"<value>","base_version":1,"content_hash":"sha256:50d858e0985ecc7f60418aaf0cc5ab587f42c2570a884095a9e8ccacd0f6545c","document_id":"<value>","purpose":"<value>","run_id":"<value>","target":{},"user_id":"<value>","workspace_id":"<value>"}'
 ```
 
 ```json
@@ -1232,7 +1238,7 @@ Agent Tool 변경 작업의 실행 권한을 검증합니다.
 curl -X POST "$PIPELINE/internal/agent/runs/tool-authorizations/execute" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"arguments":{},"operation_hash":"<value>","operation_id":"<value>","plan_id":"<value>","plan_version":1.0,"run_id":"<value>","tool_name":"<value>","user_id":"<value>","workspace_id":"<value>"}'
+  --data '{"arguments":{},"operation_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","operation_id":"<value>","plan_id":"<value>","plan_version":1,"run_id":"<value>","tool_name":"<value>","user_id":"<value>","workspace_id":"<value>"}'
 ```
 
 ```json

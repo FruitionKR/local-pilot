@@ -342,7 +342,7 @@ curl -X GET "$PIPELINE/skills?workspace_id=<value>&user_id=<value>" \
 curl -X POST "$PIPELINE/skills/author" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"authoring_mode":"preserve","description":"<value>","instruction":"<value>","model":"<value>","name":"<value>","provider":"<value>","reference_document_ids":["<value>"],"scope_type":"personal","user_id":"<value>","workspace_id":"<value>"}'
+  --data '{"authoring_mode":"preserve","description":"회의록 요약 Skill","instruction":"회의 내용을 결정 사항과 할 일로 정리한다.","model":"gpt-5-nano","name":"meeting-summary","provider":"openai","reference_document_ids":["<value>"],"scope_type":"personal","user_id":"<value>","workspace_id":"<value>"}'
 ```
 
 ```json
@@ -507,7 +507,7 @@ curl -X POST "$PIPELINE/skills/author" \
 curl -X POST "$PIPELINE/skills/author/publish" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"allowed_tools":["list_root_items"],"capabilities":["document-create"],"description":"<value>","instructions_markdown":"<value>","model":"<value>","name":"<value>","provider":"<value>","scope_type":"personal","user_id":"<value>","workspace_id":"<value>"}'
+  --data '{"allowed_tools":["list_root_items"],"capabilities":["document-create"],"description":"회의록 요약 Skill","instructions_markdown":"회의 내용을 결정 사항과 할 일로 정리한다.","model":"gpt-5-nano","name":"meeting-summary","provider":"openai","scope_type":"personal","user_id":"<value>","workspace_id":"<value>"}'
 ```
 
 ```json
@@ -607,6 +607,8 @@ Backend가 소유권과 완료 상태를 검증해 전달한 Agent run 요약에
 ```
 
 #### 5. Response body
+
+- HTTP `200`: Skill 초안 생성 성공
 
 ```json
 {
@@ -761,7 +763,7 @@ Skill 지침과 권한을 게시 전에 미리 검증합니다.
 curl -X POST "$PIPELINE/skills/preview" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"allowed_tools":["list_root_items"],"capabilities":["document-create"],"description":"<value>","instructions_markdown":"<value>","name":"<value>","user_id":"<value>"}'
+  --data '{"allowed_tools":["list_root_items"],"capabilities":["document-create"],"description":"회의록 요약 Skill","instructions_markdown":"회의 내용을 결정 사항과 할 일로 정리한다.","name":"meeting-summary","user_id":"<value>"}'
 ```
 
 ```json
@@ -1083,7 +1085,7 @@ Skill 지침과 실행 설정을 변경합니다.
 curl -X PATCH "$PIPELINE/skills/<value>" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"description":"<value>","instructions_markdown":"<value>","model":"<value>","name":"<value>","provider":"<value>","user_id":"<value>","workspace_id":"<value>"}'
+  --data '{"description":"회의록 요약 Skill","instructions_markdown":"회의 내용을 결정 사항과 할 일로 정리한다.","model":"gpt-5-nano","name":"meeting-summary","provider":"openai","user_id":"<value>","workspace_id":"<value>"}'
 ```
 
 ```json

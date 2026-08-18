@@ -361,7 +361,7 @@ ingest 작업의 Wiki 변경을 복원합니다.
 curl -X POST "$PIPELINE/wiki/ingest-restore-runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"cancel_operation_ids":["<value>"],"deleted_pages":["<value>"],"operation_id":"<value>","rebuild_pages":[{"keep_contributions":[null],"page_id":"<value>"}],"restore_to_operation_id":"<value>","source_page":{"document_id":"<value>","page_id":"<value>"},"workspace_id":"<value>"}'
+  --data '{"cancel_operation_ids":["op_cancelled"],"deleted_pages":["page_deleted"],"operation_id":"op_restore","rebuild_pages":[{"keep_contributions":[{"document_id":"doc_kept","operation_id":"op_kept"}],"page_id":"page_rebuild"}],"restore_to_operation_id":"op_target","source_page":{"document_id":"doc_source","page_id":"page_source"},"workspace_id":"workspace_01"}'
 ```
 
 ```json
@@ -491,7 +491,7 @@ lint 작업의 Wiki 변경을 복원합니다.
 curl -X POST "$PIPELINE/wiki/lint-restore-runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"deleted_pages":["<value>"],"operation_id":"<value>","rebuild_pages":[{"keep_contributions":[null],"page_id":"<value>"}],"target_operation_id":"<value>","workspace_id":"<value>"}'
+  --data '{"deleted_pages":["page_deleted"],"operation_id":"op_lint_restore","rebuild_pages":[{"keep_contributions":[{"document_id":"doc_kept","operation_id":"op_kept"}],"page_id":"page_rebuild"}],"target_operation_id":"op_lint_target","workspace_id":"workspace_01"}'
 ```
 
 ```json
@@ -630,7 +630,7 @@ curl -X POST "$PIPELINE/wiki/lint-restore-runs" \
 curl -X POST "$PIPELINE/wiki/maintenance/lint" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"dry_run":true,"materialize_promotions":true,"model":"<value>","operation_id":"<value>","provider":"openai","user_id":"local-user","workspace_id":"local-workspace"}'
+  --data '{"dry_run":true,"materialize_promotions":true,"model":"gpt-5-nano","operation_id":"<value>","provider":"openai","user_id":"local-user","workspace_id":"local-workspace"}'
 ```
 
 ```json

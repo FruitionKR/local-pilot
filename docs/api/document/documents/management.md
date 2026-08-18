@@ -959,7 +959,6 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docu
 
 - HTTP `204`: 생성 완료
 - Body: 없음
-- 현재 OpenAPI snapshot은 `ResponseEntity<?>`를 `200`으로 추론하지만, controller 구현과 계약 테스트의 실제 응답은 `204`다.
 
 #### 6. Error response
 

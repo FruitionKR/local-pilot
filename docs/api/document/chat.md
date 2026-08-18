@@ -529,7 +529,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 |---|---|
 | 목적 | 세션(full) 또는 선택 문답(partial)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 위키 생성은 파이프라인이 비동기로 수행합니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string`<br>**Body** — `ChatWikiExportRequest` |
-| 출력 | `200` 성공 — `ChatWikiExportResponse` |
+| 출력 | `202` Wiki 생성 작업 등록 — `ChatWikiExportResponse` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -563,16 +563,14 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 
 ```json
 {
-  "pair_ids": [
-    "string"
-  ],
+  "pair_ids": [],
   "selection_mode": "full"
 }
 ```
 
 #### 5. Response body
 
-- HTTP `200`: OK
+- HTTP `202`: Wiki 생성 작업이 대기열에 등록됨
 - Content-Type: `*/*` (`ChatWikiExportResponse`)
 
 ```json
@@ -602,7 +600,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/wiki" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
-  --data '{"pair_ids":["<value>"],"selection_mode":"full"}'
+  --data '{"pair_ids":[],"selection_mode":"full"}'
 ```
 
 ```json
