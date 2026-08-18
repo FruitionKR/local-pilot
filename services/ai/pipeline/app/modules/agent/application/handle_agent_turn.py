@@ -252,25 +252,7 @@ class HandleAgentTurnUseCase:
             )
             content = None
             if route.action == "workspace_workflow" and route.edit_goal == "create_from_chat":
-                reference_context = dict(
-                    request.conversation_context.reference_context
-                    if request.conversation_context
-                    else {}
-                )
-                if route.requires_grounded_retrieval:
-                    grounded_answer = self._answer_query(request)
-                    reference_context["grounded_query"] = {
-                        "answer": grounded_answer.answer.content,
-                        "evidence_snippets": [
-                            {
-                                "rank": snippet.rank,
-                                "source_document_id": snippet.source_document_id,
-                                "source_block_ids": snippet.source_block_ids,
-                                "text": snippet.text,
-                            }
-                            for snippet in grounded_answer.evidence_snippets
-                        ],
-                    }
+                reference_context = self._resolve_reference_context(request, route)
                 creation_markdown = self._markdown_create_use_case.execute(
                     MarkdownCreateRequest(
                         instruction=request.message,
@@ -299,6 +281,7 @@ class HandleAgentTurnUseCase:
                         message=CLARIFY_MARKDOWN_DOCUMENT_MESSAGE,
                     )
                 target = markdown_context.target or _whole_document_target(markdown_context.markdown)
+                reference_context = self._resolve_reference_context(request, route)
                 edit = self._markdown_edit_use_case.execute(
                     MarkdownEditRequest(
                         instruction=request.message,
@@ -307,6 +290,7 @@ class HandleAgentTurnUseCase:
                         workspace_id=request.workspace_id,
                         user_id=request.user_id,
                         conversation_summary=_conversation_context_text(request),
+                        reference_context=reference_context,
                         edit_goal=route.edit_goal,
                         skill_instructions=_skill_instructions(selected_skill),
                         output_language=request.output_language,
@@ -363,6 +347,7 @@ class HandleAgentTurnUseCase:
                     message=CLARIFY_INSERT_AFTER_TARGET_MESSAGE,
                 )
             target = markdown_context.target or _whole_document_target(markdown_context.markdown)
+            reference_context = self._resolve_reference_context(request, route)
             result = self._markdown_edit_use_case.execute(
                 MarkdownEditRequest(
                     instruction=request.message,
@@ -371,6 +356,7 @@ class HandleAgentTurnUseCase:
                     workspace_id=request.workspace_id,
                     user_id=request.user_id,
                     conversation_summary=_conversation_context_text(request),
+                    reference_context=reference_context,
                     edit_goal=route.edit_goal,
                     skill_instructions=_skill_instructions(selected_skill),
                     output_language=request.output_language,
@@ -424,6 +410,33 @@ class HandleAgentTurnUseCase:
             else self._query_use_case
         )
         return query_use_case.execute(request.message, **query_kwargs)
+
+    def _resolve_reference_context(
+        self,
+        request: AgentTurnRequest,
+        route: AgentTurnRoute,
+    ) -> dict[str, object]:
+        reference_context = dict(
+            request.conversation_context.reference_context
+            if request.conversation_context
+            else {}
+        )
+        if not route.requires_grounded_retrieval:
+            return reference_context
+        grounded_answer = self._answer_query(request)
+        reference_context["grounded_query"] = {
+            "answer": grounded_answer.answer.content,
+            "evidence_snippets": [
+                {
+                    "rank": snippet.rank,
+                    "source_document_id": snippet.source_document_id,
+                    "source_block_ids": snippet.source_block_ids,
+                    "text": snippet.text,
+                }
+                for snippet in grounded_answer.evidence_snippets
+            ],
+        }
+        return reference_context
 
     def _handle_pending_skill(
         self,

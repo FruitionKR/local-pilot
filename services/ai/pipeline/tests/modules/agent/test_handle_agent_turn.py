@@ -990,7 +990,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertIn("보안", result.message or "")
         self.assertEqual(starter.requests, [])
 
-    def test_persistent_edit_starts_run_with_scoped_full_markdown_artifact(self) -> None:
+    def test_grounded_persistent_edit_starts_run_with_evidence(self) -> None:
         starter = RecordingAgentRunStarter()
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(
@@ -1007,10 +1007,20 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.95,
             reason="persistent document edit",
             edit_goal="cleanup",
+            requires_grounded_retrieval=True,
         )
+        query_use_case = FakeQueryUseCase()
+        query_use_case.evidence_snippets = [
+            EvidenceSnippet(
+                rank=1,
+                source_document_id="source-1",
+                source_block_ids=["B0001"],
+                text="근거 문장",
+            )
+        ]
         use_case = HandleAgentTurnUseCase(
             router=SequencedRouter(route, route),
-            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            query_use_case=query_use_case,  # type: ignore[arg-type]
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
             markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
             agent_run_starter=starter,  # type: ignore[arg-type]
@@ -1018,7 +1028,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
         result = use_case.execute(
             AgentTurnRequest(
-                message="marker를 바꿔서 워크스페이스에 저장해줘",
+                message="Wiki에서 근거를 찾아 marker를 바꿔서 워크스페이스에 저장해줘",
                 workspace_id="workspace-1",
                 user_id="user-1",
                 document_id="document-1",
@@ -1031,6 +1041,15 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         )
 
         self.assertEqual(result.action, "workspace_workflow")
+        self.assertEqual(query_use_case.questions, [
+            "Wiki에서 근거를 찾아 marker를 바꿔서 워크스페이스에 저장해줘"
+        ])
+        grounded_query = editor.requests[0].reference_context["grounded_query"]  # type: ignore[index]
+        self.assertEqual(grounded_query["answer"], "질문 답변입니다.")  # type: ignore[index]
+        self.assertEqual(
+            grounded_query["evidence_snippets"][0]["source_block_ids"],  # type: ignore[index]
+            ["B0001"],
+        )
         content = getattr(starter.requests[0], "content")
         self.assertEqual(getattr(content, "purpose"), "apply_document_edit")
         self.assertEqual(getattr(content, "document_id"), "document-1")

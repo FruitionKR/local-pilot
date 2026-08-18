@@ -100,6 +100,11 @@ TECHNICAL_PROCESS_QUESTION_PATTERN = re.compile(
     r"(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)(?:\s+\w+){0,3}(?:\?+)?$",
     re.IGNORECASE,
 )
+CURRENT_MARKDOWN_EDIT_PATTERN = re.compile(
+    r"(?:현재|이|열린)\s*(?:문서|markdown).{0,50}(?:수정|편집|보완|다듬|바꿔|변경|반영)|"
+    r"(?:update|edit|revise|improve).{0,40}(?:current|this|open)\s+(?:document|markdown)",
+    re.IGNORECASE,
+)
 ALLOWED_ACTIONS = {
     "chat_answer",
     "conversation_reply",
@@ -317,8 +322,25 @@ def _promote_grounded_query(
     route: AgentTurnRoute,
     request: AgentTurnRequest,
 ) -> AgentTurnRoute:
-    if request.active_markdown_context is not None or not _requests_grounded_retrieval(request.message):
+    if not _requests_grounded_retrieval(request.message):
         return route
+    requests_current_edit = bool(
+        request.active_markdown_context
+        and CURRENT_MARKDOWN_EDIT_PATTERN.search(request.message)
+    )
+    if route.action == "markdown_edit":
+        return replace(route, requires_grounded_retrieval=True)
+    if route.action == "markdown_create" and requests_current_edit:
+        return replace(
+            route,
+            action=(
+                "workspace_workflow"
+                if PERSISTENT_EDIT_PATTERN.search(request.message)
+                else "markdown_edit"
+            ),
+            edit_goal="other",
+            requires_grounded_retrieval=True,
+        )
     if route.action == "markdown_create":
         return replace(
             route,
@@ -327,7 +349,14 @@ def _promote_grounded_query(
             requires_grounded_retrieval=True,
         )
     if route.action == "workspace_workflow" and WORKSPACE_MUTATION_PATTERN.search(request.message):
-        return replace(route, requires_grounded_retrieval=True)
+        edit_goal = route.edit_goal
+        if edit_goal == "create_from_chat" and requests_current_edit:
+            edit_goal = "other"
+        return replace(
+            route,
+            edit_goal=edit_goal,
+            requires_grounded_retrieval=True,
+        )
     if route.action not in {"conversation_reply", "clarify", "workspace_workflow"}:
         return route
     return replace(

@@ -331,6 +331,25 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertEqual(route.edit_goal, "create_from_chat")
         self.assertTrue(route.requires_grounded_retrieval)
 
+    def test_marks_grounded_persistent_current_markdown_edit(self) -> None:
+        for llm_action in ("workspace_workflow", "markdown_create"):
+            with self.subTest(llm_action=llm_action):
+                response = route_response(llm_action)
+                response["edit_goal"] = "create_from_chat"
+                client = SequenceJsonClient([response])
+                router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+                route = router.route(
+                    AgentTurnRequest(
+                        message="Wiki에서 근거를 찾아 현재 문서의 설명을 보완해서 저장해줘",
+                        active_markdown_context=ActiveMarkdownContext(markdown="# Wiki\n\n기존 설명"),
+                    )
+                )
+
+                self.assertEqual(route.action, "workspace_workflow")
+                self.assertEqual(route.edit_goal, "other")
+                self.assertTrue(route.requires_grounded_retrieval)
+
     def test_promotes_persistent_markdown_edit_to_workspace_workflow(self) -> None:
         client = SequenceJsonClient([route_response("markdown_edit")])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
