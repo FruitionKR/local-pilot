@@ -23,6 +23,7 @@ class SkillOpenApiConfig {
             if (response == null) return;
             NULLABLE_STRING_FIELDS.forEach(field -> {
                 Schema<?> value = (Schema<?>) response.getProperties().get(field);
+                if (value.getOneOf() != null) return;
                 value.setNullable(null);
                 response.getProperties().put(field, nullableString(value));
             });

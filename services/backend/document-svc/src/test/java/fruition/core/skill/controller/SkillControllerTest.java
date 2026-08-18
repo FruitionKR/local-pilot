@@ -174,7 +174,9 @@ class SkillControllerTest {
         var authoringSchemas = ModelConverters.getInstance().read(schemaClass("SkillAuthoringResponseSchema"));
         var authoring = authoringSchemas.get("SkillAuthoringResponse");
         var openApi = new OpenAPI().components(new Components().schemas(authoringSchemas));
-        new SkillOpenApiConfig().skillAuthoringResponseCustomizer().customise(openApi);
+        var customizer = new SkillOpenApiConfig().skillAuthoringResponseCustomizer();
+        customizer.customise(openApi);
+        customizer.customise(openApi);
 
         assertThat(skill.getProperties()).containsKeys("id", "workspace_id", "enabled_version", "latest_version");
         assertThat(version.getProperties()).containsKeys("capabilities", "allowed_tools", "lint_result", "status");
