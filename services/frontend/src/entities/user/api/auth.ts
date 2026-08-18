@@ -12,6 +12,10 @@ export type EmailVerificationResponse = {
   retry_after: number;
 };
 
+export type EmailAvailabilityResponse = {
+  available: boolean;
+};
+
 export type VerificationConfirmResponse = {
   verification_token: string;
   expires_in: number;
@@ -57,6 +61,16 @@ export async function requestEmailVerification(
   });
 
   return parseJsonOrThrow<EmailVerificationResponse>(response, "인증번호 요청에 실패했습니다.");
+}
+
+export async function checkEmailAvailability(email: string): Promise<EmailAvailabilityResponse> {
+  const response = await fetch("/api/auth/email-availability", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email })
+  });
+
+  return parseJsonOrThrow<EmailAvailabilityResponse>(response, "이메일 중복 확인에 실패했습니다.");
 }
 
 export async function confirmEmailVerification(

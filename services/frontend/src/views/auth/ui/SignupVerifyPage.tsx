@@ -18,6 +18,7 @@ export default function SignupVerificationPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const countdown = useExpiryCountdown(signupDraft?.expiresAt ?? 0);
   const draft = signupDraft;
+  const isRequestingVerification = Boolean(draft && !draft.verificationId && !draft.verificationRequestError);
 
   useEffect(() => {
     if (!signupDraft) router.replace("/signup");
@@ -30,7 +31,7 @@ export default function SignupVerificationPage() {
   }
 
   async function completeVerification(code: string) {
-    if (isSubmitting || !draft) return;
+    if (isSubmitting || !draft?.verificationId) return;
 
     setErrorMessage(null);
     setIsSubmitting(true);
@@ -73,12 +74,17 @@ export default function SignupVerificationPage() {
                   name="verificationCode"
                   onChange={(event) => setVerificationCode(event.target.value)}
                   placeholder="code"
-                  timer={countdown}
+                  readOnly={isRequestingVerification || Boolean(draft.verificationRequestError)}
+                  timer={draft.expiresAt ? countdown : undefined}
                   value={verificationCode}
                 />
+                {isRequestingVerification ? <p className="auth-prompt" role="status">인증번호를 발송하고 있습니다.</p> : null}
+                {draft.verificationRequestError ? <AuthError>{draft.verificationRequestError}</AuthError> : null}
                 {errorMessage ? <AuthError>{errorMessage}</AuthError> : null}
               </div>
-              <AuthSubmitButton disabled={isSubmitting}>인증 확인</AuthSubmitButton>
+              <AuthSubmitButton disabled={isSubmitting || !draft.verificationId}>
+                {isRequestingVerification ? "발송 중" : "인증 확인"}
+              </AuthSubmitButton>
             </form>
             <p className="auth-prompt">이메일을 다시 입력하시겠어요?<button onClick={() => router.push("/signup")} type="button">이전으로</button></p>
           </div>

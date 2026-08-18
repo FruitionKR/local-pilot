@@ -13,6 +13,7 @@ import fruition.access.user.exception.UserNotFoundException;
 import fruition.access.user.exception.VerificationCodeAttemptsExceededException;
 import fruition.access.user.exception.VerificationCodeExpiredException;
 import fruition.access.user.exception.VerificationRateLimitedException;
+import fruition.access.user.exception.EmailAvailabilityRateLimitedException;
 import fruition.access.workspace.exception.WorkspaceNotFoundException;
 import fruition.shared.util.BaseExceptionHandler;
 import fruition.shared.util.ErrorResponse;
@@ -128,6 +129,15 @@ public class AccessExceptionHandler extends BaseExceptionHandler {
                 .status(HttpStatus.TOO_MANY_REQUESTS)
                 .header("Retry-After", String.valueOf(e.getRetryAfter()))
                 .body(ErrorResponse.of("VERIFICATION_RATE_LIMITED", e.getMessage()));
+    }
+
+    @ExceptionHandler(EmailAvailabilityRateLimitedException.class)
+    public ResponseEntity<ErrorResponse> handleEmailAvailabilityRateLimited(EmailAvailabilityRateLimitedException e) {
+        logHandled(e, HttpStatus.TOO_MANY_REQUESTS, "EMAIL_AVAILABILITY_RATE_LIMITED");
+        return ResponseEntity
+                .status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(e.getRetryAfter()))
+                .body(ErrorResponse.of("EMAIL_AVAILABILITY_RATE_LIMITED", e.getMessage()));
     }
 
     @ExceptionHandler(EmailVerificationSendException.class)

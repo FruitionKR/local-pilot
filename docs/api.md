@@ -2,7 +2,7 @@
 
 이 문서는 Fruition의 공개 API와 서비스 간 내부 API를 사람 기준으로 설명한다. 기계가 읽는 원본 계약은 `api-specs/<service>/openapi.yaml`이며, 충돌할 경우 실행 코드와 생성된 OpenAPI를 우선한다.
 
-- 전체 operation 수: 139
+- 전체 operation 수: 140
 - 인증 기본값: 사용자 API는 Bearer access token, 내부 API는 서비스 토큰을 사용한다.
 - 공통 오류 형식은 서비스에 따라 `ErrorResponse` 또는 FastAPI validation 응답을 사용한다.
 - AI에게 넘기는 대화 맥락은 서버가 세션에서 읽어 조립한다. 클라이언트는 어떤 문답을 쓸지만 `selected_pair_ids`로 고르고, 비우면 세션의 최근 완결 문답을 쓴다. 이 세션에 속하지 않은 ID는 무시한다.
@@ -43,6 +43,80 @@ export PIPELINE=http://localhost:8000  # ai-svc pipeline: 내부 전용
 # access-svc
 
 ## Auth
+
+### POST /api/auth/email-availability
+
+#### 1. Method + Path
+
+`POST /api/auth/email-availability`
+
+#### 2. 목적
+
+회원가입 전에 이메일로 신규 가입할 수 있는지 빠르게 확인합니다. OAuth 계정을 포함해 이미 등록된 이메일은 `available: false`를 반환합니다.
+
+#### 3. Auth 필요 여부
+
+- 불필요
+- 인증 없이 호출할 수 있다.
+
+#### 4. Request body
+
+- Parameters: 없음
+- Content-Type: `application/json` (`EmailAvailabilityRequest`)
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+#### 5. Response body
+
+- HTTP `200`: 가입 가능 여부
+- Content-Type: `*/*` (`EmailAvailabilityResponse`)
+
+```json
+{
+  "available": true
+}
+```
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 응답 스키마 |
+|---|---|---|
+| `400` | 잘못된 이메일 형식 | `ErrorResponse` |
+| `429` | IP 또는 이메일 기준 요청 횟수 제한 초과 | `ErrorResponse` |
+
+#### 7. Pagination / filtering
+
+- 페이지네이션: 지원하지 않음
+- 필터링: 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 공개 API이므로 별도의 사용자 권한 검증이 없다.
+- 기존 인증번호 요청 API도 가입 이메일 중복을 `409`로 노출하므로 동일한 공개 범위를 유지한다.
+- 계정 열거 비용을 제한하기 위해 Redis에서 IP당 30회/분, 이메일당 5회/분으로 호출을 제한한다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X POST "$ACCESS/api/auth/email-availability" \
+  -H 'Content-Type: application/json' \
+  --data '{"email":"user@example.com"}'
+```
+
+```json
+{
+  "available": true
+}
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: checkEmailAvailability`)
 
 ### POST /api/auth/email-verifications
 
