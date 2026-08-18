@@ -22,7 +22,7 @@ description: 커밋을 생성하거나 준비할 때 반드시 사용. 커밋 �
 - 날짜별 changelog(`docs/changelog/`)·이슈 문서(`docs/issue/`) 운영은 2026-08-07 종료 — 새로 만들지 않는다 (루트 `CLAUDE.md` §8).
 - 대신 커밋에 포함된 변경으로 현행 문서 내용이 실제와 달라지는 경우, 해당 문서를 같은 커밋에서 갱신한다:
   - 서비스 경계·통신·인가·배포 변경 → `docs/architecture.md`
-  - API 계약 변경 → `docs/api.md`
+  - API 계약 변경 → `docs/api/` 아래 해당 서비스·도메인 파일
   - 저장소·테이블·소유권 변경 → `docs/data-model.md`
   - 구동·데모 절차 변경 → `docs/script.md`
   - 중요한 아키텍처 결정 추가/변경 → `docs/adr/NNNN-<kebab-제목>.md`
