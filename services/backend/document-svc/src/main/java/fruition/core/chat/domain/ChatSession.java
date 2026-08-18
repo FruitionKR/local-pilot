@@ -36,13 +36,17 @@ public class ChatSession {
     @Column(name = "wiki_export_document_id")
     private String wikiExportDocumentId;
 
+    /** 제목을 주지 않고 만든 세션의 기본 제목. 화면이 쓰던 표시값과 같게 맞춘다. */
+    public static final String DEFAULT_TITLE = "새 채팅";
+
     protected ChatSession() {}
 
     public ChatSession(String id, String workspaceId, String userId, String title) {
         this.id = id;
         this.workspaceId = workspaceId;
         this.userId = userId;
-        this.title = title;
+        // 제목이 비면 여기서 채운다. 비운 채 두면 세션 ID가 파생 이름(위키화 문서명 등)으로 새어 나간다.
+        this.title = (title == null || title.isBlank()) ? DEFAULT_TITLE : title;
         this.createdAt = Instant.now();
         this.lastMessageAt = this.createdAt;
     }

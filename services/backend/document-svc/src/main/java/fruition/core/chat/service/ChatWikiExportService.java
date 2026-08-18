@@ -8,6 +8,8 @@ import fruition.core.chat.exception.EmptyChatWikiExportException;
 import fruition.core.chat.exception.InvalidChatWikiExportRequestException;
 import fruition.core.chat.repository.ChatMessageRepository;
 import fruition.core.chat.repository.ChatSessionRepository;
+import fruition.core.chat.service.ChatWikiMarkdownSerializer.ChatSourceBlock;
+import fruition.core.chat.service.ChatWikiMarkdownSerializer.ChatWikiSource;
 import fruition.core.document.service.DocumentService;
 import fruition.shared.util.SecretMasker;
 import org.slf4j.Logger;
@@ -61,7 +63,7 @@ public class ChatWikiExportService {
     public String previewMarkdown(String workspaceId, String userId, String sessionId) {
         ChatSession session = chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
         List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdInTurnOrder(sessionId);
-        return buildMaskedMarkdown(session, messages);
+        return buildMaskedSource(session, messages).markdown();
     }
 
     /** 선택된(full=전체 / partial=선택 문답) 채팅을 문서로 저장하고 처리 큐에 등록한다. */
@@ -73,19 +75,20 @@ public class ChatWikiExportService {
         List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdInTurnOrder(sessionId);
         List<ChatMessage> selected = selectMessages(messages, request);
 
-        String markdown = buildMaskedMarkdown(session, selected);
-        if (!markdown.contains("]Q : ")) { // 완전한 문답이 하나도 없음
+        ChatWikiSource source = buildMaskedSource(session, selected);
+        if (source.isEmpty()) { // 완전한 문답이 하나도 없음
             throw new EmptyChatWikiExportException(sessionId);
         }
 
         // full 재생성: 이미 위키가 연결된 세션을 다시 full로 export → 기존 문서 재사용, 원본은 세션 전체로 갱신,
-        // 파이프라인엔 미편입 문답(delta=markdown)만 inline으로 전송.
+        // 파이프라인엔 미편입 문답(delta)만 inline으로 전송.
         if (isRegeneration(session, request)) {
             String documentId = session.getWikiExportDocumentId();
-            String fullMarkdown = buildMaskedMarkdown(session, messages);
+            ChatWikiSource full = buildMaskedSource(session, messages);
             String fullHash = stableContentHash(session, messages);
             log.info("[chat-wiki][export] 재생성 session={} document={} delta={}건", sessionId, documentId, selected.size());
-            documentService.regenerateChatExportDocument(documentId, fullMarkdown, fullHash, markdown);
+            documentService.regenerateChatExportDocument(
+                    documentId, full.markdown(), fullHash, source.markdown(), pipelineBlocks(source));
             return new ChatWikiExportResponse(documentId, "processing");
         }
 
@@ -95,7 +98,8 @@ public class ChatWikiExportService {
         log.info("[chat-wiki][export] session={} mode={} 전송 메시지={}건", sessionId, request.selectionMode(), selected.size());
 
         DocumentService.ExportDocumentResult result = documentService.createChatExportDocument(
-                workspaceId, userId, filename, markdown, contentHash, request.selectionMode());
+                workspaceId, userId, filename, source.markdown(), contentHash, request.selectionMode(),
+                pipelineBlocks(source));
 
         // full(첫 생성)만 세션의 정식 export 문서를 기록한다(완료 콜백 역조회·재생성 대상). partial은 독립 발췌라
         // 세션 정식 상태를 건드리지 않는다 — 그래야 이후 full 재생성이 partial 문서를 잘못 재사용하지 않는다.
@@ -142,8 +146,20 @@ public class ChatWikiExportService {
         return messages.stream().filter(m -> m.getWikiPageId() == null).toList();
     }
 
-    private String buildMaskedMarkdown(ChatSession session, List<ChatMessage> messages) {
-        return secretMasker.mask(serializer.serialize(session, messages));
+    /** 본문과 블록 텍스트 모두 같은 규칙으로 마스킹한다. 블록이 파이프라인 입력이므로 여기서 새는 값이 없어야 한다. */
+    private ChatWikiSource buildMaskedSource(ChatSession session, List<ChatMessage> messages) {
+        ChatWikiSource source = serializer.serialize(session, messages);
+        return new ChatWikiSource(
+                secretMasker.mask(source.markdown()),
+                source.blocks().stream()
+                        .map(block -> new ChatSourceBlock(block.blockId(), secretMasker.mask(block.text())))
+                        .toList());
+    }
+
+    private List<DocumentService.PipelineSourceBlock> pipelineBlocks(ChatWikiSource source) {
+        return source.blocks().stream()
+                .map(block -> new DocumentService.PipelineSourceBlock(block.blockId(), block.text()))
+                .toList();
     }
 
     /**
@@ -160,10 +176,14 @@ public class ChatWikiExportService {
         return sha256(sb.toString());
     }
 
+    /**
+     * 문서 이름은 세션 제목을 쓴다. 신규 세션은 {@link ChatSession}이 기본 제목을 채우므로 비지 않고,
+     * 제목 없이 저장된 예전 세션만 이 기본값으로 떨어진다. 세션 ID는 사용자에게 보이는 이름에 넣지 않는다.
+     */
     private String titleOf(ChatSession session) {
         return (session.getTitle() != null && !session.getTitle().isBlank())
                 ? session.getTitle()
-                : "채팅 " + session.getId();
+                : ChatSession.DEFAULT_TITLE;
     }
 
     private String sha256(String text) {

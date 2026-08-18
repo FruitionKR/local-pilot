@@ -110,6 +110,8 @@ public class DocumentItemAssembler {
                 && !document.getSourceUri().isBlank();
         return document.getDeletedAt() == null
                 && document.getDocumentRole() == DocumentRole.EDITABLE
+                // 채팅 Wiki page화 문서는 확인용으로만 노출한다. 본문을 고치면 문답 provenance가 끊긴다.
+                && !"chat_export".equals(document.getOrigin())
                 && (hasEditState || canInitializeEditState)
                 && (isMarkdown(document) || document.getStatus() == DocumentStatus.completed);
     }

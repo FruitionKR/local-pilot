@@ -53,9 +53,15 @@ def _pipeline_run_in(**data: object):
     return api.PipelineRunIn(**data)
 
 
+CHAT_MARKDOWN = "# Chat Export\n\nQ : 새 질문\nA : 새 답변"
+CHAT_BLOCKS = [{"block_id": "session_1:pair_2", "text": "Q : 새 질문\nA : 새 답변"}]
+
+
 def _chat_wiki_run_in(**data: object):
     data.setdefault("provider", "openai")
     data.setdefault("model", "gpt-5-nano")
+    data.setdefault("input_markdown", CHAT_MARKDOWN)
+    data.setdefault("input_blocks", CHAT_BLOCKS)
     return api.ChatWikiRunIn(**data)
 
 
@@ -191,77 +197,44 @@ def test_chat_wiki_run_accepts_selection_mode() -> None:
     assert payload.wiki_evaluation_loop is True
 
 
-def test_chat_wiki_run_accepts_optional_input_markdown() -> None:
-    payload = _chat_wiki_run_in(
-        document_id="chat_document_1",
-        selection_mode="full",
-        input_markdown="# Chat Export\n\n[session_1:pair_2]Q : 새 질문\nA : 새 답변",
-    )
+def test_chat_wiki_run_carries_provenance_in_blocks_not_markdown() -> None:
+    payload = _chat_wiki_run_in(document_id="chat_document_1", selection_mode="full")
 
-    assert payload.document_id == "chat_document_1"
     assert payload.input_markdown.startswith("# Chat Export")
+    assert "session_1:pair_2" not in payload.input_markdown
+    assert payload.input_blocks[0].block_id == "session_1:pair_2"
+    assert "session_1" not in payload.input_blocks[0].text
 
 
-def test_chat_wiki_inline_markdown_rejects_partial() -> None:
-    repository = _repository(
-        document={
-            "id": "chat_document_1",
-            "user_id": "user_1",
-            "workspace_id": "workspace_1",
-        },
-        source_context={
-            "artifact": {"document_id": "chat_document_1"},
-            "source_markdown": "# Existing Source",
-        },
-    )
-    payload = _chat_wiki_run_in(
-        document_id="chat_document_1",
-        selection_mode="partial",
-        input_markdown="# Chat Export\n\n[session_1:pair_2]Q : 새 질문\nA : 새 답변",
-    )
-
+def test_chat_wiki_run_requires_input_blocks() -> None:
     try:
-        pipeline_routes._run_pipeline_request(
-            payload,
-            BackgroundTasks(),
-            _use_case(),
-            repository,
-            _source_reader(),
+        api.ChatWikiRunIn(
+            provider="openai",
+            model="gpt-5-nano",
+            document_id="chat_document_1",
+            selection_mode="full",
+            input_markdown=CHAT_MARKDOWN,
+            input_blocks=[],
         )
-    except HTTPException as exc:
-        assert exc.status_code == 422
-        assert "only allowed for full" in str(exc.detail)
+    except ValidationError as exc:
+        assert "input_blocks" in str(exc)
     else:
-        raise AssertionError("partial chat run should reject inline input_markdown")
+        raise AssertionError("chat wiki run should require at least one source block")
 
 
-def test_chat_wiki_inline_markdown_rejects_full_without_existing_source() -> None:
-    repository = _repository(
-        document={
-            "id": "chat_document_1",
-            "user_id": "user_1",
-            "workspace_id": "workspace_1",
-        },
-    )
-    payload = _chat_wiki_run_in(
-        document_id="chat_document_1",
-        selection_mode="full",
-        input_markdown="# Chat Export\n\n[session_1:pair_2]Q : 새 질문\nA : 새 답변",
-    )
-
+def test_chat_wiki_run_requires_input_markdown() -> None:
     try:
-        pipeline_routes._run_pipeline_request(
-            payload,
-            BackgroundTasks(),
-            _use_case(),
-            repository,
-            _source_reader(),
+        api.ChatWikiRunIn(
+            provider="openai",
+            model="gpt-5-nano",
+            document_id="chat_document_1",
+            selection_mode="full",
+            input_blocks=CHAT_BLOCKS,
         )
-    except HTTPException as exc:
-        assert exc.status_code == 422
-        assert "requires an existing source page" in str(exc.detail)
+    except ValidationError as exc:
+        assert "input_markdown" in str(exc)
     else:
-        raise AssertionError("first full chat run should reject inline input_markdown")
+        raise AssertionError("chat wiki run should require input_markdown")
 
 
 def test_chat_wiki_run_rejects_unknown_selection_mode() -> None:
@@ -301,6 +274,7 @@ def test_pipeline_command_includes_selection_mode() -> None:
 
     assert command.selection_mode == "partial"
     assert command.system_prompt == CHAT_SEMANTIC_PROMPT
+    assert command.input_blocks == CHAT_BLOCKS
 
 
 def test_pipeline_command_loads_existing_source_context_for_full() -> None:

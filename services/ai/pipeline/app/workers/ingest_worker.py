@@ -72,6 +72,7 @@ def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
             **common,
             selection_mode=command.get("selection_mode") or "full",
             input_markdown=command.get("input_markdown"),
+            input_blocks=command.get("input_blocks") or [],
         )
     return PipelineRunIn(**common)
 

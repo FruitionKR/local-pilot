@@ -29,9 +29,10 @@ class IngestCommandOutboxTest {
         AiCommandOutboxWriter writer = spy(new AiCommandOutboxWriter(outboxRepository, objectMapper));
         IngestCommandOutbox outbox = new IngestCommandOutbox(
                 writer,
-                "ai.ingest.command", workspaceAiModelClient);
+                "ai.ingest.command", workspaceAiModelClient, objectMapper);
 
-        outbox.enqueue("run_1", "doc_1", "user_1", "ws_1", "full", "# markdown", true,
+        outbox.enqueue("run_1", "doc_1", "user_1", "ws_1", "full", "# markdown",
+                "[{\"block_id\":\"session_1:pair_1\",\"text\":\"Q : 질문\\nA : 답변\"}]", true,
                 "op_1", 3, "sha256:source");
 
         ArgumentCaptor<IngestCommandOutbox.IngestCommand> command =
@@ -41,6 +42,7 @@ class IngestCommandOutboxTest {
         verify(outboxRepository).save(saved.capture());
         assertThat(saved.getValue().getPayload())
                 .contains("\"kind\":\"chat_wiki\"", "\"provider\":\"gemini\"",
-                        "\"model\":\"gemini-3.1-flash-lite\"");
+                        "\"model\":\"gemini-3.1-flash-lite\"",
+                        "\"block_id\":\"session_1:pair_1\"");
     }
 }

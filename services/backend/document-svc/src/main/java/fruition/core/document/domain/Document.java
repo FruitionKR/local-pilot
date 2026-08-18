@@ -112,6 +112,13 @@ public class Document {
     @Column(name = "pipeline_input_markdown", columnDefinition = "TEXT")
     private String pipelineInputMarkdown;
 
+    /**
+     * 채팅 export가 파이프라인에 넘길 문답 단위 source block(JSON 배열 문자열). {@code session_id:pair_id}
+     * provenance는 Markdown 본문이 아니라 여기에만 있다. 일반 업로드는 null.
+     */
+    @Column(name = "pipeline_input_blocks", columnDefinition = "TEXT")
+    private String pipelineInputBlocks;
+
     /** 채팅 export 완료 후처리(reconcile) 완료 시각. null이면 아직 후처리 안 됨(=폴링 대상). 재생성 시 다시 null로 리셋된다. */
     @Column(name = "reconciled_at")
     private Instant reconciledAt;
@@ -262,7 +269,8 @@ public class Document {
      * 채팅 full 재생성: 기존 export 문서를 갱신해 재처리한다. MinIO 원본은 세션 전체로 덮어쓴 뒤,
      * 그 전체 내용의 해시/크기로 갱신하고, 파이프라인엔 delta만 inline으로 보낸다.
      */
-    public void reopenForChatExportRegeneration(String contentHash, long byteSize, String pipelineInputMarkdown) {
+    public void reopenForChatExportRegeneration(String contentHash, long byteSize, String pipelineInputMarkdown,
+                                                String pipelineInputBlocks) {
         this.contentHash = contentHash;
         this.currentContentHash = contentHash; // 재처리 스냅샷 시점에는 편집본과 ingest 본이 같다
         this.byteSize = byteSize;
@@ -270,6 +278,7 @@ public class Document {
         this.processedAt = null;
         this.errorMessage = null;
         this.pipelineInputMarkdown = pipelineInputMarkdown;
+        this.pipelineInputBlocks = pipelineInputBlocks;
         this.reconciledAt = null; // 재처리하므로 완료 후 다시 reconcile 대상이 되게 리셋
     }
 
@@ -285,6 +294,7 @@ public class Document {
         this.processedAt = null;
         this.errorMessage = null;
         this.pipelineInputMarkdown = null;
+        this.pipelineInputBlocks = null;
         this.reconciledAt = null; // 재처리하므로 완료 후 다시 reconcile 대상이 되게 리셋
     }
 
@@ -321,8 +331,16 @@ public class Document {
     public String getOrigin() { return origin; }
 
     public void assignSelectionMode(String selectionMode) { this.selectionMode = selectionMode; }
+
+    /** 채팅 export 문서가 파이프라인에 실어 보낼 입력(본문 + 문답 블록)을 기록한다. */
+    public void assignPipelineInput(String pipelineInputMarkdown, String pipelineInputBlocks) {
+        this.pipelineInputMarkdown = pipelineInputMarkdown;
+        this.pipelineInputBlocks = pipelineInputBlocks;
+    }
+
     public String getSelectionMode() { return selectionMode; }
     public String getPipelineInputMarkdown() { return pipelineInputMarkdown; }
+    public String getPipelineInputBlocks() { return pipelineInputBlocks; }
     public Instant getReconciledAt() { return reconciledAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }

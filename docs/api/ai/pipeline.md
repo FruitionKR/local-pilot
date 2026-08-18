@@ -67,11 +67,21 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
   "concept_system_prompt": "prompts/concept_page_generation.system.md",
   "document_id": "string",
   "existing_wiki_dir": "string",
+  "input_blocks": [
+    {
+      "block_id": "session_1b9f4c7e2a8d4f1e:pair_0a97d25e4f83",
+      "text": "Q : 검색 인덱싱은 어떻게 동작하나요?\nA : 역색인을 사용합니다."
+    }
+  ],
   "input_markdown": "string",
   "input_name": "string",
   "log_callback_url": "string"
 }
 ```
+
+`input_markdown`과 `input_blocks`는 둘 다 필수다. 문답 경계와 `session_id:pair_id` provenance는 backend가 확정해
+`input_blocks`로 넘기고, pipeline은 Markdown을 다시 쪼개지 않는다. `block_id`가 그대로 `source_blocks.block_id`가
+되므로 Markdown 본문에는 이 id가 들어가지 않는다.
 
 #### 5. Response body
 
@@ -132,7 +142,7 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 curl -X POST "$PIPELINE/chat-wiki/runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"chat_append_system_prompt":"prompts/chat_semantic_append.system.md","chat_system_prompt":"prompts/chat_semantic_extraction.system.md","concept_page_mode":"auto","concept_resolution_system_prompt":"prompts/concept_resolution.system.md","concept_system_prompt":"prompts/concept_page_generation.system.md","document_id":"<value>","existing_wiki_dir":"<value>","input_markdown":"<value>","input_name":"<value>","log_callback_url":"<value>"}'
+  --data '{"chat_append_system_prompt":"prompts/chat_semantic_append.system.md","chat_system_prompt":"prompts/chat_semantic_extraction.system.md","concept_page_mode":"auto","concept_resolution_system_prompt":"prompts/concept_resolution.system.md","concept_system_prompt":"prompts/concept_page_generation.system.md","document_id":"<value>","existing_wiki_dir":"<value>","input_blocks":[{"block_id":"session_1:pair_1","text":"Q : 질문\nA : 답변"}],"input_markdown":"<value>","input_name":"<value>","log_callback_url":"<value>"}'
 ```
 
 ```json

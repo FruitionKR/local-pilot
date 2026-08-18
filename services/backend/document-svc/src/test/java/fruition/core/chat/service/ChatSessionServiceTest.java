@@ -47,6 +47,23 @@ class ChatSessionServiceTest {
     }
 
     @Test
+    void create_withoutTitle_fillsDefaultTitle() {
+        stubOwnedWorkspace();
+        when(chatSessionRepository.countByWorkspaceIdAndUserId(WORKSPACE_ID, USER_ID)).thenReturn(0L);
+        when(chatSessionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        ChatSessionResponse blank = chatSessionService.create(
+                WORKSPACE_ID, USER_ID, new ChatSessionCreateRequest("   "));
+        ChatSessionResponse omitted = chatSessionService.create(
+                WORKSPACE_ID, USER_ID, new ChatSessionCreateRequest(null));
+
+        // 제목이 비면 세션 ID가 파생 이름(위키화 문서명 등)으로 새어 나간다.
+        assertThat(blank.title()).isEqualTo("새 채팅");
+        assertThat(omitted.title()).isEqualTo("새 채팅");
+        assertThat(omitted.title()).doesNotContain(omitted.id());
+    }
+
+    @Test
     void create_underLimit_createsSession() {
         stubOwnedWorkspace();
         when(chatSessionRepository.countByWorkspaceIdAndUserId(WORKSPACE_ID, USER_ID)).thenReturn(3L);

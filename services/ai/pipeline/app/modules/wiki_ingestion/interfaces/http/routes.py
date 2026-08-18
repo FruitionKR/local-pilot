@@ -293,14 +293,7 @@ def _run_pipeline_request(
     reingest_source_blocks: list[dict[str, Any]] = []
 
     if isinstance(payload, ChatWikiRunIn):
-        input_markdown, input_source, input_name = _resolve_chat_wiki_input(
-            payload,
-            document,
-            user_id,
-            workspace_id,
-            repository,
-            source_reader,
-        )
+        input_markdown, input_source, input_name = _resolve_chat_wiki_input(payload)
     elif isinstance(payload, ReingestRunIn):
         reingest_source_context = _require_reingest_source_context(
             payload.document_id,
@@ -410,6 +403,10 @@ def _build_pipeline_command(
         reingest=isinstance(payload, ReingestRunIn),
         input=input_name,
         input_markdown=input_markdown,
+        input_blocks=[
+            {"block_id": block.block_id, "text": block.text}
+            for block in getattr(payload, "input_blocks", None) or []
+        ],
         input_name=input_name,
         out=str(out),
         mode=payload.mode,
@@ -517,34 +514,6 @@ def _load_existing_source_blocks(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-def _validate_chat_inline_markdown(
-    payload: ChatWikiRunIn,
-    user_id: str,
-    workspace_id: str,
-    repository: PipelineRunRepositoryPort,
-) -> None:
-    if not payload.input_markdown:
-        return
-    if payload.selection_mode != "full":
-        raise HTTPException(
-            status_code=422,
-            detail="input_markdown is only allowed for full chat accumulation",
-        )
-    try:
-        existing_source_context = repository.latest_source_page_context(
-            payload.document_id,
-            user_id,
-            workspace_id,
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    if not existing_source_context:
-        raise HTTPException(
-            status_code=422,
-            detail="input_markdown requires an existing source page for full chat accumulation",
-        )
-
-
 def _safe_name(value: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9_.-]+", "_", value).strip("._")
     return cleaned or "document"
@@ -615,24 +584,10 @@ def _load_stored_document_input(
     return input_markdown, f"storage:{object_uri}", input_name
 
 
-def _resolve_chat_wiki_input(
-    payload: ChatWikiRunIn,
-    document: dict[str, Any],
-    user_id: str,
-    workspace_id: str,
-    repository: PipelineRunRepositoryPort,
-    source_reader: PipelineSourceReaderPort,
-) -> tuple[str, str, str]:
-    if payload.input_markdown:
-        _validate_chat_inline_markdown(
-            payload,
-            user_id,
-            workspace_id,
-            repository,
-        )
-        input_name = payload.input_name or "chat.md"
-        return payload.input_markdown, f"inline:{input_name}", input_name
-    return _load_stored_document_input(document, source_reader)
+def _resolve_chat_wiki_input(payload: ChatWikiRunIn) -> tuple[str, str, str]:
+    """채팅은 항상 inline이다. 블록은 payload가 들고 오므로 storage 원문을 다시 읽지 않는다."""
+    input_name = payload.input_name or "chat.md"
+    return payload.input_markdown, f"inline:{input_name}", input_name
 
 
 def _execute_pipeline_run(

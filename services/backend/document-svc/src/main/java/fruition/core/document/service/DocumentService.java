@@ -1,6 +1,7 @@
 package fruition.core.document.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.shared.util.StorageProperties;
 import fruition.core.document.domain.Document;
@@ -706,6 +707,31 @@ public class DocumentService {
     /** 채팅 Wiki page화 export 결과. skipped=true면 동일 content가 이미 존재해 새로 만들지 않았다. */
     public record ExportDocumentResult(String documentId, boolean skipped) {}
 
+    /** 파이프라인에 넘길 source block 1개. blockId가 {@code session_id:pair_id} provenance다. */
+    public record PipelineSourceBlock(String blockId, String text) {}
+
+    /**
+     * 채팅 export 문서는 읽기 전용이다. 본문을 사람이 고치면 문답 경계를 다시 알아낼 수 없어
+     * source block provenance가 끊긴다. 재처리는 채팅 세션의 재-export 경로만 쓴다.
+     */
+    private void requireNotChatExport(Document document, String message) {
+        if ("chat_export".equals(document.getOrigin())) {
+            throw new InvalidMarkdownContentException(message);
+        }
+    }
+
+    /** command payload와 같은 snake_case 키로 저장한다. 꺼낼 때 변환 없이 그대로 실어 보낸다. */
+    private String serializePipelineBlocks(List<PipelineSourceBlock> blocks) {
+        List<Map<String, String>> payload = blocks.stream()
+                .map(block -> Map.of("block_id", block.blockId(), "text", block.text()))
+                .toList();
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("채팅 source block 직렬화에 실패했습니다.", e);
+        }
+    }
+
     /**
      * 채팅 export Markdown을 문서로 저장하고 처리 큐에 등록한다. (권한 검증은 호출부에서 이미 수행)
      * contentHash로 중복을 확인해, 이미 있으면 기존 문서 id로 skipped 결과를 반환한다.
@@ -713,9 +739,13 @@ public class DocumentService {
     @Transactional
     public ExportDocumentResult createChatExportDocument(String workspaceId, String userId,
                                                          String filename, String markdown, String contentHash,
-                                                         String selectionMode) {
+                                                         String selectionMode,
+                                                         List<PipelineSourceBlock> blocks) {
         if (selectionMode == null || selectionMode.isBlank()) {
             throw new IllegalArgumentException("채팅 export 문서는 selection_mode가 필요합니다.");
+        }
+        if (blocks == null || blocks.isEmpty()) {
+            throw new IllegalArgumentException("채팅 export 문서는 source block이 필요합니다.");
         }
         Optional<Document> existing = documentRepository.findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
                 workspaceId, "chat_export", contentHash, selectionMode);
@@ -761,6 +791,8 @@ public class DocumentService {
 
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalStateException("예약한 chat export 문서를 찾을 수 없습니다."));
+        // 파이프라인 입력은 항상 command inline이다. storage 원본은 사용자에게 보여줄 본문으로만 쓴다.
+        document.assignPipelineInput(markdown, serializePipelineBlocks(blocks));
         log.info("[채팅 export 문서 DB 저장 완료] documentId={} workspaceId={} userId={} filename={} selectionMode={} status={} sourceUri={}",
                 document.getId(), document.getWorkspaceId(), document.getUserId(), document.getFilename(),
                 document.getSelectionMode(), document.getStatus(), document.getSourceUri());
@@ -776,7 +808,7 @@ public class DocumentService {
      */
     @Transactional
     public void regenerateChatExportDocument(String documentId, String fullMarkdown, String fullContentHash,
-                                             String deltaMarkdown) {
+                                             String deltaMarkdown, List<PipelineSourceBlock> deltaBlocks) {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
@@ -820,7 +852,8 @@ public class DocumentService {
         executeWithSaveRetry(() -> saveTransaction.execute(status -> {
             Document attemptDocument = documentRepository.findById(documentId)
                     .orElseThrow(() -> new DocumentNotFoundException(documentId));
-            attemptDocument.reopenForChatExportRegeneration(fullContentHash, bytes.length, deltaMarkdown);
+            attemptDocument.reopenForChatExportRegeneration(
+                    fullContentHash, bytes.length, deltaMarkdown, serializePipelineBlocks(deltaBlocks));
             log.info("[채팅 export 재생성 DB 갱신 완료] documentId={} contentHashPrefix={} byteSize={} deltaMarkdownLength={}",
                     documentId, contentHashPrefix(fullContentHash), bytes.length,
                     deltaMarkdown != null ? deltaMarkdown.length() : 0);
@@ -1006,6 +1039,7 @@ public class DocumentService {
                 document.getWorkspaceId(),
                 document.getSelectionMode(),
                 document.getPipelineInputMarkdown(),
+                document.getPipelineInputBlocks(),
                 "chat_export".equals(document.getOrigin()),
                 operationId,
                 document.getCurrentVersion(),
@@ -1216,6 +1250,7 @@ public class DocumentService {
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
         }
+        requireNotChatExport(document, "채팅 Wiki page화 문서는 편집할 수 없습니다.");
         editLockService.requireWritable(documentId, userId);
 
         DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
@@ -1350,6 +1385,7 @@ public class DocumentService {
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
         }
+        requireNotChatExport(document, "채팅 Wiki page화 문서는 편집할 수 없습니다.");
         editLockService.requireWritable(documentId, userId);
     }
 
@@ -1556,6 +1592,8 @@ public class DocumentService {
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 재처리할 수 있습니다.");
         }
+        requireNotChatExport(document,
+                "채팅 Wiki page화 문서는 채팅 세션의 재-export로만 재처리할 수 있습니다.");
         editLockService.requireWritable(documentId, userId);
         if (document.getStatus() == DocumentStatus.processing) {
             throw new DocumentAlreadyProcessingException("이미 처리 중인 문서입니다.");

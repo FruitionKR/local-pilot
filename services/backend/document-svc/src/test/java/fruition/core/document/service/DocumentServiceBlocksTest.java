@@ -93,6 +93,11 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class DocumentServiceBlocksTest {
 
+    /** 재생성 delta로 넘길 문답 블록. provenance는 본문이 아니라 여기에만 있다. */
+    private static final java.util.List<DocumentService.PipelineSourceBlock> DELTA_BLOCKS =
+            java.util.List.of(new DocumentService.PipelineSourceBlock("session_1:pair_1", "Q : 질문\nA : 답변"));
+
+
     private static final String USER_ID = "user_1f9a74af";
     private static final String WORKSPACE_ID = "ws_aaa11111";
 
@@ -750,7 +755,8 @@ class DocumentServiceBlocksTest {
                 });
 
         documentService.regenerateChatExportDocument(
-                documentId, fullMarkdown, "full-hash", "gamma\n");
+                documentId, fullMarkdown, "full-hash", "gamma\n",
+                DELTA_BLOCKS);
 
         DocumentDetailResponse response = documentService.findById(WORKSPACE_ID, USER_ID, documentId);
 
@@ -783,7 +789,7 @@ class DocumentServiceBlocksTest {
         when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, documentId)).thenReturn("op_first");
 
         documentService.regenerateChatExportDocument(
-                documentId, fullMarkdown, "full-first-hash", "새 문답\n");
+                documentId, fullMarkdown, "full-first-hash", "새 문답\n", DELTA_BLOCKS);
 
         verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-first-hash"),
@@ -808,13 +814,14 @@ class DocumentServiceBlocksTest {
                 Headers.of(), "test-bucket", "us-east-1", sourceUri,
                 new ByteArrayInputStream(fullMarkdown.getBytes(StandardCharsets.UTF_8))));
 
-        documentService.regenerateChatExportDocument(documentId, fullMarkdown, "full-hash", "delta\n");
+        documentService.regenerateChatExportDocument(
+                documentId, fullMarkdown, "full-hash", "delta\n", DELTA_BLOCKS);
 
         verify(minioClient).getObject(any());
         verify(minioClient, never()).putObject(any(PutObjectArgs.class));
         verify(editStateInitializer, never()).initializeIfNeeded(any());
         verify(ingestOperationStarter, never()).start(anyString(), anyString(), anyString());
-        verify(ingestCommandOutbox, never()).enqueue(any(), any(), any(), any(), any(), any(), anyBoolean(), any(), anyLong(), any());
+        verify(ingestCommandOutbox, never()).enqueue(any(), any(), any(), any(), any(), any(), any(), anyBoolean(), any(), anyLong(), any());
         verify(postgresDocumentEditStore, never()).save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
                 anyString(), any());
@@ -839,13 +846,14 @@ class DocumentServiceBlocksTest {
                 new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
         when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, documentId)).thenReturn("op_retry");
 
-        documentService.regenerateChatExportDocument(documentId, fullMarkdown, "full-hash", "delta\n");
+        documentService.regenerateChatExportDocument(
+                documentId, fullMarkdown, "full-hash", "delta\n", DELTA_BLOCKS);
 
         verify(minioClient).getObject(any());
         verify(minioClient).putObject(any(PutObjectArgs.class));
         verify(ingestOperationStarter).start(WORKSPACE_ID, USER_ID, documentId);
         verify(ingestCommandOutbox).enqueue(
-                anyString(), eq(documentId), eq(USER_ID), eq(WORKSPACE_ID), any(), any(), eq(true),
+                anyString(), eq(documentId), eq(USER_ID), eq(WORKSPACE_ID), any(), any(), any(), eq(true),
                 eq("op_retry"), eq(1L), eq("full-hash"));
         verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-hash"),
@@ -876,7 +884,8 @@ class DocumentServiceBlocksTest {
                 .thenThrow(new DuplicateKeyException("transient unique race"))
                 .thenReturn(result);
 
-        documentService.regenerateChatExportDocument(documentId, fullMarkdown, "full-hash", "delta\n");
+        documentService.regenerateChatExportDocument(
+                documentId, fullMarkdown, "full-hash", "delta\n", DELTA_BLOCKS);
 
         verify(transactionManager, times(2)).getTransaction(any());
         verify(transactionManager).rollback(any());
@@ -886,7 +895,7 @@ class DocumentServiceBlocksTest {
                 eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-hash"),
                 eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), isNull());
         verify(ingestCommandOutbox, times(2)).enqueue(
-                anyString(), eq(documentId), eq(USER_ID), eq(WORKSPACE_ID), any(), any(), eq(true),
+                anyString(), eq(documentId), eq(USER_ID), eq(WORKSPACE_ID), any(), any(), any(), eq(true),
                 eq("op_retry"), anyLong(), eq("full-hash"));
     }
 
@@ -911,7 +920,8 @@ class DocumentServiceBlocksTest {
                 .thenThrow(new DocumentVersionConflictException("CAS conflict"));
 
         assertThatThrownBy(() -> documentService.regenerateChatExportDocument(
-                documentId, fullMarkdown, "full-hash", "delta\n"))
+                documentId, fullMarkdown, "full-hash", "delta\n",
+                DELTA_BLOCKS))
                 .isInstanceOf(DocumentVersionConflictException.class);
 
         verify(transactionManager).getTransaction(any());
@@ -944,7 +954,7 @@ class DocumentServiceBlocksTest {
         TransactionSynchronizationManager.initSynchronization();
         try {
             assertThatThrownBy(() -> documentService.regenerateChatExportDocument(
-                    documentId, "새 본문\n", "new-hash", "새 본문\n"))
+                    documentId, "새 본문\n", "new-hash", "새 본문\n", DELTA_BLOCKS))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessage("queue failure");
             TransactionSynchronizationManager.getSynchronizations().forEach(
@@ -955,7 +965,7 @@ class DocumentServiceBlocksTest {
 
         verify(minioClient, times(2)).putObject(any(PutObjectArgs.class));
         verify(ingestOperationStarter).start(WORKSPACE_ID, USER_ID, documentId);
-        verify(ingestCommandOutbox, never()).enqueue(any(), any(), any(), any(), any(), any(), anyBoolean(), any(), anyLong(), any());
+        verify(ingestCommandOutbox, never()).enqueue(any(), any(), any(), any(), any(), any(), any(), anyBoolean(), any(), anyLong(), any());
         verify(postgresDocumentEditStore, never()).save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
                 anyString(), any());
@@ -1426,7 +1436,59 @@ class DocumentServiceBlocksTest {
         verify(documentRepository).findByIdAndWorkspaceIdForUpdate(document.getId(), WORKSPACE_ID);
         verify(ingestCommandOutbox).enqueue(
                 eq(response.runId()), eq(document.getId()), eq(USER_ID), eq(WORKSPACE_ID),
-                any(), any(), eq(false), eq("op_ingest_1"), anyLong(), any());
+                any(), any(), any(), eq(false), eq("op_ingest_1"), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("채팅 export 문서는 본문 저장을 거절한다(문답 provenance 보호)")
+    void saveContent_chatExport_isRejected() {
+        stubOwnedWorkspace();
+        Document chatDoc = new Document(
+                "chatdoc_ro", WORKSPACE_ID, USER_ID, "대화.md", "text/markdown", 4,
+                "sources/documents/chatdoc_ro/original", "chat-hash", "chat_export");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(chatDoc.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(chatDoc));
+
+        assertThatThrownBy(() -> documentService.saveContent(
+                WORKSPACE_ID, USER_ID, chatDoc.getId(), "# 변경\n", 1L, "write_1", "user"))
+                .isInstanceOf(InvalidMarkdownContentException.class)
+                .hasMessageContaining("편집할 수 없습니다");
+        // 잠금 조회조차 가지 않는다.
+        verify(editLockService, never()).requireWritable(anyString(), anyString());
+        verify(postgresDocumentEditStore, never()).save(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString(), any());
+    }
+
+    @Test
+    @DisplayName("채팅 export 문서는 일반 재처리를 거절한다(재-export 경로만 사용)")
+    void ingest_chatExport_isRejected() {
+        stubOwnedWorkspace();
+        Document chatDoc = new Document(
+                "chatdoc_ro2", WORKSPACE_ID, USER_ID, "대화.md", "text/markdown", 4,
+                "sources/documents/chatdoc_ro2/original", "chat-hash", "chat_export");
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(chatDoc.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(chatDoc));
+
+        assertThatThrownBy(() -> documentService.ingest(WORKSPACE_ID, USER_ID, chatDoc.getId()))
+                .isInstanceOf(InvalidMarkdownContentException.class)
+                .hasMessageContaining("재-export");
+        verify(ingestCommandOutbox, never()).enqueue(
+                any(), any(), any(), any(), any(), any(), any(), anyBoolean(), any(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("채팅 export 문서는 목록·상세에서 editable=false다")
+    void chatExportDocument_isNotEditable() {
+        Document chatDoc = new Document(
+                "chatdoc_ro3", WORKSPACE_ID, USER_ID, "대화.md", "text/markdown", 4,
+                "sources/documents/chatdoc_ro3/original", "chat-hash", "chat_export");
+        Document uploaded = new Document(
+                "doc_md", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_md/original", "hash");
+
+        assertThat(DocumentItemAssembler.isEditable(chatDoc, true)).isFalse();
+        assertThat(DocumentItemAssembler.isEditable(uploaded, true)).isTrue();
     }
 
     @Test
@@ -1896,7 +1958,7 @@ class DocumentServiceBlocksTest {
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<String> runId = ArgumentCaptor.forClass(String.class);
         verify(ingestCommandOutbox).enqueue(runId.capture(), eq("chatdoc_1"), eq(USER_ID), eq(WORKSPACE_ID),
-                eq("full"), any(), chatWiki.capture(), eq("op_ingest_1"), anyLong(), any());
+                eq("full"), any(), any(), chatWiki.capture(), eq("op_ingest_1"), anyLong(), any());
         assertThat(chatWiki.getValue()).isTrue();
         assertThat(chatDoc.getPipelineRunId()).isEqualTo(runId.getValue());
     }
@@ -1910,7 +1972,7 @@ class DocumentServiceBlocksTest {
         documentService.enqueueIngest(doc);
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
-        verify(ingestCommandOutbox).enqueue(anyString(), any(), any(), any(), any(), any(),
+        verify(ingestCommandOutbox).enqueue(anyString(), any(), any(), any(), any(), any(), any(),
                 chatWiki.capture(), any(), anyLong(), any());
         assertThat(chatWiki.getValue()).isFalse();
     }

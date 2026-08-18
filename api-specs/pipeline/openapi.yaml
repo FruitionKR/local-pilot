@@ -564,6 +564,24 @@ components:
       - persist
       title: AgentTurnRouteResponse
       type: object
+    ChatSourceBlockIn:
+      description: 채팅 문답 1쌍. block_id는 `session_id:pair_id` provenance이고 text에는 그 id가 들어가지 않는다.
+      properties:
+        block_id:
+          description: '`session_id:pair_id` 형식의 문답 provenance. source_blocks.block_id로 그대로 저장됩니다.'
+          minLength: 1
+          title: Block Id
+          type: string
+        text:
+          description: 문답 본문. id를 포함하지 않습니다.
+          minLength: 1
+          title: Text
+          type: string
+      required:
+      - block_id
+      - text
+      title: ChatSourceBlockIn
+      type: object
     ChatWikiRunIn:
       additionalProperties: false
       properties:
@@ -602,12 +620,18 @@ components:
           - type: string
           - type: 'null'
           title: Existing Wiki Dir
+        input_blocks:
+          description: 문답 단위 source block 목록입니다. 파이프라인은 Markdown을 다시 쪼개지 않고 이 목록을 그대로 씁니다.
+          items:
+            $ref: '#/components/schemas/ChatSourceBlockIn'
+          minItems: 1
+          title: Input Blocks
+          type: array
         input_markdown:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: 기존 source page가 있는 full 누적에서 backend가 중복 필터링해 직렬화한 신규 pair Markdown입니다.
+          description: backend가 직렬화한 채팅 Markdown입니다. 문서 제목 추출에만 쓰이며 블록 분할에는 쓰지 않습니다.
+          minLength: 1
           title: Input Markdown
+          type: string
         input_name:
           anyOf:
           - type: string
@@ -726,6 +750,8 @@ components:
       - provider
       - model
       - selection_mode
+      - input_markdown
+      - input_blocks
       title: ChatWikiRunIn
       type: object
     ConversationMessageRequest:

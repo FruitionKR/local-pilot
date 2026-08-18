@@ -173,6 +173,9 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 }
 ```
 
+`title`은 선택이다. 비우거나 생략하면 서버가 `새 채팅`으로 채운다. 세션 제목은 이 세션을 위키화한 문서의
+이름이 되므로 비워 두지 않는다 — 비면 문서 이름에 세션 ID가 새어 나간다.
+
 #### 5. Response body
 
 - HTTP `201`: 생성 성공
@@ -546,6 +549,16 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 
 세션(full) 또는 선택 문답(partial)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 위키 생성은 파이프라인이 비동기로 수행합니다.
 
+저장되는 Markdown 본문에는 `session_id`·`pair_id`가 들어가지 않는다. 원본을 특정하는 provenance는 파이프라인
+command의 문답 단위 source block(`block_id = session_id:pair_id`)으로만 전달한다. 그래서 이 문서는 사용자에게
+그대로 보여줄 수 있다.
+
+문서 이름은 세션 제목을 그대로 쓴다(`<세션 제목>.md`). 세션 ID는 본문에도 이름에도 넣지 않는다.
+
+만들어진 `chat_export` 문서는 문서 목록에 보이지만 **읽기 전용**이다(`editable: false`). 본문을 사람이 고치면
+문답 경계를 다시 알아낼 수 없어 provenance가 끊기므로, 편집 잠금·본문 저장·버전 복원·재처리를 모두 거절한다.
+재처리는 이 API로 다시 export하는 경로만 쓴다.
+
 #### 3. Auth 필요 여부
 
 - 필요
@@ -644,6 +657,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
 #### 2. 목적
 
 세션을 llmPipeline 입력용 Markdown으로 직렬화해 결과만 반환합니다. 저장/파이프라인 호출은 하지 않습니다.
+export와 같은 본문이라 `session_id`·`pair_id`는 포함되지 않는다.
 
 #### 3. Auth 필요 여부
 

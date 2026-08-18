@@ -6,6 +6,10 @@
 
 - API 수: 9
 
+채팅 Wiki page화로 만들어진 `chat_export` 문서는 읽기 전용이다(`editable: false`). 편집 잠금 획득·본문 저장·
+재처리는 400 `INVALID_MARKDOWN_CONTENT`로 거절한다. 본문을 고치면 문답 provenance가 끊기기 때문이며, 재처리는
+`POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki`로만 한다.
+
 ## API 목차
 
 | API | 목적 |

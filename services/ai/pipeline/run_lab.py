@@ -551,13 +551,19 @@ def _extract_pipeline_source(
     log: PipelineLog,
 ) -> tuple[SourceDocument, list[SourceBlock], list[dict[str, str]]]:
     extractor = MarkdownBlockExtractor()
-    preserve_prefixed_refs = bool(getattr(args, "selection_mode", None))
-    if input_text is not None:
+    if getattr(args, "input_blocks", None):
+        # 채팅 경로: 문답 경계와 provenance를 backend가 확정해 보내므로 Markdown을 다시 쪼개지 않는다.
+        document, blocks = extractor.blocks_from_records(
+            args.input_blocks,
+            text=input_text or "",
+            source_path=input_source_name,
+            fallback_title=Path(input_source_name).stem,
+        )
+    elif input_text is not None:
         document, blocks = extractor.extract_text(
             input_text,
             source_path=input_source_name,
             fallback_title=Path(input_source_name).stem,
-            preserve_prefixed_refs=preserve_prefixed_refs,
         )
     else:
         document, blocks = extractor.extract(input_path)

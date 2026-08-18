@@ -89,13 +89,30 @@ class ReingestRunIn(_PipelineRunBase):
     system_prompt: str = DOCUMENT_SEMANTIC_PROMPT
 
 
+class ChatSourceBlockIn(BaseModel):
+    """채팅 문답 1쌍. block_id는 `session_id:pair_id` provenance이고 text에는 그 id가 들어가지 않는다."""
+
+    block_id: str = Field(
+        min_length=1,
+        description="`session_id:pair_id` 형식의 문답 provenance. source_blocks.block_id로 그대로 저장됩니다.",
+    )
+    text: str = Field(
+        min_length=1,
+        description="문답 본문. id를 포함하지 않습니다.",
+    )
+
+
 class ChatWikiRunIn(_PipelineRunBase):
     selection_mode: Literal["full", "partial"] = Field(
         description="full은 기존 chat source page에 누적하고, partial은 독립 source page를 생성합니다.",
     )
-    input_markdown: str | None = Field(
-        default=None,
-        description="기존 source page가 있는 full 누적에서 backend가 중복 필터링해 직렬화한 신규 pair Markdown입니다.",
+    input_markdown: str = Field(
+        min_length=1,
+        description="backend가 직렬화한 채팅 Markdown입니다. 문서 제목 추출에만 쓰이며 블록 분할에는 쓰지 않습니다.",
+    )
+    input_blocks: list[ChatSourceBlockIn] = Field(
+        min_length=1,
+        description="문답 단위 source block 목록입니다. 파이프라인은 Markdown을 다시 쪼개지 않고 이 목록을 그대로 씁니다.",
     )
     chat_system_prompt: str = CHAT_SEMANTIC_PROMPT
     chat_append_system_prompt: str = CHAT_APPEND_SEMANTIC_PROMPT

@@ -69,11 +69,21 @@ class ChatWikiExportServiceTest {
         );
     }
 
-    private ArgumentCaptor<String> stubDocumentCreation() {
-        ArgumentCaptor<String> markdown = ArgumentCaptor.forClass(String.class);
-        when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), markdown.capture(), anyString(), anyString()))
+    @SuppressWarnings("unchecked")
+    private ArgumentCaptor<List<DocumentService.PipelineSourceBlock>> blockCaptor() {
+        return ArgumentCaptor.forClass((Class<List<DocumentService.PipelineSourceBlock>>) (Class<?>) List.class);
+    }
+
+    private List<String> blockIds(List<DocumentService.PipelineSourceBlock> blocks) {
+        return blocks.stream().map(DocumentService.PipelineSourceBlock::blockId).toList();
+    }
+
+    private ArgumentCaptor<List<DocumentService.PipelineSourceBlock>> stubDocumentCreation() {
+        ArgumentCaptor<List<DocumentService.PipelineSourceBlock>> blocks = blockCaptor();
+        when(documentService.createChatExportDocument(
+                eq(WS), eq(USER), anyString(), anyString(), anyString(), anyString(), blocks.capture()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_1", false));
-        return markdown;
+        return blocks;
     }
 
     @Test
@@ -82,14 +92,32 @@ class ChatWikiExportServiceTest {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
         when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
-        ArgumentCaptor<String> markdown = stubDocumentCreation();
+        ArgumentCaptor<List<DocumentService.PipelineSourceBlock>> blocks = stubDocumentCreation();
 
         ChatWikiExportResponse response = service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));
 
         assertThat(response.status()).isEqualTo("processing");
         assertThat(response.exportDocumentId()).isEqualTo("chatdoc_1");
-        assertThat(markdown.getValue()).contains("[session_1:p1]").contains("[session_1:p2]");
+        assertThat(blockIds(blocks.getValue())).containsExactly("session_1:p1", "session_1:p2");
         verify(chatSessionRepository).save(s);
+    }
+
+    @Test
+    @DisplayName("제목 없이 저장된 예전 세션도 문서명에 세션 ID를 넣지 않는다")
+    void legacyUntitledSessionDoesNotLeakSessionIdIntoFilename() {
+        // 기본 제목이 생기기 전에 저장된 세션 상태를 재현한다(생성자는 이제 빈 제목을 채운다).
+        ChatSession s = new ChatSession(SESSION, WS, USER, "제목");
+        org.springframework.test.util.ReflectionTestUtils.setField(s, "title", null);
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
+        ArgumentCaptor<String> filename = ArgumentCaptor.forClass(String.class);
+        when(documentService.createChatExportDocument(
+                eq(WS), eq(USER), filename.capture(), anyString(), anyString(), anyString(), any()))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_1", false));
+
+        service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));
+
+        assertThat(filename.getValue()).isEqualTo("새 채팅.md").doesNotContain(SESSION);
     }
 
     @Test
@@ -98,11 +126,11 @@ class ChatWikiExportServiceTest {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
         when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
-        ArgumentCaptor<String> markdown = stubDocumentCreation();
+        ArgumentCaptor<List<DocumentService.PipelineSourceBlock>> blocks = stubDocumentCreation();
 
         service.export(WS, USER, SESSION, new ChatWikiExportRequest("partial", List.of("p1")));
 
-        assertThat(markdown.getValue()).contains("[session_1:p1]").doesNotContain("[session_1:p2]");
+        assertThat(blockIds(blocks.getValue())).containsExactly("session_1:p1");
     }
 
     @Test
@@ -111,7 +139,7 @@ class ChatWikiExportServiceTest {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
         when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
-        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), any()))
+        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_existing", true));
 
         ChatWikiExportResponse response = service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));
@@ -169,16 +197,18 @@ class ChatWikiExportServiceTest {
                 .thenReturn(List.of(u1, a1, u2, a2));
 
         ArgumentCaptor<String> full = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<String> delta = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<List<DocumentService.PipelineSourceBlock>> deltaBlocks = blockCaptor();
 
         ChatWikiExportResponse response = service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));
 
         assertThat(response.status()).isEqualTo("processing");
         assertThat(response.exportDocumentId()).isEqualTo("chatdoc_1");
-        verify(documentService).regenerateChatExportDocument(eq("chatdoc_1"), full.capture(), anyString(), delta.capture());
-        assertThat(full.getValue()).contains("[session_1:p1]").contains("[session_1:p2]");   // 원본은 전체
-        assertThat(delta.getValue()).contains("[session_1:p2]").doesNotContain("[session_1:p1]"); // inline은 delta만
-        verify(documentService, never()).createChatExportDocument(any(), any(), any(), any(), any(), any());
+        verify(documentService).regenerateChatExportDocument(
+                eq("chatdoc_1"), full.capture(), anyString(), anyString(), deltaBlocks.capture());
+        // 원본은 전체 문답이되 본문에는 id가 없다.
+        assertThat(full.getValue()).contains("Q : 질문1").contains("Q : 질문2").doesNotContain("session_1:");
+        // 파이프라인에 보내는 블록은 미편입 문답만.
+        assertThat(blockIds(deltaBlocks.getValue())).containsExactly("session_1:p2");
     }
 
     @Test
@@ -188,7 +218,7 @@ class ChatWikiExportServiceTest {
         s.assignWikiExportDocument("chatdoc_full");   // 기존 full export 문서
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
         when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
-        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), any()))
+        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_partial", false));
 
         service.export(WS, USER, SESSION, new ChatWikiExportRequest("partial", List.of("p1")));
@@ -207,7 +237,8 @@ class ChatWikiExportServiceTest {
         );
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
         when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(messages);
-        when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), anyString(), anyString(), anyString()))
+        when(documentService.createChatExportDocument(
+                eq(WS), eq(USER), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenAnswer(invocation -> new DocumentService.ExportDocumentResult(
                         "chatdoc_" + invocation.<String>getArgument(5), false));
 
@@ -221,7 +252,7 @@ class ChatWikiExportServiceTest {
         ArgumentCaptor<String> hashes = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> modes = ArgumentCaptor.forClass(String.class);
         verify(documentService, times(2)).createChatExportDocument(
-                eq(WS), eq(USER), anyString(), anyString(), hashes.capture(), modes.capture());
+                eq(WS), eq(USER), anyString(), anyString(), hashes.capture(), modes.capture(), any());
         assertThat(hashes.getAllValues()).hasSize(2).containsOnly(hashes.getAllValues().get(0));
         assertThat(modes.getAllValues()).containsExactly("partial", "full");
     }
@@ -232,7 +263,7 @@ class ChatWikiExportServiceTest {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
         when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
-        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), eq("full")))
+        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), eq("full"), any()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_full", false))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_full", true));
 
@@ -244,7 +275,7 @@ class ChatWikiExportServiceTest {
         assertThat(first).isEqualTo(new ChatWikiExportResponse("chatdoc_full", "processing"));
         assertThat(replay).isEqualTo(new ChatWikiExportResponse("chatdoc_full", "skipped"));
         verify(documentService, times(2)).createChatExportDocument(
-                eq(WS), eq(USER), anyString(), anyString(), anyString(), eq("full"));
+                eq(WS), eq(USER), anyString(), anyString(), anyString(), eq("full"), any());
     }
 
     @Test
@@ -255,7 +286,7 @@ class ChatWikiExportServiceTest {
         s.assignWikiExportDocument("chatdoc_full");
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
         when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
-        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), eq("partial")))
+        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), eq("partial"), any()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_partial", false));
 
         ChatWikiExportResponse partial = service.export(
@@ -266,9 +297,9 @@ class ChatWikiExportServiceTest {
         assertThat(partial.exportDocumentId()).isEqualTo("chatdoc_partial");
         assertThat(full.exportDocumentId()).isEqualTo("chatdoc_full");
         verify(documentService).regenerateChatExportDocument(
-                eq("chatdoc_full"), anyString(), anyString(), anyString());
+                eq("chatdoc_full"), anyString(), anyString(), anyString(), any());
         verify(documentService, never()).createChatExportDocument(
-                any(), any(), any(), any(), any(), eq("full"));
+                any(), any(), any(), any(), any(), eq("full"), any());
     }
 
     @Test
@@ -287,21 +318,23 @@ class ChatWikiExportServiceTest {
         when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION))
                 .thenReturn(firstFull)
                 .thenReturn(firstFull);
-        when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), anyString(), anyString(), eq("partial")))
+        when(documentService.createChatExportDocument(
+                eq(WS), eq(USER), anyString(), anyString(), anyString(), eq("partial"), any()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_partial", false));
-        when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), anyString(), anyString(), eq("full")))
+        when(documentService.createChatExportDocument(
+                eq(WS), eq(USER), anyString(), anyString(), anyString(), eq("full"), any()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_full", false));
 
         service.export(WS, USER, SESSION, new ChatWikiExportRequest("partial", List.of("a", "c")));
         service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));
 
-        ArgumentCaptor<String> createdMarkdown = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<List<DocumentService.PipelineSourceBlock>> createdBlocks = blockCaptor();
         verify(documentService, times(2)).createChatExportDocument(
-                eq(WS), eq(USER), anyString(), createdMarkdown.capture(), anyString(), anyString());
-        assertThat(createdMarkdown.getAllValues().get(0)).contains("[session_1:a]", "[session_1:c]")
-                .doesNotContain("[session_1:b]");
-        assertThat(createdMarkdown.getAllValues().get(1)).contains("[session_1:a]", "[session_1:b]", "[session_1:c]")
-                .doesNotContain("[session_1:e]");
+                eq(WS), eq(USER), anyString(), anyString(), anyString(), anyString(), createdBlocks.capture());
+        assertThat(blockIds(createdBlocks.getAllValues().get(0)))
+                .containsExactly("session_1:a", "session_1:c");
+        assertThat(blockIds(createdBlocks.getAllValues().get(1)))
+                .containsExactly("session_1:a", "session_1:b", "session_1:c");
 
         firstFull.forEach(message -> message.markIngested("wiki_1"));
         s.linkWikiPage("wiki_1");
@@ -311,13 +344,12 @@ class ChatWikiExportServiceTest {
         List<ChatMessage> afterNewPair = List.of(a, aAnswer, b, bAnswer, c, cAnswer, e, eAnswer);
         when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(afterNewPair);
 
-        ArgumentCaptor<String> delta = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<List<DocumentService.PipelineSourceBlock>> deltaBlocks = blockCaptor();
         service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));
 
-        verify(documentService).regenerateChatExportDocument(eq("chatdoc_full"), anyString(), anyString(), delta.capture());
-        assertThat(delta.getValue()).contains("[session_1:e]Q : 질문E\nA : 답변E")
-                .doesNotContain("[session_1:a]")
-                .doesNotContain("[session_1:b]")
-                .doesNotContain("[session_1:c]");
+        verify(documentService).regenerateChatExportDocument(
+                eq("chatdoc_full"), anyString(), anyString(), anyString(), deltaBlocks.capture());
+        assertThat(blockIds(deltaBlocks.getValue())).containsExactly("session_1:e");
+        assertThat(deltaBlocks.getValue().get(0).text()).isEqualTo("Q : 질문E\nA : 답변E");
     }
 }
