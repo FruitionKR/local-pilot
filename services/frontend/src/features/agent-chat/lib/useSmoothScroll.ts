@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useUserPreferences } from "@/entities/user";
 
-const SCROLL_DURATION_MS = 1100;
+const SCROLL_DURATION_MS = 320;
 
 /**
  * 스크롤 컨테이너에 cubic-ease 애니메이션 스크롤을 제공하는 훅.
@@ -11,12 +11,18 @@ export function useSmoothScroll(containerRef: React.RefObject<HTMLDivElement | n
   const { reduceMotion } = useUserPreferences();
   const animationRef = useRef<number | null>(null);
 
+  const cancelScroll = useCallback(() => {
+    if (animationRef.current === null) return;
+    window.cancelAnimationFrame(animationRef.current);
+    animationRef.current = null;
+  }, []);
+
   const scrollToPosition = useCallback((targetTop: number, { immediate = false } = {}) => {
     const container = containerRef.current;
     if (!container) return;
 
     if (animationRef.current !== null) {
-      window.cancelAnimationFrame(animationRef.current);
+      cancelScroll();
     }
 
     const maxTop = Math.max(container.scrollHeight - container.clientHeight, 0);
@@ -50,14 +56,25 @@ export function useSmoothScroll(containerRef: React.RefObject<HTMLDivElement | n
     }
 
     animationRef.current = window.requestAnimationFrame(animateScroll);
-  }, [containerRef, reduceMotion]);
+  }, [cancelScroll, containerRef, reduceMotion]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    container.addEventListener("wheel", cancelScroll, { passive: true });
+    container.addEventListener("touchstart", cancelScroll, { passive: true });
+    container.addEventListener("pointerdown", cancelScroll, { passive: true });
+    return () => {
+      container.removeEventListener("wheel", cancelScroll);
+      container.removeEventListener("touchstart", cancelScroll);
+      container.removeEventListener("pointerdown", cancelScroll);
+    };
+  }, [cancelScroll, containerRef]);
 
   // 언마운트 시 진행 중인 애니메이션 취소
   useEffect(() => () => {
-    if (animationRef.current !== null) {
-      window.cancelAnimationFrame(animationRef.current);
-    }
-  }, []);
+    cancelScroll();
+  }, [cancelScroll]);
 
   return { scrollToPosition };
 }

@@ -1,23 +1,11 @@
-import { apiFetch, parseErrorResponse, parseJsonOrThrow, ERROR_MESSAGES } from "@/shared/api/client";
+import { apiFetch, parseJsonOrThrow, ERROR_MESSAGES } from "@/shared/api/client";
 import { getSessionContext } from "@/entities/chat/api/chat";
+import type { ChatWikiExportStatus } from "../lib/exportStatus";
 
 export type ChatWikiExportResponse = {
   exportDocumentId: string;
-  status: string;
+  status: ChatWikiExportStatus;
 };
-
-/** 현재 채팅 세션 내용을 위키 문서로 내보내기 전 미리보기 Markdown을 받는다. */
-export async function fetchChatWikiExportPreview(): Promise<string> {
-  const { workspaceId, sessionId } = await getSessionContext();
-  const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions/${encodeURIComponent(sessionId)}/wiki/preview`,
-    { method: "POST" }
-  );
-  if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.wikiExportFailed));
-  }
-  return response.text();
-}
 
 /**
  * 미리보기를 수락하면 채팅 내용을 위키 문서로 내보낸다.
