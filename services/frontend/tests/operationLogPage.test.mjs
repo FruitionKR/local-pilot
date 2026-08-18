@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   appendLogPage,
   collectRestoredOperationIds,
+  formatOperationLogDescription,
+  groupOperationLogsByDate,
   pickSelectedOperationId
 } from "../src/entities/operation-log/model/operationLogPage.ts";
 import { OPERATION_TYPE_LABELS } from "../src/entities/operation-log/model/operationType.ts";
@@ -67,11 +69,37 @@ test("restore 로그에서 이미 롤백한 원본 작업 ID를 수집한다", (
   assert.deepEqual([...restoredIds], ["op-1"]);
 });
 
-test("작업 유형 라벨은 AI Edit·Ingest·Lint·Restore 4종이다", () => {
+test("작업 유형 라벨은 Figma 로그 화면의 한국어 명칭을 쓴다", () => {
   assert.deepEqual(OPERATION_TYPE_LABELS, {
-    document_edit: "AI Edit",
-    ingest: "Ingest",
-    lint: "Lint",
-    restore: "Restore"
+    document_edit: "AI 편집 반영",
+    ingest: "위키 페이지 생성",
+    lint: "위키 다듬기",
+    restore: "롤백"
   });
+});
+
+test("로그를 한국 날짜 기준으로 최신순 그룹에 담는다", () => {
+  const groups = groupOperationLogsByDate([
+    { ...log("op1"), created_at: "2026-08-02T15:30:00Z" },
+    { ...log("op2"), created_at: "2026-08-02T14:59:00Z" },
+    { ...log("op3"), created_at: "2026-08-02T12:00:00Z" }
+  ], "Asia/Seoul");
+
+  assert.deepEqual(groups.map((group) => ({
+    key: group.dateKey,
+    label: group.label,
+    ids: group.items.map((item) => item.operation_id)
+  })), [
+    { key: "2026-8-3", label: "8월 3일", ids: ["op1"] },
+    { key: "2026-8-2", label: "8월 2일", ids: ["op2", "op3"] }
+  ]);
+});
+
+test("문서명과 작업 요약을 Figma 보조 문구로 조합한다", () => {
+  assert.equal(
+    formatOperationLogDescription({ summary: "concept page" }, "학습지원 사례집"),
+    "학습지원 사례집 / concept page"
+  );
+  assert.equal(formatOperationLogDescription({ summary: "문서 편집" }), "문서 편집");
+  assert.equal(formatOperationLogDescription({ summary: null }), "상세 정보 없음");
 });

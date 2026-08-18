@@ -79,6 +79,8 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
             WHERE l.workspaceId = :workspaceId
               AND (:type IS NULL OR l.operationType = :type)
               AND (:status IS NULL OR l.status = :status)
+              AND (l.operationType <> :changedSuccessOnlyType
+                   OR (l.status = :successStatus AND l.changedResourceCount > 0))
               AND l.createdAt < :cursor
             ORDER BY l.createdAt DESC
             """)
@@ -87,6 +89,8 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
             @Param("type") OperationType type,
             @Param("status") OperationStatus status,
             @Param("cursor") Instant cursor,
+            @Param("changedSuccessOnlyType") OperationType changedSuccessOnlyType,
+            @Param("successStatus") OperationStatus successStatus,
             Pageable pageable
     );
 

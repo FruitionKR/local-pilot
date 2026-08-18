@@ -13,7 +13,7 @@
 | [`GET /api/ai-models`](#summary-get-api-ai-models) | 선택할 수 있는 provider/model 조합을 반환합니다. API key는 노출하지 않습니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-model-settings`](#summary-get-api-workspaces-workspace-id-ai-model-settings) | ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와 MEMBER 모두 조회할 수 있습니다. |
 | [`PUT /api/workspaces/{workspace_id}/ai-model-settings`](#summary-put-api-workspaces-workspace-id-ai-model-settings) | ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있고, 활성 model catalog에 있는 조합만 허용합니다. |
-| [`GET /api/workspaces/{workspace_id}/ai-operation-logs`](#summary-get-api-workspaces-workspace-id-ai-operation-logs) | 최신순으로 반환합니다. 로그 테이블만 읽으며 diff를 계산하지 않습니다. |
+| [`GET /api/workspaces/{workspace_id}/ai-operation-logs`](#summary-get-api-workspaces-workspace-id-ai-operation-logs) | 최신순으로 반환합니다. 문서 편집은 실제 변경에 성공한 작업만 포함하며, 로그 테이블만 읽고 diff를 계산하지 않습니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}`](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id) | 그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다. |
 | [`POST /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore`](#summary-post-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore) | 복구 대상에 따라 처리 방식이 다릅니다. 문서 편집 복구는 즉시 완료되어 200을 반환하고, Wiki 복구는 queued 상태로 등록되어 202를 반환합니다. 미리보기와 같은 계산을 다시 하고 Wiki에 반영합니다. 받치는 기여가 남지 않은 페이지는 삭제하고, 되돌릴 버전이 그대로 있는 페이지는 그 내용으로 복원하며, 남은 조각을 합쳐야 하는 페이지는 llmPipeline에 재작성을 맡깁니다. 재작성이 있으면 status가 rebuilding으로 돌아오며 결과는 로그 상세로 확인합니다. ingest 되돌리기는 Wiki만 되돌리고 원문 문서는 건드리지 않습니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore-preview`](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore-preview) | 이 작업을 되돌리면 무엇이 삭제·복원·재작성되는지 계산합니다. 지목한 작업과 그 이후 같은 문서의 작업을 전부 걷어내며, 그 과정에서 만들어진 페이지는 삭제됩니다. 문서 편집 복구는 canonical 편집 revision을 확인하며, 응답의 preview_token은 복구 실행에 그대로 전달해야 합니다. |
@@ -364,7 +364,7 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 #### 2. 목적
 
-최신순으로 반환합니다. 로그 테이블만 읽으며 diff를 계산하지 않습니다.
+최신순으로 반환합니다. 문서 편집은 실제 변경에 성공한 작업만 포함하며, 로그 테이블만 읽고 diff를 계산하지 않습니다.
 
 #### 3. Auth 필요 여부
 
