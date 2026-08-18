@@ -4,16 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import {
   fetchOperationLogDetail,
   fetchRestorePreview,
+  formatOperationLogDescription,
   restoreOperation,
   OPERATION_TYPE_LABELS,
   type OperationChange,
   type OperationLogDetail
 } from "@/entities/operation-log";
+import addIcon from "../../../../svg/log/add.svg";
+import deleteIcon from "../../../../svg/log/delete.svg";
 import retryIcon from "../../../../svg/log/retry.svg";
 import { publishNotice } from "@/features/document-notifications";
 import { cx } from "@/shared/lib/classNames";
 import { getErrorMessage } from "@/shared/lib/errors";
-import { formatRelativeTime } from "@/shared/lib/time";
 import { SvgIcon } from "@/shared/ui/SvgIcon";
 import styles from "./LogView.module.css";
 
@@ -45,9 +47,6 @@ function ChangeDiff({ change }: { change: OperationChange }) {
       ) : (
         change.hunks.map((hunk, hunkIndex) => (
           <div key={hunkIndex} className={styles["hunk"]}>
-            <div className={styles["hunk-header"]}>
-              {`@@ -${hunk.old_start},${hunk.old_lines} +${hunk.new_start},${hunk.new_lines} @@`}
-            </div>
             {hunk.lines.map((line, lineIndex) => (
               <div
                 key={lineIndex}
@@ -57,13 +56,16 @@ function ChangeDiff({ change }: { change: OperationChange }) {
                   line.type === "DELETE" && styles["is-delete"]
                 )}
               >
-                <span className={styles["diff-gutter"]}>{line.old_line ?? ""}</span>
-                <span className={styles["diff-gutter"]}>{line.new_line ?? ""}</span>
+                <span className={styles["diff-gutter"]}>
+                  {line.type === "ADD" ? line.new_line : line.old_line ?? line.new_line ?? ""}
+                </span>
                 <span className={styles["diff-content"]}>
-                  {/* CONTEXT 행에도 같은 폭의 부호 칸을 둬야 본문 시작 위치가 어긋나지 않는다. */}
-                  <span className={styles["diff-sign"]} aria-hidden>
-                    {line.type === "ADD" ? "+" : line.type === "DELETE" ? "−" : " "}
-                  </span>
+                  {line.type !== "CONTEXT" && (
+                    <SvgIcon
+                      src={line.type === "ADD" ? addIcon : deleteIcon}
+                      className={styles["diff-icon"]}
+                    />
+                  )}
                   {line.content}
                 </span>
               </div>
@@ -79,10 +81,12 @@ function ChangeDiff({ change }: { change: OperationChange }) {
 export function LogView({
   operationId,
   restoredOperationIds,
+  documentTitles,
   onRestoreComplete
 }: {
   operationId: string | null;
   restoredOperationIds: ReadonlySet<string>;
+  documentTitles: ReadonlyMap<string, string>;
   onRestoreComplete: (operationId: string) => Promise<void>;
 }) {
   const [detail, setDetail] = useState<OperationLogDetail | null>(null);
@@ -117,6 +121,12 @@ export function LogView({
   }, [operationId]);
 
   const statusLabel = detail ? STATUS_LABELS[detail.status] : undefined;
+  const documentTitle = detail?.target_document_id
+    ? documentTitles.get(detail.target_document_id)
+    : undefined;
+  const description = detail
+    ? formatOperationLogDescription(detail, documentTitle)
+    : "";
   const canRestore = detail != null
     && detail.operation_type !== "restore"
     && (detail.status === "succeeded" || detail.status === "partially_succeeded")
@@ -130,9 +140,9 @@ export function LogView({
       const preview = await fetchRestorePreview(detail.operation_id);
       const affectedCount = preview.delete_count + preview.restore_count + preview.rebuild_count;
       const confirmed = window.confirm(
-        affectedCount > 0
-          ? `${affectedCount}개 Wiki 페이지에 영향을 줍니다. 이 작업을 롤백할까요?`
-          : "이 작업을 롤백할까요?"
+        preview.document
+          ? `${description} 문서를 ${preview.document.from_version}에서 ${preview.document.to_version} 버전으로 롤백할까요?`
+          : `${description} 작업을 롤백할까요? ${affectedCount}개 Wiki 페이지에 영향을 줍니다.`
       );
       if (!confirmed) return;
       const result = await restoreOperation(detail.operation_id, preview.preview_token);
@@ -142,7 +152,7 @@ export function LogView({
         title: "롤백 요청 완료",
         message: result.status === "succeeded" ? "작업을 롤백했습니다." : "롤백 작업을 시작했습니다."
       });
-      await onRestoreComplete(result.operation_id);
+      await onRestoreComplete(detail.operation_id);
     } catch (error: unknown) {
       publishNotice({
         kind: "failed",
@@ -177,14 +187,13 @@ export function LogView({
             <header className={styles["card-header"]}>
               <h3># {OPERATION_TYPE_LABELS[detail.operation_type]}</h3>
               <p className={styles["card-description"]}>
-                {detail.summary && <span>{detail.summary}</span>}
-                {statusLabel && (
+                <span>{description}</span>
+                {statusLabel && detail.status !== "succeeded" && (
                   <span className={cx(styles["card-status"], detail.status === "failed" && styles["is-failed"])}>
                     {statusLabel}
                   </span>
                 )}
               </p>
-              <span className={styles["card-time"]}>{formatRelativeTime(detail.created_at)}</span>
               {canRestore && (
                 <button
                   type="button"

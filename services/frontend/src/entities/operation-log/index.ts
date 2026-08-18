@@ -9,8 +9,11 @@ export type { OperationLogQuery } from "./model/operationLogQuery";
 export {
   appendLogPage,
   collectRestoredOperationIds,
+  formatOperationLogDescription,
+  groupOperationLogsByDate,
   pickSelectedOperationId
 } from "./model/operationLogPage";
+export type { OperationLogDateGroup } from "./model/operationLogPage";
 export { OPERATION_TYPE_LABELS } from "./model/operationType";
 export type {
   DiffHunk,

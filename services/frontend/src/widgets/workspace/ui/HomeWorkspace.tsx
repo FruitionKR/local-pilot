@@ -94,6 +94,10 @@ export function HomeWorkspace() {
     apiError,
     refreshBackendData
   } = useBackendData({ setProjects: projectTree.setProjects });
+  const documentTitles = useMemo(
+    () => new Map(documents.map((document) => [document.id, document.filename])),
+    [documents]
+  );
   useEffect(() => {
     refreshRef.current = refreshBackendData;
   }, [refreshBackendData]);
@@ -310,7 +314,7 @@ export function HomeWorkspace() {
           onIngestDocuments: (selected) => void handleGraphIngest(selected),
           onLint: () => void handleGraphLint()
         }}
-        logEntries={operationLogFeed}
+        logEntries={{ ...operationLogFeed, documentTitles }}
         onViewChange={handleViewChange}
         onStartChat={() => {
           // 그래프 채팅은 명시적으로 시작했을 때만 연다. 다른 뷰에서는 홈 채팅으로 이동한다.
@@ -410,6 +414,7 @@ export function HomeWorkspace() {
           <LogView
             operationId={operationLogFeed.selectedOperationId}
             restoredOperationIds={operationLogFeed.restoredOperationIds}
+            documentTitles={documentTitles}
             onRestoreComplete={operationLogFeed.refresh}
           />
         ) : activeView === "settings" ? (
