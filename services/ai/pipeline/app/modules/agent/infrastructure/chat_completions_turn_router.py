@@ -320,9 +320,14 @@ def _promote_grounded_query(
     if request.active_markdown_context is not None or not _requests_grounded_retrieval(request.message):
         return route
     if route.action == "markdown_create":
-        return replace(route, action="workspace_workflow", edit_goal="create_from_chat")
+        return replace(
+            route,
+            action="workspace_workflow",
+            edit_goal="create_from_chat",
+            requires_grounded_retrieval=True,
+        )
     if route.action == "workspace_workflow" and WORKSPACE_MUTATION_PATTERN.search(request.message):
-        return route
+        return replace(route, requires_grounded_retrieval=True)
     if route.action not in {"conversation_reply", "clarify", "workspace_workflow"}:
         return route
     return replace(

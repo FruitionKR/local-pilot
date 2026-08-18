@@ -19,7 +19,7 @@ from app.modules.markdown_edit.domain.markdown_target_scope import apply_markdow
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.application.conversation_context_resolver import conversation_messages_text, update_conversation_summary
 from app.modules.query.application.ports import ConversationSummarizerPort
-from app.modules.query.domain.entities import ConversationContext
+from app.modules.query.domain.entities import ConversationContext, QueryAnswer
 from app.modules.skill.application.author_skill import AuthorSkillUseCase
 from app.modules.skill.application.select_skill import PreparedSkillSelection, SelectSkillUseCase
 from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
@@ -252,17 +252,32 @@ class HandleAgentTurnUseCase:
             )
             content = None
             if route.action == "workspace_workflow" and route.edit_goal == "create_from_chat":
+                reference_context = dict(
+                    request.conversation_context.reference_context
+                    if request.conversation_context
+                    else {}
+                )
+                if route.requires_grounded_retrieval:
+                    grounded_answer = self._answer_query(request)
+                    reference_context["grounded_query"] = {
+                        "answer": grounded_answer.answer.content,
+                        "evidence_snippets": [
+                            {
+                                "rank": snippet.rank,
+                                "source_document_id": snippet.source_document_id,
+                                "source_block_ids": snippet.source_block_ids,
+                                "text": snippet.text,
+                            }
+                            for snippet in grounded_answer.evidence_snippets
+                        ],
+                    }
                 creation_markdown = self._markdown_create_use_case.execute(
                     MarkdownCreateRequest(
                         instruction=request.message,
                         workspace_id=request.workspace_id,
                         user_id=request.user_id,
                         conversation_summary=_conversation_context_text(request),
-                        reference_context=(
-                            request.conversation_context.reference_context
-                            if request.conversation_context
-                            else {}
-                        ),
+                        reference_context=reference_context,
                         skill_instructions=_skill_instructions(selected_skill),
                         output_language=request.output_language,
                     )
@@ -388,6 +403,10 @@ class HandleAgentTurnUseCase:
                 message=self._conversation_replier.reply(request),
             )
 
+        answer = self._answer_query(request)
+        return AgentTurnResult(action="chat_answer", route=route, query_answer=answer)
+
+    def _answer_query(self, request: AgentTurnRequest) -> QueryAnswer:
         query_kwargs: dict[str, object] = {
             "workspace_id": request.workspace_id or "",
             "user_id": request.user_id,
@@ -404,8 +423,7 @@ class HandleAgentTurnUseCase:
             if request.allow_web_search is True and self._web_search_query_use_case_factory is not None
             else self._query_use_case
         )
-        answer = query_use_case.execute(request.message, **query_kwargs)
-        return AgentTurnResult(action="chat_answer", route=route, query_answer=answer)
+        return query_use_case.execute(request.message, **query_kwargs)
 
     def _handle_pending_skill(
         self,

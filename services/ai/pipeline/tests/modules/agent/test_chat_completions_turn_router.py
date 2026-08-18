@@ -329,6 +329,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
         self.assertEqual(route.action, "workspace_workflow")
         self.assertEqual(route.edit_goal, "create_from_chat")
+        self.assertTrue(route.requires_grounded_retrieval)
 
     def test_promotes_persistent_markdown_edit_to_workspace_workflow(self) -> None:
         client = SequenceJsonClient([route_response("markdown_edit")])

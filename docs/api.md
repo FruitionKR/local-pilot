@@ -10723,6 +10723,9 @@ Handle Agent Turn
 라우터는 이를 멀티턴 연속성 힌트로만 사용하며 현재 요청의 명시적 의도를 우선한다.
 응답 action은 내부 문서 근거 조회인 `chat_answer`, 대화 맥락만으로 작성·형식을 이어가는
 `conversation_reply`, 열린 Markdown을 변경하는 `markdown_edit`를 구분한다.
+내부 문서 근거 조회와 새 문서 저장을 함께 요청하면 Query 파이프라인이 먼저 평가한 답변과
+evidence snippet을 Markdown 생성 입력에 포함하고, 생성 결과를 `workspace_workflow` 승인 계획의
+`create_document` 아티팩트로 전달한다.
 
 #### 5. Response body
 

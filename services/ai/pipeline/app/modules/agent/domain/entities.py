@@ -98,6 +98,7 @@ class AgentTurnRoute:
     edit_goal: str | None = None
     selected_skill_id: str | None = None
     skill_candidates: tuple[str, ...] = ()
+    requires_grounded_retrieval: bool = False
 
 
 @dataclass(frozen=True)
