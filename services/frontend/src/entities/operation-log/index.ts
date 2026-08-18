@@ -1,4 +1,17 @@
-export { fetchOperationLogs, fetchOperationLogDetail } from "./api/operationLog";
+export {
+  fetchOperationLogs,
+  fetchOperationLogDetail,
+  fetchRestorePreview,
+  restoreOperation
+} from "./api/operationLog";
+export { buildOperationLogQuery } from "./model/operationLogQuery";
+export type { OperationLogQuery } from "./model/operationLogQuery";
+export {
+  appendLogPage,
+  collectRestoredOperationIds,
+  pickSelectedOperationId
+} from "./model/operationLogPage";
+export { OPERATION_TYPE_LABELS } from "./model/operationType";
 export type {
   DiffHunk,
   DiffLine,
@@ -6,5 +19,8 @@ export type {
   OperationLogDetail,
   OperationLogItem,
   OperationLogListResponse,
-  OperationType
+  OperationStatus,
+  OperationType,
+  RestoreExecuteResponse,
+  RestorePreviewResponse
 } from "./model/types";

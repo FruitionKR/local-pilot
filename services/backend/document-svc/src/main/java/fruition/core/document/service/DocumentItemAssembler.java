@@ -74,6 +74,9 @@ public class DocumentItemAssembler {
     static DocumentProcessingState resolveProcessingState(Document doc) {
         if (doc.getStatus() == DocumentStatus.completed) return DocumentProcessingState.completed;
         if (doc.getStatus() == DocumentStatus.failed) return DocumentProcessingState.failed;
+        // 업로드만 되고 ingest가 시작되지 않은 문서는 진행 상태가 없다. starting으로 내려보내면
+        // 아직 시작도 안 한 문서가 "처리 중"으로 보인다.
+        if (doc.getStatus() == DocumentStatus.uploaded && doc.getPipelineRunId() == null) return null;
         if (doc.getPipelineRunId() == null) return DocumentProcessingState.starting;
         if (doc.getProcessingUpdatedAt() == null) return DocumentProcessingState.starting;
         boolean stalled = doc.getProcessingUpdatedAt()

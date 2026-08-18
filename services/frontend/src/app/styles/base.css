@@ -57,12 +57,17 @@ html[data-reduce-motion="true"] *::after {
   transition-duration: 0.01ms !important;
 }
 
+/* 모든 아이콘 공통 동작. 호출부가 className을 넘겨도 유지된다 */
 .svg-icon {
   display: block;
   flex: 0 0 auto;
+  object-fit: contain;
+}
+
+/* 호출부가 크기를 지정하지 않는 아이콘은 부모 박스를 채운다 */
+.svg-icon-fill {
   width: 100%;
   height: 100%;
-  object-fit: contain;
 }
 
 /* 패널 공통 스크롤바 */

@@ -15,7 +15,6 @@ export function Graph({
   rawDocumentCount,
   focusedNodeId,
   onOpenNodePreview,
-  onRestoreAgentPanel,
   loading = false,
   errorMessage = null
 }: {
@@ -24,7 +23,6 @@ export function Graph({
   rawDocumentCount: number;
   focusedNodeId: string | null;
   onOpenNodePreview: (node: GraphNode) => void;
-  onRestoreAgentPanel?: () => void;
   loading?: boolean;
   errorMessage?: string | null;
 }) {
@@ -63,7 +61,6 @@ export function Graph({
         conceptNodeCount={conceptNodeCount}
         visibleKinds={visibleKinds}
         onToggleKind={toggleKind}
-        onRestoreAgentPanel={onRestoreAgentPanel}
       />
       <GraphCanvas
         nodes={visibleNodes}

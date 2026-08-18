@@ -91,6 +91,21 @@ jobs:
       - name: Run user preference tests
         run: npm run test:user-preferences
 
+      - name: Run workspace layout tests
+        run: npm run test:workspace-layout
+
+      - name: Run active Wiki work tests
+        run: npm run test:active-wiki-work
+
+      - name: Run Wiki reflect tests
+        run: npm run test:wiki-reflect
+
+      - name: Run operation log query tests
+        run: npm run test:operation-log-query
+
+      - name: Run operation log page tests
+        run: npm run test:operation-log-page
+
   pipeline:
     name: llmPipeline (pytest)
     runs-on: ubuntu-latest

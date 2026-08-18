@@ -1,13 +1,24 @@
 import { cx } from "@/shared/lib/classNames";
 import type { RailView } from "@/widgets/rail-navigation/ui/RailNavigation";
-import { homeIcon, menuArchiveIcon, menuSearchIcon, plusIcon, shareIcon, SvgIcon, type SvgAsset } from "@/shared/ui/SvgIcon";
+import {
+  collectionIcon,
+  graphSelectIcon,
+  homeIcon,
+  homeSelectIcon,
+  logSelectIcon,
+  menuSearchIcon,
+  folderPlusIcon,
+  shareIcon,
+  SvgIcon,
+  type SvgAsset
+} from "@/shared/ui/SvgIcon";
 import styles from "./DocumentSidebar.module.css";
 
-// Figma 747:5861 — 좌측 홈/그래프/로그(Archive)/검색, 우측 +
-const menuItems: { id: RailView; label: string; icon: SvgAsset }[] = [
-  { id: "home", label: "홈", icon: homeIcon },
-  { id: "graph", label: "그래프", icon: shareIcon },
-  { id: "logs", label: "로그", icon: menuArchiveIcon }
+// Figma 747:5861 — 좌측 홈/그래프/로그/검색, 우측 새 폴더. 활성 항목은 select 아이콘으로 렌더한다.
+const menuItems: { id: RailView; label: string; icon: SvgAsset; selectIcon: SvgAsset }[] = [
+  { id: "home", label: "홈", icon: homeIcon, selectIcon: homeSelectIcon },
+  { id: "graph", label: "그래프", icon: shareIcon, selectIcon: graphSelectIcon },
+  { id: "logs", label: "로그", icon: collectionIcon, selectIcon: logSelectIcon }
 ];
 
 /** 사이드바 가로 아이콘 메뉴 줄. 활성 항목만 라벨이 있는 pill로 표시한다. */
@@ -38,7 +49,10 @@ export function SidebarMenuRow({
             onViewChange(item.id);
           }}
         >
-          <SvgIcon src={item.icon} className={styles["sidebar-menu-icon"]} />
+          <SvgIcon
+            src={activeView === item.id ? item.selectIcon : item.icon}
+            className={styles["sidebar-menu-icon"]}
+          />
           {activeView === item.id && <span>{item.label}</span>}
         </button>
       ))}
@@ -63,7 +77,7 @@ export function SidebarMenuRow({
           onAddProject();
         }}
       >
-        <SvgIcon src={plusIcon} className={styles["sidebar-menu-icon"]} />
+        <SvgIcon src={folderPlusIcon} className={styles["sidebar-menu-icon"]} />
       </button>
     </nav>
   );
