@@ -305,6 +305,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/query/controller/QueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: query`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-chat-sessions-session-id-query)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-chat-sessions-session-id-query-runs"></a>
@@ -419,6 +421,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/query/controller/QueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: createRun`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-chat-sessions-session-id-query-runs)
 
 </details>
 
@@ -703,6 +707,8 @@ curl -X GET "$DOCUMENT/api/query/runs/<value>" \
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/query/controller/QueryRunController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getRun_1`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-query-runs-requestid)
+
 </details>
 
 <a id="summary-get-api-query-runs-requestid-events"></a>
@@ -803,5 +809,7 @@ string
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/query/controller/QueryRunController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: subscribe`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-query-runs-requestid-events)
 
 </details>

@@ -107,6 +107,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/assets
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentAssetController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getContent`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-assets-asset-id-content)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-documents-document-id-edit-lock"></a>
@@ -208,6 +210,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentEditLockController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: acquire`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-documents-document-id-edit-lock)
+
 </details>
 
 <a id="summary-delete-api-workspaces-workspace-id-documents-document-id-edit-lock"></a>
@@ -284,6 +288,8 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/doc
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentEditLockController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: release`)
+
+[↑ 요약으로 돌아가기](#summary-delete-api-workspaces-workspace-id-documents-document-id-edit-lock)
 
 </details>
 
@@ -383,6 +389,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentEditLockController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: heartbeat`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-documents-document-id-edit-lock-heartbeat)
 
 </details>
 
@@ -490,6 +498,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: blocks`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-documents-document-id-blocks)
 
 </details>
 
@@ -638,6 +648,8 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: saveContent`)
 
+[↑ 요약으로 돌아가기](#summary-put-api-workspaces-workspace-id-documents-document-id-content)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-documents-document-id-export"></a>
@@ -728,6 +740,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: export`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-documents-document-id-export)
 
 </details>
 
@@ -820,6 +834,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getOriginal`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-documents-document-id-original)
+
 </details>
 
 <a id="summary-get-internal-documents-document-id-pipeline-source"></a>
@@ -903,5 +919,7 @@ curl -X GET "$DOCUMENT/internal/documents/<value>/pipeline-source" \
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/InternalDocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: findPipelineSource`)
+
+[↑ 요약으로 돌아가기](#summary-get-internal-documents-document-id-pipeline-source)
 
 </details>

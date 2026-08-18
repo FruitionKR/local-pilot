@@ -112,6 +112,8 @@ curl -X POST "$ACCESS/api/auth/email-availability" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: checkEmailAvailability`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-auth-email-availability)
+
 </details>
 
 <a id="summary-post-api-auth-email-verifications"></a>
@@ -223,6 +225,8 @@ curl -X POST "$ACCESS/api/auth/email-verifications" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: requestEmailVerification`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-auth-email-verifications)
+
 </details>
 
 <a id="summary-post-api-auth-email-verifications-verification-id-confirm"></a>
@@ -332,6 +336,8 @@ curl -X POST "$ACCESS/api/auth/email-verifications/<value>/confirm" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: confirmEmailVerification`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-auth-email-verifications-verification-id-confirm)
+
 </details>
 
 <a id="summary-post-api-auth-login"></a>
@@ -437,6 +443,8 @@ curl -X POST "$ACCESS/api/auth/login" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: login`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-auth-login)
+
 </details>
 
 <a id="summary-post-api-auth-logout"></a>
@@ -528,6 +536,8 @@ curl -X POST "$ACCESS/api/auth/logout" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: logout`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-auth-logout)
+
 </details>
 
 <a id="summary-get-api-auth-me"></a>
@@ -617,6 +627,8 @@ curl -X GET "$ACCESS/api/auth/me" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: me`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-auth-me)
 
 </details>
 
@@ -722,6 +734,8 @@ curl -X POST "$ACCESS/api/auth/oauth/exchange" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: exchangeOAuthCode`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-auth-oauth-exchange)
+
 </details>
 
 <a id="summary-post-api-auth-password-reset"></a>
@@ -820,6 +834,8 @@ curl -X POST "$ACCESS/api/auth/password-reset" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: resetPassword`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-auth-password-reset)
 
 </details>
 
@@ -924,6 +940,8 @@ curl -X POST "$ACCESS/api/auth/refresh" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: refresh`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-auth-refresh)
 
 </details>
 
@@ -1038,5 +1056,7 @@ curl -X POST "$ACCESS/api/auth/signup" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: signup`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-auth-signup)
 
 </details>

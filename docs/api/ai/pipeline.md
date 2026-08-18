@@ -151,6 +151,8 @@ curl -X POST "$PIPELINE/chat-wiki/runs" \
 - 진입점: `services/ai/pipeline/app/modules/wiki_ingestion/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: run_chat_wiki_endpoint_chat_wiki_runs_post`)
 
+[↑ 요약으로 돌아가기](#summary-post-chat-wiki-runs)
+
 </details>
 
 <a id="summary-post-pipeline-reingest-runs"></a>
@@ -283,6 +285,8 @@ curl -X POST "$PIPELINE/pipeline/reingest-runs" \
 
 - 진입점: `services/ai/pipeline/app/modules/wiki_ingestion/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: run_reingest_pipeline_endpoint_pipeline_reingest_runs_post`)
+
+[↑ 요약으로 돌아가기](#summary-post-pipeline-reingest-runs)
 
 </details>
 
@@ -417,6 +421,8 @@ curl -X POST "$PIPELINE/pipeline/runs" \
 - 진입점: `services/ai/pipeline/app/modules/wiki_ingestion/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: run_pipeline_endpoint_pipeline_runs_post`)
 
+[↑ 요약으로 돌아가기](#summary-post-pipeline-runs)
+
 </details>
 
 <a id="summary-get-pipeline-runs-run-id"></a>
@@ -522,6 +528,8 @@ curl -X GET "$PIPELINE/pipeline/runs/<value>" \
 - 진입점: `services/ai/pipeline/app/modules/wiki_ingestion/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: get_pipeline_run_pipeline_runs__run_id__get`)
 
+[↑ 요약으로 돌아가기](#summary-get-pipeline-runs-run-id)
+
 </details>
 
 <a id="summary-get-pipeline-runs-run-id-logs"></a>
@@ -624,6 +632,8 @@ string
 
 - 진입점: `services/ai/pipeline/app/modules/wiki_ingestion/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: get_pipeline_logs_pipeline_runs__run_id__logs_get`)
+
+[↑ 요약으로 돌아가기](#summary-get-pipeline-runs-run-id-logs)
 
 </details>
 
@@ -730,6 +740,8 @@ curl -X GET "$PIPELINE/documents/<value>" \
 - 진입점: `services/ai/pipeline/app/modules/wiki_ingestion/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: get_document_documents__document_id__get`)
 
+[↑ 요약으로 돌아가기](#summary-get-documents-document-id)
+
 </details>
 
 <a id="summary-get-health"></a>
@@ -806,5 +818,7 @@ curl -X GET "$PIPELINE/health"
 
 - 진입점: `services/ai/pipeline/app/modules/wiki_ingestion/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: health_health_get`)
+
+[↑ 요약으로 돌아가기](#summary-get-health)
 
 </details>

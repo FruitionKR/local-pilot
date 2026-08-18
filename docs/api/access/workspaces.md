@@ -115,6 +115,8 @@ curl -X GET "$ACCESS/api/workspaces" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: list`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces)
+
 </details>
 
 <a id="summary-post-api-workspaces"></a>
@@ -226,6 +228,8 @@ curl -X POST "$ACCESS/api/workspaces" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: create`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces)
+
 </details>
 
 <a id="summary-get-api-workspaces-trash"></a>
@@ -319,6 +323,8 @@ curl -X GET "$ACCESS/api/workspaces/trash" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: trash`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-trash)
 
 </details>
 
@@ -428,6 +434,8 @@ curl -X PATCH "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: rename`)
 
+[↑ 요약으로 돌아가기](#summary-patch-api-workspaces-workspace-id)
+
 </details>
 
 <a id="summary-delete-api-workspaces-workspace-id"></a>
@@ -535,6 +543,8 @@ curl -X DELETE "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a" \
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: delete`)
+
+[↑ 요약으로 돌아가기](#summary-delete-api-workspaces-workspace-id)
 
 </details>
 
@@ -644,6 +654,8 @@ curl -X POST "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/restore
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: restore`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-restore)
+
 </details>
 
 <a id="summary-get-internal-authz-workspaces-workspace-id-users-user-id"></a>
@@ -729,6 +741,8 @@ curl -X GET "$ACCESS/internal/authz/workspaces/ws_9d47a0e9a6324341b47562553b75f9
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/InternalAuthzController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: role`)
 
+[↑ 요약으로 돌아가기](#summary-get-internal-authz-workspaces-workspace-id-users-user-id)
+
 </details>
 
 <a id="summary-get-internal-users-user-id"></a>
@@ -813,6 +827,8 @@ curl -X GET "$ACCESS/internal/users/<value>" \
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: user`)
 
+[↑ 요약으로 돌아가기](#summary-get-internal-users-user-id)
+
 </details>
 
 <a id="summary-get-internal-workspaces-workspace-id-ai-model-settings"></a>
@@ -896,6 +912,8 @@ curl -X GET "$ACCESS/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/InternalWorkspaceAiModelController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: get`)
+
+[↑ 요약으로 돌아가기](#summary-get-internal-workspaces-workspace-id-ai-model-settings)
 
 </details>
 
@@ -991,5 +1009,7 @@ curl -X PUT "$ACCESS/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-
 
 - 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/InternalWorkspaceAiModelController.java`
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: update`)
+
+[↑ 요약으로 돌아가기](#summary-put-internal-workspaces-workspace-id-ai-model-settings)
 
 </details>

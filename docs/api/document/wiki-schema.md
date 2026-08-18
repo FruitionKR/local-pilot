@@ -154,6 +154,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-s
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikischema/controller/WikiSchemaController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getActive`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-wiki-schema-active)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-wiki-schema-drafts"></a>
@@ -308,6 +310,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikischema/controller/WikiSchemaController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: createDraft`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-wiki-schema-drafts)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-wiki-schema-preview"></a>
@@ -444,6 +448,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikischema/controller/WikiSchemaController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: preview`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-wiki-schema-preview)
 
 </details>
 
@@ -584,5 +590,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikischema/controller/WikiSchemaController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: activate`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-wiki-schema-schema-id-activate)
 
 </details>

@@ -475,6 +475,8 @@ curl -X POST "$PIPELINE/agent/turn" \
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: handle_agent_turn_agent_turn_post`)
 
+[↑ 요약으로 돌아가기](#summary-post-agent-turn)
+
 </details>
 
 <a id="summary-post-internal-agent-runs-artifacts-list"></a>
@@ -606,6 +608,8 @@ curl -X POST "$PIPELINE/internal/agent/runs/artifacts/list" \
 
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: list_agent_artifacts_internal_agent_runs_artifacts_list_post`)
+
+[↑ 요약으로 돌아가기](#summary-post-internal-agent-runs-artifacts-list)
 
 </details>
 
@@ -742,6 +746,8 @@ curl -X POST "$PIPELINE/internal/agent/runs/artifacts/register" \
 
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: register_agent_artifact_internal_agent_runs_artifacts_register_post`)
+
+[↑ 요약으로 돌아가기](#summary-post-internal-agent-runs-artifacts-register)
 
 </details>
 
@@ -880,6 +886,8 @@ curl -X POST "$PIPELINE/internal/agent/runs/artifacts/resolve" \
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: resolve_agent_artifact_internal_agent_runs_artifacts_resolve_post`)
 
+[↑ 요약으로 돌아가기](#summary-post-internal-agent-runs-artifacts-resolve)
+
 </details>
 
 <a id="summary-post-internal-agent-runs-tool-authorizations-execute"></a>
@@ -996,6 +1004,8 @@ curl -X POST "$PIPELINE/internal/agent/runs/tool-authorizations/execute" \
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: authorize_agent_tool_execute_internal_agent_runs_tool_authorizations_execute_post`)
 
+[↑ 요약으로 돌아가기](#summary-post-internal-agent-runs-tool-authorizations-execute)
+
 </details>
 
 <a id="summary-post-internal-agent-runs-tool-authorizations-read"></a>
@@ -1104,6 +1114,8 @@ curl -X POST "$PIPELINE/internal/agent/runs/tool-authorizations/read" \
 
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: authorize_agent_tool_read_internal_agent_runs_tool_authorizations_read_post`)
+
+[↑ 요약으로 돌아가기](#summary-post-internal-agent-runs-tool-authorizations-read)
 
 </details>
 
@@ -1227,5 +1239,7 @@ curl -X GET "$PIPELINE/internal/agent/runs/<value>?workspace_id=<value>&user_id=
 
 - 진입점: `services/ai/pipeline/app/modules/agent_run/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: get_markdown_agent_run_internal_agent_runs__run_id__get`)
+
+[↑ 요약으로 돌아가기](#summary-get-internal-agent-runs-run-id)
 
 </details>

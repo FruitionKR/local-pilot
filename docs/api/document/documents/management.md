@@ -141,6 +141,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: list`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-documents)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-documents"></a>
@@ -272,6 +274,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: upload`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-documents)
 
 </details>
 
@@ -406,6 +410,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: createMarkdown`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-documents-markdown)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-documents-document-id"></a>
@@ -527,6 +533,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getById`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-documents-document-id)
 
 </details>
 
@@ -650,6 +658,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: duplicate`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-documents-document-id-duplicate)
+
 </details>
 
 <a id="summary-patch-api-workspaces-workspace-id-documents-document-id-position"></a>
@@ -770,6 +780,8 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docu
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentPositionController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: move_1`)
+
+[↑ 요약으로 돌아가기](#summary-patch-api-workspaces-workspace-id-documents-document-id-position)
 
 </details>
 
@@ -894,6 +906,8 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docu
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: rename_2`)
 
+[↑ 요약으로 돌아가기](#summary-patch-api-workspaces-workspace-id-documents-document-id-rename)
+
 </details>
 
 <a id="summary-post-internal-workspaces-workspace-id-initial-note"></a>
@@ -978,5 +992,7 @@ curl -X POST "$DOCUMENT/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/InternalDocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: createInitialNote`)
+
+[↑ 요약으로 돌아가기](#summary-post-internal-workspaces-workspace-id-initial-note)
 
 </details>

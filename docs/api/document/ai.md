@@ -112,6 +112,8 @@ curl -X GET "$DOCUMENT/api/ai-models" \
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/ai/AiModelCatalogController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: list_4`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-ai-models)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-ai-model-settings"></a>
@@ -212,6 +214,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/ai/WorkspaceAiModelSettingsController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: get`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-ai-model-settings)
 
 </details>
 
@@ -332,6 +336,8 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/ai/WorkspaceAiModelSettingsController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: update`)
+
+[↑ 요약으로 돌아가기](#summary-put-api-workspaces-workspace-id-ai-model-settings)
 
 </details>
 
@@ -456,6 +462,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/aihistory/controller/OperationQueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: list_3`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-ai-operation-logs)
 
 </details>
 
@@ -668,6 +676,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/aihistory/controller/OperationQueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: detail`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore"></a>
@@ -792,6 +802,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-op
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/aihistory/controller/OperationQueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: restore_2`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore)
 
 </details>
 
@@ -922,6 +934,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/aihistory/controller/OperationQueryController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: restorePreview`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore-preview)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-documents-document-id-convert-markdown"></a>
@@ -1045,6 +1059,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: convertMarkdown`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-documents-document-id-convert-markdown)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-documents-document-id-ingest"></a>
@@ -1152,5 +1168,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: ingest`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-documents-document-id-ingest)
 
 </details>

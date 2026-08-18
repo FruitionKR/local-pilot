@@ -146,6 +146,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folde
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: create`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-folders)
+
 </details>
 
 <a id="summary-patch-api-workspaces-workspace-id-folders-folder-id"></a>
@@ -272,6 +274,8 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/fold
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: rename_1`)
 
+[↑ 요약으로 돌아가기](#summary-patch-api-workspaces-workspace-id-folders-folder-id)
+
 </details>
 
 <a id="summary-delete-api-workspaces-workspace-id-folders-folder-id"></a>
@@ -394,6 +398,8 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/fol
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: delete`)
 
+[↑ 요약으로 돌아가기](#summary-delete-api-workspaces-workspace-id-folders-folder-id)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-folders-folder-id-children"></a>
@@ -506,6 +512,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folder
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: children`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-folders-folder-id-children)
 
 </details>
 
@@ -634,6 +642,8 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/fold
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: move`)
 
+[↑ 요약으로 돌아가기](#summary-patch-api-workspaces-workspace-id-folders-folder-id-position)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-folders-folder-id-restore"></a>
@@ -754,6 +764,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folde
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/FolderController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: restore`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-folders-folder-id-restore)
 
 </details>
 
@@ -915,6 +927,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentTreeController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: tree`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-document-tree)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-navigation"></a>
@@ -1026,6 +1040,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/naviga
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/NavigationController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: root`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-navigation)
 
 </details>
 
@@ -1141,6 +1157,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/naviga
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/NavigationController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: breadcrumb`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-navigation-breadcrumb)
 
 </details>
 
@@ -1269,5 +1287,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/naviga
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/NavigationController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: search`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-navigation-search)
 
 </details>

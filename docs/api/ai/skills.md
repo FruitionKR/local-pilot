@@ -205,6 +205,8 @@ curl -X GET "$PIPELINE/skills?workspace_id=<value>&user_id=<value>" \
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: list_skills_skills_get`)
 
+[↑ 요약으로 돌아가기](#summary-get-skills)
+
 </details>
 
 <a id="summary-post-skills-author"></a>
@@ -365,6 +367,8 @@ curl -X POST "$PIPELINE/skills/author" \
 
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: author_skill_skills_author_post`)
+
+[↑ 요약으로 돌아가기](#summary-post-skills-author)
 
 </details>
 
@@ -529,6 +533,8 @@ curl -X POST "$PIPELINE/skills/author/publish" \
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: publish_authored_skill_skills_author_publish_post`)
 
+[↑ 요약으로 돌아가기](#summary-post-skills-author-publish)
+
 </details>
 
 <a id="summary-post-skills-preview"></a>
@@ -655,6 +661,8 @@ curl -X POST "$PIPELINE/skills/preview" \
 
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: preview_skill_skills_preview_post`)
+
+[↑ 요약으로 돌아가기](#summary-post-skills-preview)
 
 </details>
 
@@ -839,6 +847,8 @@ curl -X GET "$PIPELINE/skills/<value>?workspace_id=<value>&user_id=<value>" \
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: get_skill_skills__skill_id__get`)
 
+[↑ 요약으로 돌아가기](#summary-get-skills-skill-id)
+
 </details>
 
 <a id="summary-patch-skills-skill-id"></a>
@@ -983,6 +993,8 @@ curl -X PATCH "$PIPELINE/skills/<value>" \
 
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: update_skill_skills__skill_id__patch`)
+
+[↑ 요약으로 돌아가기](#summary-patch-skills-skill-id)
 
 </details>
 
@@ -1174,6 +1186,8 @@ curl -X POST "$PIPELINE/skills/<value>/disable" \
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: disable_skill_skills__skill_id__disable_post`)
 
+[↑ 요약으로 돌아가기](#summary-post-skills-skill-id-disable)
+
 </details>
 
 <a id="summary-post-skills-skill-id-enable"></a>
@@ -1363,5 +1377,7 @@ curl -X POST "$PIPELINE/skills/<value>/enable" \
 
 - 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: enable_skill_skills__skill_id__enable_post`)
+
+[↑ 요약으로 돌아가기](#summary-post-skills-skill-id-enable)
 
 </details>

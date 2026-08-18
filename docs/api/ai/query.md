@@ -291,4 +291,6 @@ curl -X POST "$PIPELINE/query" \
 - 진입점: `services/ai/pipeline/app/modules/query/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: answer_query_query_post`)
 
+[↑ 요약으로 돌아가기](#summary-post-query)
+
 </details>

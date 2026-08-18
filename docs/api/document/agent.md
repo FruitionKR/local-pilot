@@ -103,6 +103,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getRun`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-agent-runs-run-id)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-approve"></a>
@@ -194,6 +196,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: approve`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-agent-runs-run-id-approve)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-cancel"></a>
@@ -276,6 +280,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: cancel`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-agent-runs-run-id-cancel)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-agent-runs-run-id-reject"></a>
@@ -357,6 +363,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: reject`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-agent-runs-run-id-reject)
 
 </details>
 
@@ -447,6 +455,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: revise`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-agent-runs-run-id-revise)
 
 </details>
 
@@ -637,6 +647,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: turn`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-agent-turn)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-agent-turn-run-id"></a>
@@ -754,6 +766,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getTurn`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-agent-turn-run-id)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-agent-turn-run-id-events"></a>
@@ -863,6 +877,8 @@ string
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: subscribeTurnEvents`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-agent-turn-run-id-events)
+
 </details>
 
 <a id="summary-post-internal-agent-tools-execute-tool-name"></a>
@@ -964,6 +980,8 @@ curl -X POST "$DOCUMENT/internal/agent/tools/execute/<value>" \
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentToolController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: execute`)
 
+[↑ 요약으로 돌아가기](#summary-post-internal-agent-tools-execute-tool-name)
+
 </details>
 
 <a id="summary-post-internal-agent-tools-read-tool-name"></a>
@@ -1059,5 +1077,7 @@ curl -X POST "$DOCUMENT/internal/agent/tools/read/<value>" \
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentToolController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: read`)
+
+[↑ 요약으로 돌아가기](#summary-post-internal-agent-tools-read-tool-name)
 
 </details>

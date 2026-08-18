@@ -194,6 +194,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: list_2`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-skills)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-skills-author"></a>
@@ -344,6 +346,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: author`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-skills-author)
 
 </details>
 
@@ -497,6 +501,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: publish`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-skills-author-publish)
 
 </details>
 
@@ -670,6 +676,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: get_1`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-skills-skill-id)
+
 </details>
 
 <a id="summary-patch-api-workspaces-workspace-id-skills-skill-id"></a>
@@ -804,6 +812,8 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skil
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: update_1`)
+
+[↑ 요약으로 돌아가기](#summary-patch-api-workspaces-workspace-id-skills-skill-id)
 
 </details>
 
@@ -977,6 +987,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: disable`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-skills-skill-id-disable)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-skills-skill-id-enable"></a>
@@ -1149,6 +1161,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/skill/controller/SkillController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: enable`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-skills-skill-id-enable)
+
 </details>
 
 <a id="summary-post-internal-agent-skill-authoring-references-read"></a>
@@ -1245,5 +1259,7 @@ curl -X POST "$DOCUMENT/internal/agent/skill-authoring/references/read" \
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: read_1`)
+
+[↑ 요약으로 돌아가기](#summary-post-internal-agent-skill-authoring-references-read)
 
 </details>

@@ -171,6 +171,8 @@ curl -X GET "$PIPELINE/wiki-schema/active?workspace_id=<value>&user_id=<value>" 
 - 진입점: `services/ai/pipeline/app/modules/wiki_schema/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: get_active_wiki_schema_wiki_schema_active_get`)
 
+[↑ 요약으로 돌아가기](#summary-get-wiki-schema-active)
+
 </details>
 
 <a id="summary-post-wiki-schema-drafts"></a>
@@ -340,6 +342,8 @@ curl -X POST "$PIPELINE/wiki-schema/drafts" \
 - 진입점: `services/ai/pipeline/app/modules/wiki_schema/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: create_wiki_schema_draft_wiki_schema_drafts_post`)
 
+[↑ 요약으로 돌아가기](#summary-post-wiki-schema-drafts)
+
 </details>
 
 <a id="summary-post-wiki-schema-preview"></a>
@@ -489,6 +493,8 @@ curl -X POST "$PIPELINE/wiki-schema/preview" \
 
 - 진입점: `services/ai/pipeline/app/modules/wiki_schema/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: preview_wiki_schema_wiki_schema_preview_post`)
+
+[↑ 요약으로 돌아가기](#summary-post-wiki-schema-preview)
 
 </details>
 
@@ -644,5 +650,7 @@ curl -X POST "$PIPELINE/wiki-schema/<value>/activate" \
 
 - 진입점: `services/ai/pipeline/app/modules/wiki_schema/interfaces/http/routes.py`
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: activate_wiki_schema_wiki_schema__schema_id__activate_post`)
+
+[↑ 요약으로 돌아가기](#summary-post-wiki-schema-schema-id-activate)
 
 </details>

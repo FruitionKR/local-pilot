@@ -136,6 +136,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: trash`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-documents-trash)
+
 </details>
 
 <a id="summary-delete-api-workspaces-workspace-id-documents-document-id"></a>
@@ -257,6 +259,8 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/doc
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: delete_1`)
+
+[↑ 요약으로 돌아가기](#summary-delete-api-workspaces-workspace-id-documents-document-id)
 
 </details>
 
@@ -403,6 +407,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: compareVersions`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-documents-document-id-diff)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-documents-document-id-restore"></a>
@@ -525,6 +531,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: restore_1`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-documents-document-id-restore)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-documents-document-id-versions"></a>
@@ -645,6 +653,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: listVersions`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-documents-document-id-versions)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-documents-document-id-versions-version"></a>
@@ -750,6 +760,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getVersion`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-documents-document-id-versions-version)
 
 </details>
 
@@ -887,5 +899,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: restoreVersion`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-documents-document-id-versions-version-restore)
 
 </details>

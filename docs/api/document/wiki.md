@@ -157,6 +157,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/g
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wiki/controller/WikiController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getGraph`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-wiki-graph)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-wiki-pages-wiki-page-id"></a>
@@ -307,6 +309,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/p
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wiki/controller/WikiController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getPage`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-wiki-pages-wiki-page-id)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-wiki-pages-wiki-page-id-diff"></a>
@@ -445,6 +449,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/p
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wiki/controller/WikiController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: diff`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-wiki-pages-wiki-page-id-diff)
+
 </details>
 
 <a id="summary-patch-api-workspaces-workspace-id-wiki-pages-wiki-page-id-rename"></a>
@@ -571,6 +577,8 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wiki/controller/WikiController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: rename`)
 
+[↑ 요약으로 돌아가기](#summary-patch-api-workspaces-workspace-id-wiki-pages-wiki-page-id-rename)
+
 </details>
 
 <a id="summary-post-api-workspaces-workspace-id-wiki-maintenance-lint"></a>
@@ -686,6 +694,8 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikimaintenance/controller/WikiMaintenanceController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: lint`)
 
+[↑ 요약으로 돌아가기](#summary-post-api-workspaces-workspace-id-wiki-maintenance-lint)
+
 </details>
 
 <a id="summary-get-api-workspaces-workspace-id-wiki-maintenance-runs-run-id"></a>
@@ -778,6 +788,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/m
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikimaintenance/controller/WikiMaintenanceController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: run`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-wiki-maintenance-runs-run-id)
 
 </details>
 
@@ -877,6 +889,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/m
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wikimaintenance/controller/WikiMaintenanceController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: status`)
 
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-wiki-maintenance-status)
+
 </details>
 
 <a id="summary-post-internal-wiki-contributions"></a>
@@ -970,5 +984,7 @@ curl -X POST "$DOCUMENT/internal/wiki/contributions" \
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/wiki/controller/InternalWikiContributionController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: find`)
+
+[↑ 요약으로 돌아가기](#summary-post-internal-wiki-contributions)
 
 </details>
