@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -27,6 +28,12 @@ public class OAuth2AuthenticationFailureHandler implements AuthenticationFailure
     public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response, AuthenticationException exception)
             throws IOException {
         log.warn("[OAuth 인증 실패] errorType={} redirectUri={}", exception.getClass().getSimpleName(), frontendRedirectUri);
+
+        SecurityContextHolder.clearContext();
+        var session = request.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
 
         String redirectUrl = UriComponentsBuilder.fromUriString(frontendRedirectUri)
                 .queryParam("error", "oauth_failed")
