@@ -317,6 +317,19 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
                 self.assertEqual(route.action, "workspace_workflow")
 
+    def test_promotes_grounded_markdown_creation_to_workspace_workflow(self) -> None:
+        response = route_response("markdown_create")
+        response["edit_goal"] = None
+        client = SequenceJsonClient([response])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(message="워크스페이스에서 근거를 찾아 새 문서로 만들어줘")
+        )
+
+        self.assertEqual(route.action, "workspace_workflow")
+        self.assertEqual(route.edit_goal, "create_from_chat")
+
     def test_promotes_persistent_markdown_edit_to_workspace_workflow(self) -> None:
         client = SequenceJsonClient([route_response("markdown_edit")])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
