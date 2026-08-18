@@ -2,9 +2,11 @@
 
 [API 문서](../README.md) / [ai-svc](README.md)
 
-Skill 조회·작성·게시·설정 내부 API다.
+Skill 조회·작성·게시·설정 내부 API다. 공개 Gateway 계약은
+[`document-svc Skills API`](../document/skills.md)다. Backend가 사용자·워크스페이스·모델 정보를
+검증해 추가한 뒤 7개 관리 API를 내부 HTTP로 호출한다. draft-from-runs·preview는 ai-svc 내부 기능이다.
 
-- API 수: 8
+- API 수: 9
 
 ## API 목차
 
@@ -13,11 +15,15 @@ Skill 조회·작성·게시·설정 내부 API다.
 | [`GET /skills`](#summary-get-skills) | 사용 가능한 Skill 목록을 조회합니다. |
 | [`POST /skills/author`](#summary-post-skills-author) | 사용자 요청과 참조 문서로 Skill 초안을 작성합니다. |
 | [`POST /skills/author/publish`](#summary-post-skills-author-publish) | 검토한 Skill 초안을 게시합니다. |
+| [`POST /skills/draft-from-runs/preview`](#summary-post-skills-draft-from-runs-preview) | 완료된 Agent 실행 결과로 게시 전 Skill 초안을 만듭니다. |
 | [`POST /skills/preview`](#summary-post-skills-preview) | Skill 지침과 권한을 게시 전에 미리 검증합니다. |
 | [`GET /skills/{skill_id}`](#summary-get-skills-skill-id) | Skill 상세 정보를 조회합니다. |
 | [`PATCH /skills/{skill_id}`](#summary-patch-skills-skill-id) | Skill 지침과 실행 설정을 변경합니다. |
 | [`POST /skills/{skill_id}/disable`](#summary-post-skills-skill-id-disable) | Skill을 비활성화합니다. |
 | [`POST /skills/{skill_id}/enable`](#summary-post-skills-skill-id-enable) | Skill을 활성화합니다. |
+
+실행 결과 기반 초안 API는 `AGENT_SKILLS_ENABLED=true`, 나머지 8개 API는
+`SKILL_API_ENABLED=true`일 때 노출된다. 모두 `X-Agent-Service-Token`으로 보호한다.
 
 ## 한눈에 보기
 
@@ -534,6 +540,115 @@ curl -X POST "$PIPELINE/skills/author/publish" \
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: publish_authored_skill_skills_author_publish_post`)
 
 [↑ 요약으로 돌아가기](#summary-post-skills-author-publish)
+
+</details>
+
+<a id="summary-post-skills-draft-from-runs-preview"></a>
+### `POST /skills/draft-from-runs/preview`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 완료된 Agent 실행의 성공 작업을 일반화해 게시 전 Skill 초안을 만듭니다. |
+| 입력 | **Header** — `X-Agent-Service-Token`: 필수<br>**Body** — `SkillDraftProposalRequest` |
+| 출력 | `200` — `SkillAuthoringResponse` |
+| 조건 | `AGENT_SKILLS_ENABLED=true`일 때만 노출됩니다. source run은 completed 상태이며 성공 operation이 하나 이상이어야 합니다. |
+| 주요 오류 | `400` source·지침·보안 검증 실패<br>`422` 요청 검증 실패 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+<a id="detail-post-skills-draft-from-runs-preview"></a>
+### `POST /skills/draft-from-runs/preview` 상세
+
+#### 1. Method + Path
+
+`POST /skills/draft-from-runs/preview`
+
+#### 2. 목적
+
+Backend가 소유권과 완료 상태를 검증해 전달한 Agent run 요약에서 재사용 가능한 절차만 추출합니다.
+결과는 바로 게시하지 않고 기존 Skill 보안 검사를 거친 `proposal_ready`, `blocked` 또는
+`clarification_required` 응답으로 반환합니다.
+
+#### 3. Auth 필요 여부
+
+- 필요: `X-Agent-Service-Token`
+
+#### 4. Request body
+
+```json
+{
+  "provider": "openai",
+  "model": "gpt-5-nano",
+  "workspace_id": "workspace_123",
+  "user_id": "user_123",
+  "scope_type": "personal",
+  "source_runs": [
+    {
+      "run_id": "run_123",
+      "status": "completed",
+      "request_summary": "주간 회의록 문서를 만들고 업무 폴더로 이동",
+      "plan_summary": "회의록 생성 후 지정 폴더로 이동",
+      "successful_operations": [
+        {
+          "tool_name": "create_document",
+          "reason": "회의록 문서를 생성했습니다."
+        },
+        {
+          "tool_name": "move_document",
+          "reason": "업무 폴더로 이동했습니다."
+        }
+      ]
+    }
+  ],
+  "user_directives": ["회의록 형식을 유지해줘"],
+  "excluded_literals": ["2026년 8월 18일"]
+}
+```
+
+#### 5. Response body
+
+```json
+{
+  "status": "proposal_ready",
+  "question": null,
+  "skill_id": null,
+  "version_id": null,
+  "scope_type": "personal",
+  "name": "weekly-meeting-notes",
+  "description": "주간 회의록을 만들고 지정 폴더에 정리합니다.",
+  "skill_markdown": "---\nname: weekly-meeting-notes\n---\n",
+  "instructions_markdown": "회의 내용을 회의록 형식으로 작성하고 지정 폴더에 정리합니다.",
+  "capabilities": ["document-create", "folder-organize"],
+  "allowed_tools": ["create_document", "move_document"],
+  "issues": []
+}
+```
+
+#### 6. Error response
+
+- `400`: source run 의미, 사용자 지침 또는 초안 검증 실패
+- `401`: Agent 서비스 토큰 누락·불일치
+- `422`: 요청 schema 검증 실패
+- `503`: Agent 서비스 토큰 미설정
+
+#### 7. Pagination / filtering
+
+- 페이지네이션과 필터링을 지원하지 않음
+
+#### 8. 권한 규칙
+
+클라이언트가 임의로 만든 run 결과를 직접 신뢰하지 않습니다. Backend가 workspace·user 소유권과
+완료 상태를 확인한 canonical run 결과만 이 내부 API에 전달해야 합니다.
+
+#### 9. 예시 요청/응답
+
+위 request·response 예시와 같습니다. 실제 게시에는 별도로 `POST /skills/author/publish` 승인이 필요합니다.
+
+#### 10. 구현 파일
+
+- 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
+- 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: propose_skill_draft_skills_draft_from_runs_preview_post`)
 
 </details>
 

@@ -2,7 +2,10 @@
 
 [API 문서](../README.md) / [ai-svc](README.md)
 
-Wiki 조회·ingest·lint·복구 내부 API다.
+Wiki 조회·페이지 관리·lint·복구 내부 API다. 공개 Gateway 계약은
+[`document-svc Wiki API`](../document/wiki.md)다. 조회·페이지 관리는 내부 HTTP로 중계하고,
+lint·복구는 Kafka `ai.maintenance.command` worker가 실행한다. ingest 실행과 run 조회는
+[`Wiki Ingest Pipeline API`](pipeline.md)에서 다룬다.
 
 - API 수: 10
 
@@ -565,35 +568,22 @@ curl -X POST "$PIPELINE/wiki/lint-restore-runs" \
   "active_path": "string",
   "applied_cluster_reconciliation": {
   },
-  "applied_reconciliations": [
-    {
-    }
-  ],
-  "changed_pages": [
-    {
-    }
-  ],
+  "applied_reconciliations": [],
+  "changed_pages": [],
   "cluster_count": 1,
-  "invalid_promotions": [
-    {
-    }
-  ],
-  "invalid_relations": [
-    {
-    }
-  ],
-  "materialized_promotions": [
-    {
-    }
-  ],
-  "materialized_relations": [
-    {
-    }
-  ],
-  "merged_promotions": [
-    {
-    }
-  ]
+  "invalid_promotions": [],
+  "invalid_relations": [],
+  "materialized_promotions": [],
+  "materialized_relations": [],
+  "merged_promotions": [],
+  "needs_review": [],
+  "orphan_refs": [],
+  "promotion_candidates": [],
+  "reconciliation_candidates": [],
+  "relation_candidates": [],
+  "source_ref_count": 0,
+  "user_id": "local-user",
+  "workspace_id": "local-workspace"
 }
 ```
 
@@ -648,35 +638,22 @@ curl -X POST "$PIPELINE/wiki/maintenance/lint" \
   "active_path": "string",
   "applied_cluster_reconciliation": {
   },
-  "applied_reconciliations": [
-    {
-    }
-  ],
-  "changed_pages": [
-    {
-    }
-  ],
+  "applied_reconciliations": [],
+  "changed_pages": [],
   "cluster_count": 1,
-  "invalid_promotions": [
-    {
-    }
-  ],
-  "invalid_relations": [
-    {
-    }
-  ],
-  "materialized_promotions": [
-    {
-    }
-  ],
-  "materialized_relations": [
-    {
-    }
-  ],
-  "merged_promotions": [
-    {
-    }
-  ]
+  "invalid_promotions": [],
+  "invalid_relations": [],
+  "materialized_promotions": [],
+  "materialized_relations": [],
+  "merged_promotions": [],
+  "needs_review": [],
+  "orphan_refs": [],
+  "promotion_candidates": [],
+  "reconciliation_candidates": [],
+  "relation_candidates": [],
+  "source_ref_count": 0,
+  "user_id": "local-user",
+  "workspace_id": "local-workspace"
 }
 ```
 
