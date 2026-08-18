@@ -8,6 +8,8 @@ import fruition.access.security.oauth.service.CustomOAuth2UserService;
 import fruition.access.security.oauth.handler.OAuth2AuthenticationFailureHandler;
 import fruition.access.security.oauth.handler.OAuth2AuthenticationSuccessHandler;
 import fruition.access.security.oauth.OAuthExchangeCodeStore;
+import fruition.access.user.dto.EmailAvailabilityRequest;
+import fruition.access.user.dto.EmailAvailabilityResponse;
 import fruition.access.user.dto.EmailVerificationRequest;
 import fruition.access.user.dto.EmailVerificationResponse;
 import fruition.access.user.dto.LoginRequest;
@@ -21,11 +23,13 @@ import fruition.access.user.dto.SignupResponse;
 import fruition.access.user.dto.VerificationConfirmRequest;
 import fruition.access.user.dto.VerificationConfirmResponse;
 import fruition.access.user.exception.DuplicateEmailException;
+import fruition.access.user.exception.EmailAvailabilityRateLimitedException;
 import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
 import fruition.access.user.exception.InvalidRefreshTokenException;
 import fruition.access.user.exception.InvalidVerificationCodeException;
 import fruition.access.user.service.AuthService;
+import fruition.access.user.service.EmailAvailabilityRateLimiter;
 import fruition.access.user.service.EmailVerificationService;
 import fruition.access.user.service.UserService;
 import fruition.access.AccessExceptionHandler;
@@ -41,6 +45,7 @@ import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -56,10 +61,46 @@ class AuthControllerTest {
     @Autowired JwtTokenProvider jwtTokenProvider;
     @MockBean UserService userService;
     @MockBean AuthService authService;
+    @MockBean EmailAvailabilityRateLimiter emailAvailabilityRateLimiter;
     @MockBean EmailVerificationService emailVerificationService;
     @MockBean CustomOAuth2UserService customOAuth2UserService;
     // OAuthExchangeCodeStore가 Redis에 의존하므로 web slice에는 mock template을 채운다.
     @MockBean org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+
+    @Test
+    void checkEmailAvailability_existingEmail_returnsFalse() throws Exception {
+        when(userService.checkEmailAvailability(any())).thenReturn(new EmailAvailabilityResponse(false));
+
+        mockMvc.perform(post("/api/auth/email-availability")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new EmailAvailabilityRequest("test@example.com"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(false));
+    }
+
+    @Test
+    void checkEmailAvailability_invalidEmail_returns400() throws Exception {
+        mockMvc.perform(post("/api/auth/email-availability")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new EmailAvailabilityRequest("invalid"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void checkEmailAvailability_rateLimited_returns429() throws Exception {
+        doThrow(new EmailAvailabilityRateLimitedException(60))
+                .when(emailAvailabilityRateLimiter).check(any(), any());
+
+        mockMvc.perform(post("/api/auth/email-availability")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new EmailAvailabilityRequest("test@example.com"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error.code").value("EMAIL_AVAILABILITY_RATE_LIMITED"));
+    }
 
     @Test
     void signup_validRequest_returns201() throws Exception {

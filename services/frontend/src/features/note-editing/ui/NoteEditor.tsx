@@ -20,7 +20,7 @@ import { useUserPreferences } from "@/entities/user";
 import { buildMarkdownEditorSnapshot } from "@/features/agent-chat/lib/markdownEditContext";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { NoteSaveStatus } from "@/entities/tree/model/tree";
-import { useNoteAutosave } from "../model/useNoteAutosave";
+import { useNoteAutosave, type DetachedNoteSaveResult } from "../model/useNoteAutosave";
 import styles from "./NoteEditor.module.css";
 
 /** Backspace로 리스트 항목의 첫 문단 맨 앞을 지우면 문단을 리스트 밖으로 빼낸다 (Shift+Tab과 동일).
@@ -45,6 +45,7 @@ export function NoteEditor({
   sourceMode,
   onMarkdownEditContextChange,
   onSaveStatusChange,
+  onDetachedSaveComplete,
   onRegisterSave
 }: {
   documentId: string;
@@ -54,12 +55,18 @@ export function NoteEditor({
   sourceMode: boolean;
   onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
   onSaveStatusChange?: (status: NoteSaveStatus, errorMessage: string | null) => void;
-  /** 부모(저장 버튼)가 즉시 저장을 호출할 수 있게 저장 함수를 등록한다. */
+  onDetachedSaveComplete?: (result: DetachedNoteSaveResult) => void;
+  /** 부모가 Cmd/Ctrl+S로 즉시 저장할 수 있게 저장 함수를 등록한다. */
   onRegisterSave?: (save: () => Promise<boolean>) => void;
 }) {
   const { preferences } = useUserPreferences();
   const [body, setBody] = useState(initialBody);
-  const { status, errorMessage, contentVersion, queueSave, saveNow } = useNoteAutosave({ documentId, marker, initialVersion });
+  const { status, errorMessage, contentVersion, queueSave, saveNow } = useNoteAutosave({
+    documentId,
+    marker,
+    initialVersion,
+    onDetachedSaveComplete
+  });
   const editorExtensions = useMemo(
     () => [
       markdown(),

@@ -1,33 +1,44 @@
 import { ArrowUp, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { AiModel } from "@/entities/ai";
 import { cx } from "@/shared/lib/classNames";
 import { claudeIcon, geminiIcon, gptIcon, SvgIcon, type SvgAsset } from "@/shared/ui/SvgIcon";
 import styles from "./AgentChat.module.css";
 
-// 모델 표시 목록 (Figma 787:2312 model_list): 아이콘 먼저, 이름이 뒤따른다.
-const LLM_MODELS: { name: string; icon: SvgAsset }[] = [
-  { name: "Claude", icon: claudeIcon },
-  { name: "Gemini", icon: geminiIcon },
-  { name: "GPT", icon: gptIcon }
-];
+// provider별 아이콘 (Figma 787:2312 model_list): 아이콘 먼저, 이름이 뒤따른다.
+const PROVIDER_ICONS: Record<string, SvgAsset> = {
+  claude: claudeIcon,
+  gemini: geminiIcon,
+  openai: gptIcon
+};
+
+/** provider/model 쌍을 목록 key와 선택 비교에 쓰는 문자열로 만든다. */
+function modelKey(model: AiModel) {
+  return `${model.provider}/${model.model}`;
+}
 
 export function AgentComposer({
   value = "",
   isLoading,
   placeholder = "AI 에이전트에게 무엇이든 물어보세요.",
+  models,
+  selectedModel,
+  onModelChange,
   onChange,
   onSubmit
 }: {
   value: string;
   isLoading: boolean;
   placeholder?: string;
+  models: AiModel[];
+  selectedModel: AiModel | null;
+  onModelChange: (model: AiModel) => void;
   onChange: (value: string) => void;
   onSubmit: () => void;
 }) {
-  const [selectedModelName, setSelectedModelName] = useState(LLM_MODELS[0].name);
   const [isModelListOpen, setIsModelListOpen] = useState(false);
   const modelListRef = useRef<HTMLDivElement | null>(null);
-  const selectedModel = LLM_MODELS.find((model) => model.name === selectedModelName) ?? LLM_MODELS[0];
+  const selectedKey = selectedModel ? modelKey(selectedModel) : null;
 
   useEffect(() => {
     if (!isModelListOpen) return;
@@ -69,28 +80,33 @@ export function AgentComposer({
             className={styles["composer-model-trigger"]}
             aria-label="모델 선택"
             aria-expanded={isModelListOpen}
+            disabled={!selectedModel}
             onClick={() => setIsModelListOpen((open) => !open)}
           >
-            <SvgIcon src={selectedModel.icon} className={styles["composer-model-icon"]} />
-            <span>{selectedModel.name}</span>
+            {selectedModel && PROVIDER_ICONS[selectedModel.provider] && (
+              <SvgIcon src={PROVIDER_ICONS[selectedModel.provider]} className={styles["composer-model-icon"]} />
+            )}
+            <span>{selectedModel?.display_name ?? "모델 불러오는 중"}</span>
             <ChevronDown size={8} className={cx(isModelListOpen && styles["is-open"])} />
           </button>
           {isModelListOpen && (
             <div className={styles["composer-model-list"]} role="listbox" aria-label="모델 목록">
-              {LLM_MODELS.map((model) => (
+              {models.map((model) => (
                 <button
-                  key={model.name}
+                  key={modelKey(model)}
                   type="button"
                   role="option"
-                  aria-selected={model.name === selectedModelName}
-                  className={cx(model.name === selectedModelName && styles["is-selected"])}
+                  aria-selected={modelKey(model) === selectedKey}
+                  className={cx(modelKey(model) === selectedKey && styles["is-selected"])}
                   onClick={() => {
-                    setSelectedModelName(model.name);
+                    onModelChange(model);
                     setIsModelListOpen(false);
                   }}
                 >
-                  <SvgIcon src={model.icon} className={styles["composer-model-icon"]} />
-                  {model.name}
+                  {PROVIDER_ICONS[model.provider] && (
+                    <SvgIcon src={PROVIDER_ICONS[model.provider]} className={styles["composer-model-icon"]} />
+                  )}
+                  {model.display_name}
                 </button>
               ))}
             </div>
@@ -100,7 +116,7 @@ export function AgentComposer({
           type="submit"
           className={styles["composer-send"]}
           aria-label="전송"
-          disabled={isLoading || value.trim().length === 0}
+          disabled={isLoading || !selectedModel || value.trim().length === 0}
         >
           <ArrowUp size={15} />
         </button>

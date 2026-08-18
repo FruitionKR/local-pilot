@@ -1,6 +1,8 @@
 package fruition.access.user.service;
 
 import fruition.access.user.domain.User;
+import fruition.access.user.dto.EmailAvailabilityRequest;
+import fruition.access.user.dto.EmailAvailabilityResponse;
 import fruition.access.user.dto.SignupRequest;
 import fruition.access.user.dto.SignupResponse;
 import fruition.access.user.exception.DuplicateEmailException;
@@ -31,6 +33,12 @@ public class UserService {
         this.passwordEncoder = passwordEncoder;
         this.workspaceService = workspaceService;
         this.emailVerificationService = emailVerificationService;
+    }
+
+    @Transactional(readOnly = true)
+    public EmailAvailabilityResponse checkEmailAvailability(EmailAvailabilityRequest request) {
+        String email = request.email().trim().toLowerCase();
+        return new EmailAvailabilityResponse(!userRepository.existsByEmail(email));
     }
 
     @Transactional

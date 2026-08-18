@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useRef, useState, type SetStateAction } from "react";
 
 type SignupDraft = {
   nickname: string;
@@ -8,6 +8,8 @@ type SignupDraft = {
   password: string;
   verificationId: string;
   expiresAt: number;
+  verificationRequestId?: string;
+  verificationRequestError?: string;
 };
 
 type PasswordResetDraft = {
@@ -19,7 +21,8 @@ type PasswordResetDraft = {
 
 type AuthFlowValue = {
   signupDraft: SignupDraft | null;
-  setSignupDraft: (draft: SignupDraft | null) => void;
+  setSignupDraft: (draft: SetStateAction<SignupDraft | null>) => void;
+  isCurrentSignupVerificationRequest: (requestId: string) => boolean;
   passwordResetDraft: PasswordResetDraft | null;
   setPasswordResetDraft: (draft: PasswordResetDraft | null) => void;
 };
@@ -27,12 +30,37 @@ type AuthFlowValue = {
 const AuthFlowContext = createContext<AuthFlowValue | null>(null);
 
 export function AuthFlowProvider({ children }: { children: React.ReactNode }) {
-  const [signupDraft, setSignupDraft] = useState<SignupDraft | null>(null);
+  const [signupDraft, setSignupDraftState] = useState<SignupDraft | null>(null);
+  const signupDraftRef = useRef<SignupDraft | null>(null);
   const [passwordResetDraft, setPasswordResetDraft] = useState<PasswordResetDraft | null>(null);
+
+  const setSignupDraft = useCallback((draft: SetStateAction<SignupDraft | null>) => {
+    if (typeof draft !== "function") {
+      signupDraftRef.current = draft;
+      setSignupDraftState(draft);
+      return;
+    }
+    setSignupDraftState((current) => {
+      const next = draft(current);
+      signupDraftRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const isCurrentSignupVerificationRequest = useCallback(
+    (requestId: string) => signupDraftRef.current?.verificationRequestId === requestId,
+    []
+  );
 
   return (
     <AuthFlowContext.Provider
-      value={{ signupDraft, setSignupDraft, passwordResetDraft, setPasswordResetDraft }}
+      value={{
+        signupDraft,
+        setSignupDraft,
+        isCurrentSignupVerificationRequest,
+        passwordResetDraft,
+        setPasswordResetDraft
+      }}
     >
       {children}
     </AuthFlowContext.Provider>

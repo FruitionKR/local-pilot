@@ -46,6 +46,22 @@ test("Graph 노드 표시를 모두 끈 저장 값은 Concept를 복원한다", 
   });
 });
 
+test("마지막으로 고른 AI 모델은 provider/model 쌍으로 복원한다", () => {
+  const preferences = normalizeUserPreferences({
+    aiModel: { provider: "gemini", model: "gemini-3.1-flash-lite" }
+  });
+
+  assert.deepEqual(preferences.aiModel, { provider: "gemini", model: "gemini-3.1-flash-lite" });
+});
+
+test("오염된 AI 모델 저장 값은 null로 정규화한다", () => {
+  assert.equal(normalizeUserPreferences({ aiModel: { provider: 123, model: "gpt-5-nano" } }).aiModel, null);
+  assert.equal(normalizeUserPreferences({ aiModel: { provider: "openai" } }).aiModel, null);
+  assert.equal(normalizeUserPreferences({ aiModel: { provider: "", model: "" } }).aiModel, null);
+  assert.equal(normalizeUserPreferences({ aiModel: "openai" }).aiModel, null);
+  assert.equal(normalizeUserPreferences({ aiModel: {} }).aiModel, null);
+});
+
 test("마지막 사용 모드는 저장된 실제 편집 모드로 해석한다", () => {
   const preferences = normalizeUserPreferences({
     editor: {

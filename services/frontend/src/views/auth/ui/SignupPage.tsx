@@ -1,20 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { requestEmailVerification } from "@/entities/user";
+import { checkEmailAvailability, requestEmailVerification } from "@/entities/user";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useAuthFlow } from "@/views/auth/model/AuthFlowContext";
 import { AuthError, AuthField, AuthSubmitButton } from "@/shared/ui/AuthControls";
 
 export default function SignupPage() {
   const router = useRouter();
-  const { signupDraft, setSignupDraft } = useAuthFlow();
+  const { signupDraft, setSignupDraft, isCurrentSignupVerificationRequest } = useAuthFlow();
   const [nickname, setNickname] = useState(signupDraft?.nickname ?? "");
   const [email, setEmail] = useState(signupDraft?.email ?? "");
   const [password, setPassword] = useState(signupDraft?.password ?? "");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const mountedRef = useRef(true);
+  const draftError = signupDraft?.email === email.trim().toLowerCase()
+    ? signupDraft.verificationRequestError ?? null
+    : null;
+  const visibleError = errorMessage ?? draftError;
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   async function handleVerificationRequest(event: React.FormEvent) {
     event.preventDefault();
@@ -28,20 +37,48 @@ export default function SignupPage() {
     setErrorMessage(null);
     setIsSubmitting(true);
 
+    const normalizedEmail = email.trim().toLowerCase();
     try {
-      const normalizedEmail = email.trim().toLowerCase();
+      const availability = await checkEmailAvailability(normalizedEmail);
+      if (!mountedRef.current) return;
+      if (!availability.available) {
+        setErrorMessage("이미 가입된 이메일입니다.");
+        setIsSubmitting(false);
+        return;
+      }
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, "이메일 중복 확인에 실패했습니다."));
+      setIsSubmitting(false);
+      return;
+    }
+
+    const verificationRequestId = crypto.randomUUID();
+    const pendingDraft = {
+      nickname: nickname.trim(),
+      email: normalizedEmail,
+      password,
+      verificationId: "",
+      expiresAt: 0,
+      verificationRequestId
+    };
+    setSignupDraft(pendingDraft);
+    router.push("/signup/verify");
+
+    try {
       const response = await requestEmailVerification(normalizedEmail, "signup");
+      if (!isCurrentSignupVerificationRequest(verificationRequestId)) return;
       setSignupDraft({
-        nickname: nickname.trim(),
-        email: normalizedEmail,
-        password,
+        ...pendingDraft,
         verificationId: response.verification_id,
         expiresAt: Date.now() + response.expires_in * 1000
       });
-      router.push("/signup/verify");
     } catch (error: unknown) {
-      setErrorMessage(getErrorMessage(error, "인증번호 요청에 실패했습니다."));
-      setIsSubmitting(false);
+      if (!isCurrentSignupVerificationRequest(verificationRequestId)) return;
+      setSignupDraft({
+        ...pendingDraft,
+        verificationRequestError: getErrorMessage(error, "인증번호 요청에 실패했습니다.")
+      });
+      router.replace("/signup");
     }
   }
 
@@ -58,7 +95,7 @@ export default function SignupPage() {
                   <AuthField autoComplete="email" label="이메일" name="email" onChange={(event) => setEmail(event.target.value)} placeholder="example@email.com" type="email" value={email} />
                   <AuthField autoComplete="new-password" label="비밀번호" name="password" onChange={(event) => setPassword(event.target.value)} placeholder="password" type="password" value={password} />
                 </div>
-                {errorMessage ? <AuthError>{errorMessage}</AuthError> : null}
+                {visibleError ? <AuthError>{visibleError}</AuthError> : null}
               </div>
               <AuthSubmitButton disabled={isSubmitting}>인증 요청</AuthSubmitButton>
             </form>

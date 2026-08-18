@@ -21,8 +21,7 @@
   background: transparent;
 }
 
-/* 글자 크기·행간은 읽기 모드(.markdown-viewer)와 동일하게 맞춘다.
-   편집 시작 시 화면이 확대되는 것처럼 보이는 문제 방지 */
+/* 글자 크기·행간은 문서 뷰어(.markdown-viewer)와 동일하게 맞춘다. */
 .note-wysiwyg-editor :global(.milkdown .ProseMirror) {
   min-height: 420px;
   padding: 0 0 120px;
