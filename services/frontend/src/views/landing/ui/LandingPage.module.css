@@ -83,13 +83,7 @@
   background: #f8fafc;
 }
 
-.landing-secondary-action {
-  color: #f8fafc;
-  border: 1px solid rgb(148 163 184 / 45%);
-}
-
-.landing-login-link:hover,
-.landing-secondary-action:hover {
+.landing-login-link:hover {
   border-color: #c7d2fe;
 }
 
