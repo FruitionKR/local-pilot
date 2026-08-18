@@ -1282,6 +1282,58 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(len(starter.requests), 1)
         self.assertEqual(web_query_use_case.questions, ["웹 근거로 현재 문서를 다시 작성해 저장해줘"])
 
+    def test_direct_mutation_recheck_rejects_conflicting_document_operation(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=1),
+                    summary="호출되면 안 됨",
+                    replacement_markdown="# 잘못된 편집",
+                )
+            )
+        )
+        contextual_route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.99,
+            reason="previous edit context",
+            edit_goal="other",
+            document_operation="edit",
+            persist=True,
+        )
+        direct_route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.99,
+            reason="current create request",
+            edit_goal="create_from_chat",
+            document_operation="create",
+            persist=True,
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(contextual_route, direct_route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="그 내용으로 새 문서를 만들어 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+                base_version=3,
+                active_markdown_context=ActiveMarkdownContext(markdown="# 기존 문서"),
+            )
+        )
+
+        self.assertEqual(result.action, "clarify")
+        self.assertEqual(editor.requests, [])
+        self.assertEqual(editor.create_requests, [])
+        self.assertEqual(starter.requests, [])
+
     def test_preview_confirmation_reuses_exact_previous_edit(self) -> None:
         starter = RecordingAgentRunStarter()
         editor = RecordingMarkdownEditor(

@@ -592,7 +592,13 @@ def _direct_mutation_confirmed(
     route: AgentTurnRoute,
     direct_route: AgentTurnRoute,
 ) -> bool:
-    return direct_route.persist and direct_route.action == route.action
+    if not direct_route.persist or direct_route.action != route.action:
+        return False
+    return (
+        direct_route.document_operation in {"none", route.document_operation}
+        and direct_route.retrieval_source in {"none", route.retrieval_source}
+        and direct_route.edit_goal in {None, route.edit_goal}
+    )
 
 
 def _latest_markdown_preview_run_id(request: AgentTurnRequest) -> str | None:
