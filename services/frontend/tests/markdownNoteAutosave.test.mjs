@@ -4,8 +4,13 @@ import {
   applyRequiredAgentSource,
   mergePendingNoteSave,
   planAgentRetryAfterFailure,
-  recoverPendingNoteSaveAfterAgentFailure
+  recoverPendingNoteSaveAfterAgentFailure,
+  selectDetachedSaveCandidate
 } from "../src/features/note-editing/model/pendingSave.ts";
+import {
+  trackPendingDocumentSave,
+  waitForPendingDocumentSave
+} from "../src/features/note-editing/model/pendingDocumentSave.ts";
 
 test("AI 저장 대기 중 일반 편집이 이어져도 agent source를 보존한다", () => {
   const pending = mergePendingNoteSave(
@@ -122,4 +127,39 @@ test("재시도 횟수를 다 쓰면 더 보내지 않는다", () => {
     delayMs: 0,
     attempts: 3
   });
+});
+
+test("문서 이동 시 AI 재시도 후보를 마지막 저장 대상으로 보존한다", () => {
+  const candidate = selectDetachedSaveCandidate(null, {
+    markdown: "AI 편집 결과",
+    revision: 2,
+    source: "agent",
+    applyOperationId: "op-1"
+  });
+
+  assert.deepEqual(candidate, {
+    markdown: "AI 편집 결과",
+    revision: 2,
+    source: "agent",
+    applyOperationId: "op-1"
+  });
+});
+
+test("같은 문서를 다시 열 때 진행 중인 저장 완료를 기다린다", async () => {
+  let resolveSave;
+  const save = new Promise((resolve) => {
+    resolveSave = resolve;
+  });
+  trackPendingDocumentSave("doc-1", save);
+
+  let reopened = false;
+  const reopen = waitForPendingDocumentSave("doc-1").then(() => {
+    reopened = true;
+  });
+  await Promise.resolve();
+  assert.equal(reopened, false);
+
+  resolveSave();
+  await reopen;
+  assert.equal(reopened, true);
 });

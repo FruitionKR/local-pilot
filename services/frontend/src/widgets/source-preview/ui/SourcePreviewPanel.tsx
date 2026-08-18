@@ -8,7 +8,7 @@ import { HistoryPanel } from "@/features/document-history";
 import { fetchDocumentOriginal, reflectDocumentToWiki } from "@/entities/document";
 import { publishNotice } from "@/features/document-notifications";
 import { fetchWikiPage } from "@/entities/wiki";
-import { fetchNoteDraft } from "@/features/note-editing";
+import { fetchNoteDraft, waitForPendingDocumentSave, type DetachedNoteSaveResult } from "@/features/note-editing";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { buildMarkdownDocumentFilename, getMarkdownDocumentTitle, splitEditableNoteMarkdown } from "@/entities/document/lib/note";
 import { cx } from "@/shared/lib/classNames";
@@ -17,9 +17,6 @@ import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdo
 import type { DocumentRole, SourceBlockHighlight } from "@/entities/document";
 import type { NoteSaveStatus } from "@/entities/tree";
 import type { WikiPageDetailResponse } from "@/entities/wiki";
-
-// 다른 탭에서 편집한 내용을 반영하는 읽기 모드 주기 새로고침 간격
-const READ_MODE_REFRESH_INTERVAL_MS = 10000;
 
 const SAVE_STATUS_LABELS: Partial<Record<NoteSaveStatus, string>> = {
   dirty: "변경됨",
@@ -83,17 +80,13 @@ export function SourcePreviewPanel({
   const [documentReloadCount, setDocumentReloadCount] = useState(0);
   // 현재 화면에 본문이 올라와 있는 문서. 같은 문서 재조회인지 판별해 깜빡임을 막는다.
   const loadedDocumentIdRef = useRef<string | null>(null);
-  // 문서를 열면 읽기 모드로 시작하고, 편집 시작 버튼이나 본문 클릭으로 편집기로 전환한다.
-  const [isEditingStarted, setIsEditingStarted] = useState(false);
-  // Cmd/Ctrl+S로 저장할 때 저장 버튼에 눌림 효과를 잠깐 준다.
-  const [isSaveKeyActive, setIsSaveKeyActive] = useState(false);
-  const saveKeyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 편집기의 즉시 저장 함수 (저장 버튼에서 호출)
+  // 편집기의 즉시 저장 함수 (Cmd/Ctrl+S에서 호출)
   const noteSaveRef = useRef<(() => Promise<boolean>) | null>(null);
   const registerNoteSave = useCallback((save: () => Promise<boolean>) => {
     noteSaveRef.current = save;
   }, []);
   const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
+  const noteSaveStatusRef = useRef<NoteSaveStatus>("saved");
   const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // 복원 완료 콜백이 도착한 시점에 보고 있는 문서를 판별하기 위한 ref
@@ -129,43 +122,19 @@ export function SourcePreviewPanel({
     setRenameError(null);
   }, [title]);
 
-  // 다른 문서로 이동하면 읽기 모드로 되돌린다.
+  // Cmd+S(macOS) / Ctrl+S(Windows·Linux)로 디바운스를 건너뛰고 즉시 저장한다.
   useEffect(() => {
-    setIsEditingStarted(false);
-  }, [documentId]);
-
-  const startEditing = useCallback(() => {
-    // 편집 직전에 최신 본문·버전을 다시 불러와 낡은 버전 기준 저장 충돌을 막는다.
-    setDocumentReloadCount((count) => count + 1);
-    setIsEditingStarted(true);
-  }, []);
-
-  // Cmd+S(macOS) / Ctrl+S(Windows·Linux)로 즉시 저장. 편집 모드는 유지하고 저장 버튼에 눌림 효과만 준다.
-  useEffect(() => {
-    if (!isEditingStarted) return;
+    if (!isMarkdownFile || !documentId) return;
 
     function handleSaveKey(event: KeyboardEvent) {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
       event.preventDefault();
       void noteSaveRef.current?.();
-      setIsSaveKeyActive(true);
-      if (saveKeyTimerRef.current) clearTimeout(saveKeyTimerRef.current);
-      saveKeyTimerRef.current = setTimeout(() => {
-        saveKeyTimerRef.current = null;
-        setIsSaveKeyActive(false);
-      }, 200);
     }
 
     document.addEventListener("keydown", handleSaveKey);
-    return () => {
-      document.removeEventListener("keydown", handleSaveKey);
-      if (saveKeyTimerRef.current) {
-        clearTimeout(saveKeyTimerRef.current);
-        saveKeyTimerRef.current = null;
-      }
-      setIsSaveKeyActive(false);
-    };
-  }, [isEditingStarted]);
+    return () => document.removeEventListener("keydown", handleSaveKey);
+  }, [documentId, isMarkdownFile]);
 
   useEffect(() => {
     if (!preferencesReady) return;
@@ -177,6 +146,8 @@ export function SourcePreviewPanel({
   useEffect(() => {
     setIsOptionsOpen(false);
     setIsHistoryOpen(false);
+    noteSaveRef.current = null;
+    noteSaveStatusRef.current = "saved";
     setNoteSaveStatus("saved");
     setNoteSaveError(null);
   }, [documentId]);
@@ -204,9 +175,24 @@ export function SourcePreviewPanel({
   }, [onMarkdownEditContextChange]);
 
   const handleSaveStatusChange = useCallback((status: NoteSaveStatus, message: string | null) => {
+    const previousStatus = noteSaveStatusRef.current;
+    noteSaveStatusRef.current = status;
     setNoteSaveStatus(status);
     setNoteSaveError(message);
-  }, []);
+    if (status === "saved" && previousStatus !== "saved") onRefreshDocuments?.();
+  }, [onRefreshDocuments]);
+
+  const handleDetachedSaveComplete = useCallback((result: DetachedNoteSaveResult) => {
+    if (result.success) {
+      onRefreshDocuments?.();
+      return;
+    }
+    publishNotice({
+      kind: "failed",
+      title: "노트 저장 실패",
+      message: getErrorMessage(result.error, "문서를 이동하는 동안 편집 내용을 저장하지 못했습니다.")
+    });
+  }, [onRefreshDocuments]);
 
   async function commitTitle() {
     if (!isMarkdownFile || !documentId || !onRenameDocument || isRenaming) return;
@@ -266,7 +252,7 @@ export function SourcePreviewPanel({
 
     let ignore = false;
     let objectUrl: string | null = null;
-    // 같은 문서를 다시 받는 경우(편집 시작 전 최신본 확인)에는 화면을 비우지 않는다.
+    // 같은 문서를 다시 받는 경우(버전 복원 등)에는 화면을 비우지 않는다.
     // 비우면 본문이 사라졌다가 다시 그려지며 로딩 문구가 뜨고 스크롤이 맨 위로 튄다.
     const isSameDocumentReload = loadedDocumentIdRef.current === documentId;
     setErrorMessage(null);
@@ -279,6 +265,8 @@ export function SourcePreviewPanel({
 
     const loadDocument = async () => {
       if (isMarkdownFile) {
+        await waitForPendingDocumentSave(documentId);
+        if (ignore) return;
         const draft = await fetchNoteDraft(documentId);
         if (draft) {
           if (!ignore) {
@@ -322,28 +310,6 @@ export function SourcePreviewPanel({
     };
   }, [documentId, documentReloadCount, isMarkdownFile, pageId]);
 
-  // 다른 탭에서 같은 문서를 편집할 수 있으므로 읽기 모드에서 주기적으로 백엔드 본문을 새로고침한다.
-  // 편집 모드에서는 작성 중인 내용을 덮어쓰지 않도록 새로고침하지 않는다
-  // (편집 진입 시 최신본 재로드 + 저장 시 content_version 충돌 감지가 있다).
-  useEffect(() => {
-    if (!isMarkdownFile || !documentId || isEditingStarted) return;
-
-    const intervalId = window.setInterval(() => {
-      fetchNoteDraft(documentId)
-        .then((draft) => {
-          // 응답 도착 전에 다른 문서로 이동했거나 편집을 시작했으면 무시한다.
-          if (!draft || documentId !== activeDocumentIdRef.current) return;
-          setRawMarkdown((current) => (current === draft.markdown ? current : draft.markdown));
-          setNoteContentVersion(draft.content_version);
-        })
-        .catch(() => {
-          // 주기 새로고침 실패는 조용히 넘기고 다음 주기에 재시도한다.
-        });
-    }, READ_MODE_REFRESH_INTERVAL_MS);
-
-    return () => window.clearInterval(intervalId);
-  }, [documentId, isEditingStarted, isMarkdownFile]);
-
   useEffect(() => {
     if (!isMarkdownFile || selectedBlockHighlights.length === 0 || rawMarkdown === null) return;
 
@@ -377,42 +343,6 @@ export function SourcePreviewPanel({
             </span>
           )}
           <span>{lastEditedLabel}</span>
-          {isMarkdownFile && (
-            isEditingStarted ? (
-              <button
-                type="button"
-                className={cx(styles["source-preview-edit-start"], isSaveKeyActive && styles["is-pressed"])}
-                onClick={() => {
-                  void (async () => {
-                    // 저장이 실제로 성공했을 때만 읽기 모드로 돌아간다 (실패 시 편집 내용 보존)
-                    const saved = await noteSaveRef.current?.();
-                    if (saved === false) return;
-                    noteSaveRef.current = null;
-                    // 에디터가 언마운트되면 "saved" 상태 보고가 끊기므로 여기서 직접 리셋한다
-                    setNoteSaveStatus("saved");
-                    setNoteSaveError(null);
-                    setIsEditingStarted(false);
-                    // 읽기 모드가 저장한 본문을 보여주려면 다시 받아야 한다.
-                    // (같은 문서 재조회는 화면을 비우지 않으므로 깜빡임·스크롤 튐은 없다)
-                    setDocumentReloadCount((count) => count + 1);
-                    // 저장으로 백엔드 needs_reingest가 켜진다. 처리 중 문서가 없으면 목록 폴링이 꺼져 있어
-                    // 여기서 직접 다시 받아야 재분석 제안 알림이 저장 직후 뜬다.
-                    onRefreshDocuments?.();
-                  })();
-                }}
-              >
-                저장
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={styles["source-preview-edit-start"]}
-                onClick={startEditing}
-              >
-                편집 시작
-              </button>
-            )
-          )}
           <div className={styles["source-preview-tab"]}>
           {!isAgentPanelOpen && (
             <button type="button" aria-label="AI 사이드바 열기" onClick={onOpenAgentPanel}>
@@ -496,7 +426,6 @@ export function SourcePreviewPanel({
               className={styles["source-preview-title-input"]}
               aria-label="문서 이름"
               value={titleInput}
-              readOnly={!isEditingStarted}
               disabled={isRenaming}
               spellCheck={false}
               onChange={(event) => setTitleInput(event.target.value)}
@@ -523,30 +452,18 @@ export function SourcePreviewPanel({
         {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
         {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && editableNote && documentId && (
-          isEditingStarted ? (
-            <DynamicNoteEditor
-              key={`${documentId}:${documentReloadCount}`}
-              documentId={documentId}
-              marker={editableNote.marker}
-              initialBody={editableNote.body}
-              initialVersion={noteContentVersion}
-              sourceMode={sourceMode}
-              onMarkdownEditContextChange={handleMarkdownEditContextChange}
-              onSaveStatusChange={handleSaveStatusChange}
-              onRegisterSave={registerNoteSave}
-            />
-          ) : (
-            // 읽기 모드 본문을 클릭하면 바로 편집을 시작한다 (링크 클릭은 제외)
-            <div
-              className={styles["source-preview-read-surface"]}
-              onClick={(event) => {
-                if ((event.target as HTMLElement).closest("a")) return;
-                startEditing();
-              }}
-            >
-              <MarkdownViewer markdown={editableNote.body} />
-            </div>
-          )
+          <DynamicNoteEditor
+            key={`${documentId}:${documentReloadCount}`}
+            documentId={documentId}
+            marker={editableNote.marker}
+            initialBody={editableNote.body}
+            initialVersion={noteContentVersion}
+            sourceMode={sourceMode}
+            onMarkdownEditContextChange={handleMarkdownEditContextChange}
+            onSaveStatusChange={handleSaveStatusChange}
+            onDetachedSaveComplete={handleDetachedSaveComplete}
+            onRegisterSave={registerNoteSave}
+          />
         )}
         {isPdfOrOther && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isPdfOrOther && errorMessage && <p>{errorMessage}</p>}
