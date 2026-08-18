@@ -9,7 +9,12 @@
     "lint": "next lint",
     "test:markdown": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/markdown*.test.mjs",
     "test:user-preferences": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/userPreferences.test.mjs",
-    "test:ai-model": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/aiModelSelection.test.mjs"
+    "test:ai-model": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/aiModelSelection.test.mjs",
+    "test:active-wiki-work": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/activeWikiWork.test.mjs",
+    "test:wiki-reflect": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/wikiReflectState.test.mjs",
+    "test:operation-log-query": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/operationLogQuery.test.mjs",
+    "test:operation-log-page": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/operationLogPage.test.mjs",
+    "test:workspace-layout": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/workspaceLayout.test.mjs"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.1",
