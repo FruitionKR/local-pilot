@@ -1,8 +1,11 @@
-# Pipeline API
+# Wiki Ingest Pipeline API
 
 [API 문서](../README.md) / [ai-svc](README.md)
 
-pipeline 실행·상태·로그와 상태 점검 내부 API다.
+문서·채팅 Wiki ingest 실행과 run 상태·로그를 제공하는 내부 API다. 공개 Gateway 계약은
+문서 [`ingest API`](../document/ai.md)와 [`채팅 Wiki 내보내기 API`](../document/chat.md)다.
+현재 Backend는 POST 실행 API를 호출하지 않고 Kafka `ai.ingest.command`를 발행한다.
+`GET /pipeline/runs/{run_id}`만 상태 확인용 내부 HTTP로 사용하며, 나머지는 수동·운영 인터페이스다.
 
 - API 수: 7
 
@@ -58,18 +61,16 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 
 - Content-Type: `application/json` (`ChatWikiRunIn`)
 
+운영 Gateway는 이 HTTP API를 호출하지 않는다. Backend가 검증한 채팅을 문서로 저장하고
+Kafka command를 발행하면 ingest worker가 같은 실행 로직을 호출한다. 아래는 수동 내부 호출에
+필요한 최소 body이며 prompt 경로와 evaluator 설정은 ai-svc 기본값을 사용한다.
+
 ```json
 {
-  "chat_append_system_prompt": "prompts/chat_semantic_append.system.md",
-  "chat_system_prompt": "prompts/chat_semantic_extraction.system.md",
-  "concept_page_mode": "auto",
-  "concept_resolution_system_prompt": "prompts/concept_resolution.system.md",
-  "concept_system_prompt": "prompts/concept_page_generation.system.md",
-  "document_id": "string",
-  "existing_wiki_dir": "string",
-  "input_markdown": "string",
-  "input_name": "string",
-  "log_callback_url": "string"
+  "document_id": "chatdoc_123",
+  "provider": "openai",
+  "model": "gpt-5-nano",
+  "selection_mode": "full"
 }
 ```
 
@@ -132,7 +133,7 @@ pipeline 실행·상태·로그와 상태 점검 내부 API다.
 curl -X POST "$PIPELINE/chat-wiki/runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"chat_append_system_prompt":"prompts/chat_semantic_append.system.md","chat_system_prompt":"prompts/chat_semantic_extraction.system.md","concept_page_mode":"auto","concept_resolution_system_prompt":"prompts/concept_resolution.system.md","concept_system_prompt":"prompts/concept_page_generation.system.md","document_id":"<value>","existing_wiki_dir":"<value>","input_markdown":"<value>","input_name":"<value>","log_callback_url":"<value>"}'
+  --data '{"document_id":"chatdoc_123","provider":"openai","model":"gpt-5-nano","selection_mode":"full"}'
 ```
 
 ```json
@@ -193,18 +194,14 @@ curl -X POST "$PIPELINE/chat-wiki/runs" \
 
 - Content-Type: `application/json` (`ReingestRunIn`)
 
+현재 Gateway·Backend에는 이 HTTP endpoint의 호출자가 없다. 수동 재편입 시 필요한 최소 body다.
+
 ```json
 {
-  "concept_page_mode": "auto",
-  "concept_resolution_system_prompt": "prompts/concept_resolution.system.md",
-  "concept_system_prompt": "prompts/concept_page_generation.system.md",
-  "document_id": "string",
-  "existing_wiki_dir": "string",
-  "input_markdown": "string",
-  "input_name": "string",
-  "log_callback_url": "string",
-  "max_eval_attempts": 1,
-  "max_packet_chars": 1
+  "document_id": "doc_123",
+  "provider": "openai",
+  "model": "gpt-5-nano",
+  "input_markdown": "# 갱신된 문서"
 }
 ```
 
@@ -267,7 +264,7 @@ curl -X POST "$PIPELINE/chat-wiki/runs" \
 curl -X POST "$PIPELINE/pipeline/reingest-runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"concept_page_mode":"auto","concept_resolution_system_prompt":"prompts/concept_resolution.system.md","concept_system_prompt":"prompts/concept_page_generation.system.md","document_id":"<value>","existing_wiki_dir":"<value>","input_markdown":"<value>","input_name":"<value>","log_callback_url":"<value>","max_eval_attempts":1,"max_packet_chars":1}'
+  --data '{"document_id":"doc_123","provider":"openai","model":"gpt-5-nano","input_markdown":"# 갱신된 문서"}'
 ```
 
 ```json
@@ -328,18 +325,13 @@ curl -X POST "$PIPELINE/pipeline/reingest-runs" \
 
 - Content-Type: `application/json` (`PipelineRunIn`)
 
+운영 Gateway는 Kafka를 사용한다. 아래는 같은 ingest를 수동 내부 HTTP로 실행할 때 필요한 최소 body다.
+
 ```json
 {
-  "concept_page_mode": "auto",
-  "concept_resolution_system_prompt": "prompts/concept_resolution.system.md",
-  "concept_system_prompt": "prompts/concept_page_generation.system.md",
-  "document_id": "string",
-  "existing_wiki_dir": "string",
-  "input_name": "string",
-  "log_callback_url": "string",
-  "max_eval_attempts": 1,
-  "max_packet_chars": 1,
-  "mode": "api"
+  "document_id": "doc_123",
+  "provider": "openai",
+  "model": "gpt-5-nano"
 }
 ```
 
@@ -402,7 +394,7 @@ curl -X POST "$PIPELINE/pipeline/reingest-runs" \
 curl -X POST "$PIPELINE/pipeline/runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"concept_page_mode":"auto","concept_resolution_system_prompt":"prompts/concept_resolution.system.md","concept_system_prompt":"prompts/concept_page_generation.system.md","document_id":"<value>","existing_wiki_dir":"<value>","input_name":"<value>","log_callback_url":"<value>","max_eval_attempts":1,"max_packet_chars":1,"mode":"api"}'
+  --data '{"document_id":"doc_123","provider":"openai","model":"gpt-5-nano"}'
 ```
 
 ```json
@@ -576,7 +568,7 @@ pipeline run 로그를 조회합니다.
 - HTTP `200`: Successful Response
 - Content-Type: `text/plain`
 
-```json
+```text
 string
 ```
 
@@ -624,7 +616,7 @@ curl -X GET "$PIPELINE/pipeline/runs/<value>/logs" \
   -H 'X-Internal-Token: <value>'
 ```
 
-```json
+```text
 string
 ```
 

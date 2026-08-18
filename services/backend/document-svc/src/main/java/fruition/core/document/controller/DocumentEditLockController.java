@@ -68,6 +68,7 @@ public class DocumentEditLockController {
     }
 
     @Operation(summary = "편집 잠금 해제", description = "편집기 종료 시 호출한다. 보유자 본인의 잠금만 해제하며 멱등이다.")
+    @ApiResponse(responseCode = "204", description = "잠금 해제 성공")
     @DeleteMapping
     public ResponseEntity<Void> release(
             @PathVariable("workspace_id") String workspaceId,

@@ -2,7 +2,9 @@
 
 [API 문서](../README.md) / [ai-svc](README.md)
 
-Wiki 기반 질의 실행 내부 API다.
+Wiki 기반 질의 실행 내부 API다. 공개 Gateway 계약은
+[`document-svc Query API`](../document/query.md)다. 동기 Query는 Backend가 이 API를 호출하고,
+비동기 Query는 Kafka `ai.query.command` worker가 같은 application 로직을 실행한다.
 
 - API 수: 1
 
@@ -54,22 +56,17 @@ Wiki와 선택적 웹 검색을 바탕으로 질의에 답합니다.
 
 ```json
 {
-  "allow_web_search": true,
-  "model": "string",
-  "output_language": "ko",
-  "provider": "string",
-  "question": "string",
-  "recent_conversation_summary": "string",
+  "workspace_id": "workspace_123",
+  "question": "Wiki ingest는 어떤 단계로 동작해?",
+  "provider": "openai",
+  "model": "gpt-5-nano",
+  "allow_web_search": false,
   "recent_messages": [
     {
-      "content": "string",
-      "role": "user"
+      "role": "user",
+      "content": "Wiki 구조를 설명해줘"
     }
-  ],
-  "reference_context": {
-  },
-  "response_length": "concise",
-  "user_id": "string"
+  ]
 }
 ```
 
@@ -202,7 +199,7 @@ Wiki와 선택적 웹 검색을 바탕으로 질의에 답합니다.
 curl -X POST "$PIPELINE/query" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"allow_web_search":true,"model":"<value>","output_language":"ko","provider":"<value>","question":"<value>","recent_conversation_summary":"<value>","recent_messages":[{"content":"<value>","role":"user"}],"reference_context":{},"response_length":"concise","user_id":"<value>"}'
+  --data '{"workspace_id":"workspace_123","question":"Wiki ingest는 어떤 단계로 동작해?","provider":"openai","model":"gpt-5-nano","allow_web_search":false,"recent_messages":[{"role":"user","content":"Wiki 구조를 설명해줘"}]}'
 ```
 
 ```json

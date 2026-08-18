@@ -2,7 +2,10 @@
 
 [API 문서](../README.md) / [ai-svc](README.md)
 
-Wiki 조회·ingest·lint·복구 내부 API다.
+Wiki 조회·페이지 관리·lint·복구 내부 API다. 공개 Gateway 계약은
+[`document-svc Wiki API`](../document/wiki.md)다. 조회·페이지 관리는 내부 HTTP로 중계하고,
+lint·복구는 Kafka `ai.maintenance.command` worker가 실행한다. ingest 실행과 run 조회는
+[`Wiki Ingest Pipeline API`](pipeline.md)에서 다룬다.
 
 - API 수: 10
 
@@ -358,7 +361,7 @@ ingest 작업의 Wiki 변경을 복원합니다.
 curl -X POST "$PIPELINE/wiki/ingest-restore-runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"cancel_operation_ids":["<value>"],"deleted_pages":["<value>"],"operation_id":"<value>","rebuild_pages":[{"keep_contributions":[null],"page_id":"<value>"}],"restore_to_operation_id":"<value>","source_page":{"document_id":"<value>","page_id":"<value>"},"workspace_id":"<value>"}'
+  --data '{"cancel_operation_ids":["op_cancelled"],"deleted_pages":["page_deleted"],"operation_id":"op_restore","rebuild_pages":[{"keep_contributions":[{"document_id":"doc_kept","operation_id":"op_kept"}],"page_id":"page_rebuild"}],"restore_to_operation_id":"op_target","source_page":{"document_id":"doc_source","page_id":"page_source"},"workspace_id":"workspace_01"}'
 ```
 
 ```json
@@ -488,7 +491,7 @@ lint 작업의 Wiki 변경을 복원합니다.
 curl -X POST "$PIPELINE/wiki/lint-restore-runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"deleted_pages":["<value>"],"operation_id":"<value>","rebuild_pages":[{"keep_contributions":[null],"page_id":"<value>"}],"target_operation_id":"<value>","workspace_id":"<value>"}'
+  --data '{"deleted_pages":["page_deleted"],"operation_id":"op_lint_restore","rebuild_pages":[{"keep_contributions":[{"document_id":"doc_kept","operation_id":"op_kept"}],"page_id":"page_rebuild"}],"target_operation_id":"op_lint_target","workspace_id":"workspace_01"}'
 ```
 
 ```json
@@ -565,35 +568,22 @@ curl -X POST "$PIPELINE/wiki/lint-restore-runs" \
   "active_path": "string",
   "applied_cluster_reconciliation": {
   },
-  "applied_reconciliations": [
-    {
-    }
-  ],
-  "changed_pages": [
-    {
-    }
-  ],
+  "applied_reconciliations": [],
+  "changed_pages": [],
   "cluster_count": 1,
-  "invalid_promotions": [
-    {
-    }
-  ],
-  "invalid_relations": [
-    {
-    }
-  ],
-  "materialized_promotions": [
-    {
-    }
-  ],
-  "materialized_relations": [
-    {
-    }
-  ],
-  "merged_promotions": [
-    {
-    }
-  ]
+  "invalid_promotions": [],
+  "invalid_relations": [],
+  "materialized_promotions": [],
+  "materialized_relations": [],
+  "merged_promotions": [],
+  "needs_review": [],
+  "orphan_refs": [],
+  "promotion_candidates": [],
+  "reconciliation_candidates": [],
+  "relation_candidates": [],
+  "source_ref_count": 0,
+  "user_id": "local-user",
+  "workspace_id": "local-workspace"
 }
 ```
 
@@ -640,7 +630,7 @@ curl -X POST "$PIPELINE/wiki/lint-restore-runs" \
 curl -X POST "$PIPELINE/wiki/maintenance/lint" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"dry_run":true,"materialize_promotions":true,"model":"<value>","operation_id":"<value>","provider":"openai","user_id":"local-user","workspace_id":"local-workspace"}'
+  --data '{"dry_run":true,"materialize_promotions":true,"model":"gpt-5-nano","operation_id":"<value>","provider":"openai","user_id":"local-user","workspace_id":"local-workspace"}'
 ```
 
 ```json
@@ -648,35 +638,22 @@ curl -X POST "$PIPELINE/wiki/maintenance/lint" \
   "active_path": "string",
   "applied_cluster_reconciliation": {
   },
-  "applied_reconciliations": [
-    {
-    }
-  ],
-  "changed_pages": [
-    {
-    }
-  ],
+  "applied_reconciliations": [],
+  "changed_pages": [],
   "cluster_count": 1,
-  "invalid_promotions": [
-    {
-    }
-  ],
-  "invalid_relations": [
-    {
-    }
-  ],
-  "materialized_promotions": [
-    {
-    }
-  ],
-  "materialized_relations": [
-    {
-    }
-  ],
-  "merged_promotions": [
-    {
-    }
-  ]
+  "invalid_promotions": [],
+  "invalid_relations": [],
+  "materialized_promotions": [],
+  "materialized_relations": [],
+  "merged_promotions": [],
+  "needs_review": [],
+  "orphan_refs": [],
+  "promotion_candidates": [],
+  "reconciliation_candidates": [],
+  "relation_candidates": [],
+  "source_ref_count": 0,
+  "user_id": "local-user",
+  "workspace_id": "local-workspace"
 }
 ```
 
