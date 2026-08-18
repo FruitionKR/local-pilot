@@ -30,12 +30,6 @@ public class ChatSession {
     @Column(name = "last_message_at")
     private Instant lastMessageAt;
 
-    @Column(name = "wiki_page_id")
-    private String wikiPageId;
-
-    @Column(name = "wiki_export_document_id")
-    private String wikiExportDocumentId;
-
     /** 제목을 주지 않고 만든 세션의 기본 제목. 화면이 쓰던 표시값과 같게 맞춘다. */
     public static final String DEFAULT_TITLE = "새 채팅";
 
@@ -64,16 +58,6 @@ public class ChatSession {
         this.contextSummaryUpdatedAt = now;
     }
 
-    /** Wiki page화 export 문서 id를 기록한다. 완료 콜백에서 이 세션을 역조회하는 데 쓴다. */
-    public void assignWikiExportDocument(String documentId) {
-        this.wikiExportDocumentId = documentId;
-    }
-
-    /** export 완료 후 생성된 source wiki page를 세션에 연결한다. */
-    public void linkWikiPage(String wikiPageId) {
-        this.wikiPageId = wikiPageId;
-    }
-
     public String getId() { return id; }
     public String getWorkspaceId() { return workspaceId; }
     public String getUserId() { return userId; }
@@ -82,6 +66,4 @@ public class ChatSession {
     public Instant getContextSummaryUpdatedAt() { return contextSummaryUpdatedAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getLastMessageAt() { return lastMessageAt; }
-    public String getWikiPageId() { return wikiPageId; }
-    public String getWikiExportDocumentId() { return wikiExportDocumentId; }
 }

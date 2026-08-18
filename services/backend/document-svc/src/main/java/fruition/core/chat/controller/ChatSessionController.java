@@ -137,7 +137,7 @@ public class ChatSessionController {
                         ), Collectors.toList())
                 ));
 
-        // 문답별 partial 위키 페이지 목록(1:N). full은 message.wiki_page_id로 노출.
+        // 문답별 위키 페이지 목록(1:N). 같은 문답을 여러 번 내보내면 page가 늘어난다.
         Map<String, List<String>> partialPagesByPairId = chatPartialWikiRepository.findAllBySessionId(sessionId).stream()
                 .collect(Collectors.groupingBy(
                         ChatPartialWiki::getPairId,
@@ -157,7 +157,7 @@ public class ChatSessionController {
                     var relatedPages = relatedPagesByMessageId.getOrDefault(m.getId(), List.of());
                     var partialWikiPageIds = partialPagesByPairId.getOrDefault(m.getPairId(), List.of());
                     return new ChatMessageResponse(m.getId(), m.getPairId(), m.getRole(), m.getContent(), m.getStatus(), m.getCreatedAt(),
-                            relatedPages, refs, m.getWikiPageId(), partialWikiPageIds, m.getErrorMessage(),
+                            relatedPages, refs, partialWikiPageIds, m.getErrorMessage(),
                             m.getAiProvider(), m.getAiModel(), m.getWebSearchEnabled(),
                             m.getRunId(), m.getAction());
                 })

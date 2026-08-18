@@ -266,23 +266,6 @@ public class Document {
     }
 
     /**
-     * 채팅 full 재생성: 기존 export 문서를 갱신해 재처리한다. MinIO 원본은 세션 전체로 덮어쓴 뒤,
-     * 그 전체 내용의 해시/크기로 갱신하고, 파이프라인엔 delta만 inline으로 보낸다.
-     */
-    public void reopenForChatExportRegeneration(String contentHash, long byteSize, String pipelineInputMarkdown,
-                                                String pipelineInputBlocks) {
-        this.contentHash = contentHash;
-        this.currentContentHash = contentHash; // 재처리 스냅샷 시점에는 편집본과 ingest 본이 같다
-        this.byteSize = byteSize;
-        this.status = DocumentStatus.processing;
-        this.processedAt = null;
-        this.errorMessage = null;
-        this.pipelineInputMarkdown = pipelineInputMarkdown;
-        this.pipelineInputBlocks = pipelineInputBlocks;
-        this.reconciledAt = null; // 재처리하므로 완료 후 다시 reconcile 대상이 되게 리셋
-    }
-
-    /**
      * 편집 가능 Markdown 재ingest: 편집본을 MinIO 원본으로 덮어쓴 뒤 재처리한다. 일반 문서는
      * 파이프라인이 MinIO 원본 전체를 읽으므로 inline 입력(pipelineInputMarkdown)은 두지 않는다.
      */

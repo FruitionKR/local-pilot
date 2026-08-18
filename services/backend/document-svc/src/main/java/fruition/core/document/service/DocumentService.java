@@ -89,7 +89,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -642,44 +641,6 @@ public class DocumentService {
         });
     }
 
-    private byte[] readMinioObject(String objectKey) {
-        try (InputStream inputStream = minioClient.getObject(
-                GetObjectArgs.builder()
-                        .bucket(storageProps.getBucket())
-                        .object(objectKey)
-                        .build())) {
-            return inputStream.readAllBytes();
-        } catch (Exception e) {
-            throw new DocumentUploadException("채팅 export 기존 원본을 읽지 못했습니다.", e);
-        }
-    }
-
-    private void registerMinioRollbackRestore(String objectKey, byte[] previousBytes) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCompletion(int status) {
-                if (status == TransactionSynchronization.STATUS_COMMITTED) {
-                    return;
-                }
-                try (InputStream inputStream = new ByteArrayInputStream(previousBytes)) {
-                    minioClient.putObject(
-                            PutObjectArgs.builder()
-                                    .bucket(storageProps.getBucket())
-                                    .object(objectKey)
-                                    .stream(inputStream, previousBytes.length, -1)
-                                    .contentType("text/markdown")
-                                    .build()
-                    );
-                } catch (Exception e) {
-                    log.error("[MinIO 오브젝트 롤백 복원 실패] objectKey={} error={}", objectKey, e.getMessage(), e);
-                }
-            }
-        });
-    }
-
     /** DB 트랜잭션 커밋 뒤 별도 로컬 작업 큐에 등록한다. */
     private void enqueueAfterCommit(String queueLabel, String documentId, Runnable enqueue) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -733,22 +694,24 @@ public class DocumentService {
     }
 
     /**
+     * 채팅 export는 언제나 선택한 문답만 담은 새 문서다. 중복 판별 unique key(workspace_id, content_hash,
+     * selection_mode)와 파이프라인 command가 이 값을 그대로 쓴다.
+     */
+    private static final String CHAT_EXPORT_SELECTION_MODE = "partial";
+
+    /**
      * 채팅 export Markdown을 문서로 저장하고 처리 큐에 등록한다. (권한 검증은 호출부에서 이미 수행)
      * contentHash로 중복을 확인해, 이미 있으면 기존 문서 id로 skipped 결과를 반환한다.
      */
     @Transactional
     public ExportDocumentResult createChatExportDocument(String workspaceId, String userId,
                                                          String filename, String markdown, String contentHash,
-                                                         String selectionMode,
                                                          List<PipelineSourceBlock> blocks) {
-        if (selectionMode == null || selectionMode.isBlank()) {
-            throw new IllegalArgumentException("채팅 export 문서는 selection_mode가 필요합니다.");
-        }
         if (blocks == null || blocks.isEmpty()) {
             throw new IllegalArgumentException("채팅 export 문서는 source block이 필요합니다.");
         }
         Optional<Document> existing = documentRepository.findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
-                workspaceId, "chat_export", contentHash, selectionMode);
+                workspaceId, "chat_export", contentHash, CHAT_EXPORT_SELECTION_MODE);
         if (existing.isPresent()) {
             return new ExportDocumentResult(existing.get().getId(), true);
         }
@@ -760,17 +723,17 @@ public class DocumentService {
         Document candidate = new Document(
                 documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
                 objectPath, contentHash, "chat_export");
-        candidate.assignSelectionMode(selectionMode);
+        candidate.assignSelectionMode(CHAT_EXPORT_SELECTION_MODE);
         if (documentRepository.reserveChatExport(
                 candidate.getId(), candidate.getWorkspaceId(), candidate.getUserId(),
                 candidate.getFilename(), candidate.getDisplayName(), candidate.getNormalizedFilename(),
                 candidate.getMimeType(), candidate.getByteSize(), candidate.getStatus().name(),
                 candidate.getSourceUri(), candidate.getContentHash(), candidate.getCurrentContentHash(),
                 candidate.getCurrentVersion(), candidate.getDocumentRole().name(), candidate.getSortOrder(),
-                candidate.getUploadedAt(), candidate.getUpdatedAt(), selectionMode) == 0) {
+                candidate.getUploadedAt(), candidate.getUpdatedAt(), CHAT_EXPORT_SELECTION_MODE) == 0) {
             Document canonical = documentRepository
                     .findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
-                            workspaceId, "chat_export", contentHash, selectionMode)
+                            workspaceId, "chat_export", contentHash, CHAT_EXPORT_SELECTION_MODE)
                     .orElseThrow(() -> new IllegalStateException("chat export canonical 문서를 찾을 수 없습니다."));
             return new ExportDocumentResult(canonical.getId(), true);
         }
@@ -800,69 +763,6 @@ public class DocumentService {
         enqueueIngest(document);
 
         return new ExportDocumentResult(documentId, false);
-    }
-
-    /**
-     * 채팅 full 재생성: 기존 export 문서(documentId)를 재사용한다. MinIO 원본을 세션 전체(fullMarkdown)로 덮어쓰고,
-     * 파이프라인엔 미편입 문답(deltaMarkdown)만 inline으로 보내도록 문서를 갱신한 뒤 처리 큐에 재등록한다.
-     */
-    @Transactional
-    public void regenerateChatExportDocument(String documentId, String fullMarkdown, String fullContentHash,
-                                             String deltaMarkdown, List<PipelineSourceBlock> deltaBlocks) {
-        Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new DocumentNotFoundException(documentId));
-
-        byte[] bytes = fullMarkdown.getBytes(StandardCharsets.UTF_8);
-        String objectKey = normalizeObjectKey(document.getSourceUri());
-        byte[] previousBytes = readMinioObject(objectKey);
-        Optional<DocumentEditState> currentState = postgresDocumentEditStore.findState(documentId);
-        if (currentState.map(state -> fullContentHash.equals(state.getContentHash())).orElse(false)
-                && fullContentHash.equals(document.getContentHash())
-                && Arrays.equals(previousBytes, bytes)) {
-            return;
-        }
-
-        if (currentState.isEmpty()) {
-            TransactionTemplate initializationTransaction = requiresNewSaveTransactionTemplate();
-            initializationTransaction.execute(status -> {
-                editStateInitializer.initializeIfNeeded(document);
-                return null;
-            });
-        }
-        DocumentEditState editState = postgresDocumentEditStore.findState(documentId)
-                .orElseThrow(() -> new InvalidMarkdownContentException(
-                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
-        registerMinioRollbackRestore(objectKey, previousBytes);
-
-        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
-            minioClient.putObject(
-                    PutObjectArgs.builder()
-                            .bucket(storageProps.getBucket())
-                            .object(objectKey)
-                            .stream(inputStream, bytes.length, -1)
-                            .contentType("text/markdown")
-                            .build()
-            );
-        } catch (Exception e) {
-            throw new DocumentUploadException("채팅 export 재생성 저장 중 오류가 발생했습니다.", e);
-        }
-
-        long baseRevision = editState.getRevision();
-        TransactionTemplate saveTransaction = requiresNewSaveTransactionTemplate();
-        executeWithSaveRetry(() -> saveTransaction.execute(status -> {
-            Document attemptDocument = documentRepository.findById(documentId)
-                    .orElseThrow(() -> new DocumentNotFoundException(documentId));
-            attemptDocument.reopenForChatExportRegeneration(
-                    fullContentHash, bytes.length, deltaMarkdown, serializePipelineBlocks(deltaBlocks));
-            log.info("[채팅 export 재생성 DB 갱신 완료] documentId={} contentHashPrefix={} byteSize={} deltaMarkdownLength={}",
-                    documentId, contentHashPrefix(fullContentHash), bytes.length,
-                    deltaMarkdown != null ? deltaMarkdown.length() : 0);
-            enqueueIngest(attemptDocument);
-            return postgresDocumentEditStore.save(
-                    attemptDocument.getWorkspaceId(), documentId, fullMarkdown, fullContentHash,
-                    baseRevision, "chat-export-regenerate:" + fullContentHash,
-                    attemptDocument.getUserId(), null);
-        }));
     }
 
     /**
