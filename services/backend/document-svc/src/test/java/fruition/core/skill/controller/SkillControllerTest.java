@@ -16,6 +16,8 @@ import fruition.shared.http.PipelineClientFactory;
 import fruition.shared.security.JwtAuthenticationFilter;
 import fruition.shared.security.JwtTokenProvider;
 import io.swagger.v3.core.converter.ModelConverters;
+import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.OpenAPI;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -169,6 +171,10 @@ class SkillControllerTest {
                 .get("SkillResponse");
         var version = ModelConverters.getInstance().read(schemaClass("SkillVersionResponseSchema"))
                 .get("SkillVersionResponse");
+        var authoringSchemas = ModelConverters.getInstance().read(schemaClass("SkillAuthoringResponseSchema"));
+        var authoring = authoringSchemas.get("SkillAuthoringResponse");
+        var openApi = new OpenAPI().components(new Components().schemas(authoringSchemas));
+        new SkillOpenApiConfig().skillAuthoringResponseCustomizer().customise(openApi);
 
         assertThat(skill.getProperties()).containsKeys("id", "workspace_id", "enabled_version", "latest_version");
         assertThat(version.getProperties()).containsKeys("capabilities", "allowed_tools", "lint_result", "status");
@@ -187,6 +193,28 @@ class SkillControllerTest {
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) version.getProperties().get("capabilities")).getItems().getType()).isEqualTo("string");
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) version.getProperties().get("allowed_tools")).getItems().getType()).isEqualTo("string");
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) version.getProperties().get("lint_result")).getType()).isEqualTo("object");
+        assertThat(authoring.getRequired()).containsExactly("status");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) authoring.getProperties().get("status")).getEnum())
+                .isEqualTo(List.of("clarification_required", "blocked", "proposal_ready", "published"));
+        assertThat(List.of("question", "skill_id", "version_id", "scope_type", "name", "description",
+                "instructions_markdown", "skill_markdown")).allSatisfy(field -> {
+                    var oneOf = ((io.swagger.v3.oas.models.media.Schema<?>) authoring.getProperties().get(field)).getOneOf();
+                    assertThat(oneOf).hasSize(2);
+                    assertThat(oneOf.get(0).getType()).isEqualTo("string");
+                    assertThat(oneOf.get(1).getTypes()).containsExactly("null");
+                });
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) authoring.getProperties().get("scope_type"))
+                .getOneOf().get(0).getEnum()).isEqualTo(List.of("personal", "team"));
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) authoring.getProperties().get("capabilities"))
+                .getItems().getEnum()).isEqualTo(List.of(
+                        "document-create", "document-edit", "folder-organize", "template"));
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) authoring.getProperties().get("allowed_tools"))
+                .getItems().getEnum()).isEqualTo(List.of(
+                        "list_root_items", "list_folder_children", "search_hierarchy", "get_breadcrumb",
+                        "get_document_metadata", "get_document_content", "create_folder", "rename_folder",
+                        "move_folder", "move_document", "rename_document", "create_document", "apply_document_edit"));
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) authoring.getProperties().get("issues"))
+                .getItems().getType()).isEqualTo("object");
     }
 
     private Class<?> schemaClass(String name) throws ClassNotFoundException {

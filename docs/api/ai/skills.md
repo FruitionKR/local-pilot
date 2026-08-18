@@ -566,9 +566,13 @@ curl -X POST "$PIPELINE/skills/author/publish" \
 
 #### 2. 목적
 
-Backend가 소유권과 완료 상태를 검증해 전달한 Agent run 요약에서 재사용 가능한 절차만 추출합니다.
+수동 내부 호출로 전달한 Agent run 요약에서 재사용 가능한 절차만 추출합니다.
 결과는 바로 게시하지 않고 기존 Skill 보안 검사를 거친 `proposal_ready`, `blocked` 또는
 `clarification_required` 응답으로 반환합니다.
+
+현재 제품의 Agent 경로는 이 HTTP endpoint를 호출하지 않습니다. Backend의 `AgentTurnService`가
+선택한 run을 workspace·user 범위와 완료 상태로 검증해 Kafka `ai.agent.command`에 싣고,
+ai-svc Agent handler가 같은 application use case를 직접 호출합니다.
 
 #### 3. Auth 필요 여부
 
@@ -640,8 +644,8 @@ Backend가 소유권과 완료 상태를 검증해 전달한 Agent run 요약에
 
 #### 8. 권한 규칙
 
-클라이언트가 임의로 만든 run 결과를 직접 신뢰하지 않습니다. Backend가 workspace·user 소유권과
-완료 상태를 확인한 canonical run 결과만 이 내부 API에 전달해야 합니다.
+이 endpoint는 전달받은 run 요약의 소유권을 자체 조회하지 않습니다. 수동으로 호출할 때도
+workspace·user 소유권과 완료 상태를 확인한 canonical run 결과만 전달해야 합니다.
 
 #### 9. 예시 요청/응답
 
