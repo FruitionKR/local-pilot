@@ -454,7 +454,6 @@ def _missing_facts(markdown: str, facts: tuple[str, ...]) -> list[str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="OpenAI Markdown/GFM 편집 계약 평가")
-    parser.add_argument("--endpoint", default="https://api.openai.com/v1/chat/completions")
     parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY", ""))
     parser.add_argument("--model", default="gpt-5-nano")
     parser.add_argument("--prompt", default=str(DEFAULT_PROMPT))
@@ -474,7 +473,6 @@ def main() -> None:
     source_edit_prompt = Path(args.source_edit_prompt).read_text(encoding="utf-8")
     client = ChatCompletionsJsonClient(
         ChatClientConfig(
-            endpoint=args.endpoint,
             api_key=args.api_key,
             model=args.model,
             provider="openai",

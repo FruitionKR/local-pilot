@@ -40,7 +40,6 @@ DEFAULT_AGENT_PROVIDER = "openai"
 def _build_use_case(args: argparse.Namespace) -> HandleAgentTurnUseCase:
     router_client = ChatCompletionsJsonClient(
         ChatClientConfig(
-            endpoint=args.endpoint,
             api_key=args.api_key,
             model=args.model,
             provider=DEFAULT_AGENT_PROVIDER,
@@ -51,7 +50,6 @@ def _build_use_case(args: argparse.Namespace) -> HandleAgentTurnUseCase:
     )
     editor_client = ChatCompletionsJsonClient(
         ChatClientConfig(
-            endpoint=args.endpoint,
             api_key=args.api_key,
             model=args.model,
             provider=DEFAULT_AGENT_PROVIDER,
@@ -160,7 +158,6 @@ def _partial_fence_rejection(client: TestClient, model: str) -> dict[str, Any]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="실제 /agent/turn + OpenAI Markdown 편집 E2E")
-    parser.add_argument("--endpoint", default="https://api.openai.com/v1/chat/completions")
     parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY", ""))
     parser.add_argument("--model", default="gpt-5-nano")
     parser.add_argument("--prompt", default=str(DEFAULT_MARKDOWN_EDIT_PROMPT))
