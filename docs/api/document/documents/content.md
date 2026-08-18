@@ -66,7 +66,7 @@
 - HTTP `200`: 이미지 반환
 - Content-Type: `*/*`
 
-```json
+```text
 <binary>
 ```
 
@@ -77,7 +77,7 @@
 | `304` | 캐시된 이미지 사용 | `없음` |
 | `404` | asset 또는 워크스페이스를 찾을 수 없음 | `ErrorResponse` |
 
-```json
+```text
 <binary>
 ```
 
@@ -98,7 +98,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/assets
   -H 'Authorization: Bearer <access_token>'
 ```
 
-```json
+```text
 <binary>
 ```
 
@@ -696,7 +696,7 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - HTTP `200`: Markdown 다운로드
 - Content-Type: `*/*`
 
-```json
+```text
 <binary>
 ```
 
@@ -732,7 +732,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
   -H 'Authorization: Bearer <access_token>'
 ```
 
-```json
+```text
 <binary>
 ```
 
@@ -789,7 +789,7 @@ MinIO에 저장된 원본 파일을 스트리밍합니다. PDF는 inline, 그 �
 - HTTP `200`: 원본 파일 반환
 - Content-Type: `*/*`
 
-```json
+```text
 <binary>
 ```
 
@@ -825,7 +825,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
   -H 'Authorization: Bearer <access_token>'
 ```
 
-```json
+```text
 <binary>
 ```
 

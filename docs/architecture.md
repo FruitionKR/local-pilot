@@ -7,7 +7,7 @@
 ```text
 frontend (Next.js, Vercel)
   │ /api/* 경로 기반 rewrite (next.config.mjs)
-  ├─ /api/auth/*, /api/workspaces, /api/workspaces/{id} ─▶ access-svc
+  ├─ /api/auth/*, 워크스페이스 자체 CRUD·휴지통·복구 ─▶ access-svc
   └─ 그 외 ───────────────────────────────────────────▶ document-svc
 
 services/
@@ -103,7 +103,8 @@ ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 
 - 매니페스트: `k8s/base` + `k8s/overlays/aws` (ingress·external-secrets·KEDA)
 - IaC: `infra/terraform` (EKS·RDS·ElastiCache·S3·ECR·OIDC·Secrets·budgets) — apply는 AWS 계정 준비 후
 - 실제 배포 단위 검증은 `compose.infra.yml` + `compose.ai.yml` + `compose.converter.yml` + `compose.containerized.yml`을 함께 구성한다. document-svc가 `core_db` Flyway를 먼저 적용한 뒤 access-svc와 pipeline API/worker를 기동하며, AI 저장소 maintenance cutover는 [script.md](script.md) 절차를 따른다. `JWT_SECRET`·`INTERNAL_CALLBACK_TOKEN`은 두 앱 동일 값 필수.
-- ALB 경로 규칙 = next.config rewrite 동일 (§1 라우팅)
+- ALB는 `api.<domain>`을 document-svc, `access.<domain>`을 access-svc로 host 라우팅한다.
+  공개 `/api/**`의 서비스 분기는 Vercel `next.config.mjs` rewrite가 담당한다.
 
 ## 8. 남은 결합 지점 (트리거 대기 — 분할 미비 아님)
 

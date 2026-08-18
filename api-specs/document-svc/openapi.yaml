@@ -2678,34 +2678,7 @@ paths:
           content:
             '*/*':
               schema:
-                type: object
-                properties:
-                  allowed_tools:
-                    type: string
-                  capabilities:
-                    type: string
-                  description:
-                    type: string
-                  instructions_markdown:
-                    type: string
-                  issues:
-                    type: string
-                  name:
-                    type: string
-                  question:
-                    type: string
-                  scope_type:
-                    type: string
-                  skill_id:
-                    type: string
-                  skill_markdown:
-                    type: string
-                  status:
-                    type: string
-                  version_id:
-                    type: string
-                required:
-                - status
+                $ref: "#/components/schemas/SkillAuthoringResponse"
           description: 초안 작성 성공
         "400":
           content:
@@ -2777,34 +2750,7 @@ paths:
           content:
             '*/*':
               schema:
-                type: object
-                properties:
-                  allowed_tools:
-                    type: string
-                  capabilities:
-                    type: string
-                  description:
-                    type: string
-                  instructions_markdown:
-                    type: string
-                  issues:
-                    type: string
-                  name:
-                    type: string
-                  question:
-                    type: string
-                  scope_type:
-                    type: string
-                  skill_id:
-                    type: string
-                  skill_markdown:
-                    type: string
-                  status:
-                    type: string
-                  version_id:
-                    type: string
-                required:
-                - status
+                $ref: "#/components/schemas/SkillAuthoringResponse"
           description: 게시 성공
         "400":
           content:
@@ -2933,30 +2879,7 @@ paths:
           content:
             '*/*':
               schema:
-                type: object
-                properties:
-                  description:
-                    type: string
-                  instructions_markdown:
-                    type: string
-                  issues:
-                    type: string
-                  name:
-                    type: string
-                  question:
-                    type: string
-                  scope_type:
-                    type: string
-                  skill_id:
-                    type: string
-                  skill_markdown:
-                    type: string
-                  status:
-                    type: string
-                  version_id:
-                    type: string
-                required:
-                - status
+                $ref: "#/components/schemas/SkillAuthoringResponse"
           description: 수정 성공
         "400":
           content:
@@ -6103,6 +6026,40 @@ components:
       required:
       - instruction
       - scope_type
+    SkillAuthoringResponse:
+      type: object
+      properties:
+        allowed_tools:
+          type: array
+          items:
+            type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        instructions_markdown:
+          type: string
+        issues:
+          type: array
+          items: {}
+        name:
+          type: string
+        question:
+          type: string
+        scope_type:
+          type: string
+        skill_id:
+          type: string
+        skill_markdown:
+          type: string
+        status:
+          type: string
+        version_id:
+          type: string
+      required:
+      - status
     SkillDraftSourceSelector:
       type: object
       description: Skill 초안의 출처가 되는 이전 run

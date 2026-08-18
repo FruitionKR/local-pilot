@@ -2,7 +2,8 @@
 
 [API 문서](../README.md) / [document-svc](README.md)
 
-사용자용 AI 모델 설정과 AI 작업·변환·ingest API다.
+사용자용 AI 모델 설정과 AI 작업·변환·ingest Gateway API다. 모델 설정은 access-svc,
+변환은 converter, ingest·Wiki 복구는 Kafka를 통해 각 소유 서비스에 전달한다.
 
 - API 수: 9
 
@@ -534,7 +535,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
               "content": "string",
               "new_line": 10,
               "old_line": 10,
-              "type": "string"
+              "type": "CONTEXT"
             }
           ],
           "new_lines": 5,
@@ -630,7 +631,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
               "content": "string",
               "new_line": 10,
               "old_line": 10,
-              "type": "string"
+              "type": "CONTEXT"
             }
           ],
           "new_lines": 5,

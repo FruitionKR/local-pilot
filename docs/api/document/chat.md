@@ -2,7 +2,8 @@
 
 [API 문서](../README.md) / [document-svc](README.md)
 
-채팅 세션·메시지와 Wiki 내보내기 API다.
+채팅 세션·메시지와 Wiki 내보내기 Gateway API다. Wiki 내보내기는 Backend가 채팅을 검증·직렬화해
+문서로 저장한 뒤 Kafka `ai.ingest.command`로 전달하며, 클라이언트는 ai-svc DTO를 보내지 않는다.
 
 - API 수: 6
 
@@ -664,7 +665,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
 - HTTP `200`: OK
 - Content-Type: `text/plain;charset=UTF-8`
 
-```json
+```text
 string
 ```
 
@@ -689,7 +690,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
   -H 'Authorization: Bearer <access_token>'
 ```
 
-```json
+```text
 string
 ```
 
