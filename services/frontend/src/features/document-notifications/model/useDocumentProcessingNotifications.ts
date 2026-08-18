@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useUserPreferences } from "@/entities/user";
 import type { DocumentItemResponse } from "@/entities/document";
 import type { DocumentStatus } from "@/entities/tree";
+import { buildFailedDocumentsNotice } from "./failedDocumentsNotice";
 import { publishNotice, subscribeNotices, type NoticePayload } from "./noticeBus";
 
 export type DocumentProcessingNotice = NoticePayload & { id: string };
@@ -14,16 +15,10 @@ function wasProcessing(status: DocumentStatus | undefined) {
   return status === "uploaded" || status === "processing";
 }
 
-function noticeText(kind: DocumentProcessingNotice["kind"], count: number) {
-  if (kind === "completed") {
-    return {
-      title: "문서 처리 완료",
-      message: count === 1 ? "문서 분석이 완료되었습니다." : `${count}개 문서 분석이 완료되었습니다.`
-    };
-  }
+function completedNoticeText(count: number) {
   return {
-    title: "문서 처리 실패",
-    message: count === 1 ? "문서를 처리하지 못했습니다." : `${count}개 문서를 처리하지 못했습니다.`
+    title: "문서 처리 완료",
+    message: count === 1 ? "문서 분석이 완료되었습니다." : `${count}개 문서 분석이 완료되었습니다.`
   };
 }
 
@@ -84,16 +79,11 @@ export function useDocumentProcessingNotifications(documents: DocumentItemRespon
     });
 
     if (completedCount > 0 && completedNotifications) {
-      publishNotice({ kind: "completed", ...noticeText("completed", completedCount) });
+      publishNotice({ kind: "completed", ...completedNoticeText(completedCount) });
     }
-    if (failedNotifications) {
-      failedDocuments.forEach((document) => {
-        publishNotice({
-          kind: "failed",
-          title: "문서 처리 실패",
-          message: `"${document.filename}" 처리에 실패했습니다. ${document.error_message ?? "실패 사유를 확인해 주세요."}`
-        });
-      });
+    // 문서별 카드 대신 요약 카드 하나만 발행한다 (대량 실패 시 스택 넘침 방지).
+    if (failedNotifications && failedDocuments.length > 0) {
+      publishNotice(buildFailedDocumentsNotice(failedDocuments));
     }
   }, [documents, completedNotifications, failedNotifications]);
 
