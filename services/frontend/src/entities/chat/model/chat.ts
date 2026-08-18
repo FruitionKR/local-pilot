@@ -27,6 +27,7 @@ export type ChatMessageRelatedPageResponse = RelatedPageBase & {
 };
 
 export type ChatMessageResponse = QueryMessageSummary & {
+  action?: string;
   related_pages?: ChatMessageRelatedPageResponse[];
   references: ChatMessageReferenceResponse[];
 };

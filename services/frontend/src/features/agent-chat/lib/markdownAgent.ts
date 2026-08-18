@@ -1,14 +1,37 @@
 import type { ActiveMarkdownEditContext, MarkdownEditorSnapshot } from "./markdownEditContext";
+import type { AiModelSelection } from "@/entities/ai";
 
 export type AgentTurnRequest = {
+  session_id: string;
   documentId: string;
   baseVersion: number;
   message: string;
-  conversationContext?: { recentConversationSummary: string };
+  provider: string;
+  model: string;
+  allow_web_search: boolean;
+  conversationContext?: { selected_pair_ids: string[] };
   editorSnapshot: MarkdownEditorSnapshot;
 };
 
-export type AgentTurnAction = "chat_answer" | "markdown_edit" | "markdown_create" | "clarify" | "reject";
+export type AgentTurnRequestContext = {
+  sessionId: string;
+  selectedModel: AiModelSelection;
+  selectedPairIds: string[];
+};
+
+export type AgentTurnAction =
+  | "chat_answer"
+  | "conversation_reply"
+  | "markdown_edit"
+  | "markdown_create"
+  | "clarify"
+  | "reject"
+  | "folder_organize"
+  | "workspace_workflow"
+  | "skill_authoring"
+  | "skill_draft_proposal";
+
+export type DocumentCommandAction = Exclude<AgentTurnAction, "chat_answer" | "conversation_reply" | "clarify" | "reject">;
 
 export type AgentTurnEdit = {
   operation: "replace" | "insert_after";
@@ -70,36 +93,46 @@ export type MarkdownEditPreview = {
   diffLines: MarkdownDiffLine[];
 };
 
-type AgentTurnResultSummary = Pick<AgentTurnResult, "action" | "message" | "chat" | "edit" | "generated_markdown">;
+export type ChatTurnPresentation =
+  | { kind: "query"; grounded: boolean }
+  | { kind: "document-command"; action: DocumentCommandAction };
+
 const MAX_LCS_CELLS = 250_000;
+
+export function isDocumentCommandAction(action: string | undefined): action is DocumentCommandAction {
+  return action === "markdown_edit"
+    || action === "markdown_create"
+    || action === "folder_organize"
+    || action === "workspace_workflow"
+    || action === "skill_authoring"
+    || action === "skill_draft_proposal";
+}
+
+/** 채팅 결과 UI는 Query와 문서 명령 두 표현만 사용한다. */
+export function resolveChatTurnPresentation(action: string | undefined): ChatTurnPresentation {
+  if (isDocumentCommandAction(action)) return { kind: "document-command", action };
+  return { kind: "query", grounded: !action || action === "chat_answer" };
+}
 
 export function buildAgentTurnRequest(
   message: string,
   context: ActiveMarkdownEditContext,
-  recentConversationSummary?: string
+  requestContext: AgentTurnRequestContext
 ): AgentTurnRequest {
-  const summary = recentConversationSummary?.trim();
   return {
+    session_id: requestContext.sessionId,
     documentId: context.documentId,
     baseVersion: context.baseVersion,
     message,
-    // 선택한 채팅 맥락이 있을 때만 실어 보낸다. 비면 필드 자체를 생략(현행과 동일).
-    ...(summary ? { conversationContext: { recentConversationSummary: summary } } : {}),
+    provider: requestContext.selectedModel.provider,
+    model: requestContext.selectedModel.model,
+    allow_web_search: false,
+    // 선택한 문답이 있을 때만 서버가 지원하는 pair ID 계약으로 전달한다.
+    ...(requestContext.selectedPairIds.length > 0
+      ? { conversationContext: { selected_pair_ids: requestContext.selectedPairIds } }
+      : {}),
     editorSnapshot: context.editorSnapshot
   };
-}
-
-export function describeAgentTurnResult(result: AgentTurnResultSummary): string {
-  if (result.action === "markdown_edit") {
-    return result.edit?.summary ?? "Markdown 편집 제안을 받았습니다.";
-  }
-  if (result.action === "markdown_create") {
-    return result.generated_markdown?.summary ?? "새 Markdown 초안을 받았습니다.";
-  }
-  if (result.action === "chat_answer") {
-    return result.chat?.answer ?? "Agent 응답을 받았습니다.";
-  }
-  return result.message ?? "요청을 처리하려면 추가 정보가 필요합니다.";
 }
 
 export function buildGeneratedMarkdownFilename(title: string): string {

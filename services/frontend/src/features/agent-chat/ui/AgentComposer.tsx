@@ -2,17 +2,9 @@ import { ArrowUp, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { AiModel } from "@/entities/ai";
 import { cx } from "@/shared/lib/classNames";
-import { claudeIcon, geminiIcon, gptIcon, SvgIcon, type SvgAsset } from "@/shared/ui/SvgIcon";
 import styles from "./AgentChat.module.css";
 
 export type AiModelCatalogStatus = "loading" | "ready" | "empty" | "error";
-
-// provider별 아이콘 (Figma 787:2312 model_list): 아이콘 먼저, 이름이 뒤따른다.
-const PROVIDER_ICONS: Record<string, SvgAsset> = {
-  claude: claudeIcon,
-  gemini: geminiIcon,
-  openai: gptIcon
-};
 
 /** provider/model 쌍을 목록 key와 선택 비교에 쓰는 문자열로 만든다. */
 function modelKey(model: AiModel) {
@@ -57,6 +49,10 @@ export function AgentComposer({
     return () => document.removeEventListener("pointerdown", handleOutsidePointerDown);
   }, [isModelListOpen]);
 
+  useEffect(() => {
+    if (isLoading) setIsModelListOpen(false);
+  }, [isLoading]);
+
   function submitComposer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSubmit) return;
@@ -94,12 +90,9 @@ export function AgentComposer({
             className={styles["composer-model-trigger"]}
             aria-label="모델 선택"
             aria-expanded={isModelListOpen}
-            disabled={!selectedModel}
+            disabled={isLoading || !selectedModel}
             onClick={() => setIsModelListOpen((open) => !open)}
           >
-            {selectedModel && PROVIDER_ICONS[selectedModel.provider] && (
-              <SvgIcon src={PROVIDER_ICONS[selectedModel.provider]} className={styles["composer-model-icon"]} />
-            )}
             <span>{selectedModel?.display_name ?? emptyModelLabel}</span>
             <ChevronDown size={8} className={cx(isModelListOpen && styles["is-open"])} />
           </button>
@@ -117,9 +110,6 @@ export function AgentComposer({
                     setIsModelListOpen(false);
                   }}
                 >
-                  {PROVIDER_ICONS[model.provider] && (
-                    <SvgIcon src={PROVIDER_ICONS[model.provider]} className={styles["composer-model-icon"]} />
-                  )}
                   {model.display_name}
                 </button>
               ))}
