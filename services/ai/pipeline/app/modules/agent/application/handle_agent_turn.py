@@ -1,3 +1,4 @@
+import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import replace
@@ -44,7 +45,7 @@ DEFERRED_TEMPLATE_MESSAGE = "template 기반 전체 문서 재구성은 이후 �
 CLARIFY_INSERT_AFTER_TARGET_MESSAGE = "내용을 추가할 현재 섹션을 선택한 뒤 다시 요청해 주세요."
 CLARIFY_SKILL_MESSAGE = "이 요청에 적용할 Skill을 선택하거나 Skill 없이 계속해 주세요."
 CLARIFY_MUTATION_INTENT_MESSAGE = "변경 작업은 대화나 참조 문서가 아닌 현재 메시지에 직접 요청해 주세요."
-CLARIFY_PREVIEW_MESSAGE = "저장할 이전 편집안을 확인할 수 없어 미리보기를 다시 만들어 주세요."
+CLARIFY_PREVIEW_MESSAGE = "저장할 이전 미리보기를 확인할 수 없어 미리보기를 다시 만들어 주세요."
 NO_CHANGES_MESSAGE = "원문에서 변경할 내용이 없어 저장 작업을 만들지 않았습니다."
 BLOCKED_SKILL_AUTHORING_MESSAGE = "보안 문제가 있는 내용을 제거하거나 수정한 뒤 다시 시도해 주세요."
 TITLE_REVISION_PATTERN = re.compile(
@@ -238,12 +239,22 @@ class HandleAgentTurnUseCase:
                     skill_draft_excluded_literals=(),
                 )
             )
-            preview_run_id = _latest_markdown_preview_run_id(request)
-            reuses_preview = (
+            preview = _latest_markdown_preview(request)
+            preview_action, preview_run_id = preview or (None, None)
+            reuses_edit_preview = (
                 route.action == "workspace_workflow"
                 and route.document_operation == "edit"
                 and direct_route.action == "workspace_workflow"
                 and direct_route.persist
+                and preview_action == "markdown_edit"
+                and preview_run_id is not None
+            )
+            reuses_create_preview = (
+                route.action == "workspace_workflow"
+                and route.document_operation == "create"
+                and direct_route.action == "workspace_workflow"
+                and direct_route.persist
+                and preview_action == "markdown_create"
                 and preview_run_id is not None
             )
             if not _direct_mutation_confirmed(route, direct_route):
@@ -270,18 +281,26 @@ class HandleAgentTurnUseCase:
             )
             content = None
             if route.action == "workspace_workflow" and route.document_operation == "create":
-                reference_context = self._resolve_reference_context(request, route)
-                creation_markdown = self._markdown_create_use_case.execute(
-                    MarkdownCreateRequest(
-                        instruction=request.message,
-                        workspace_id=request.workspace_id,
-                        user_id=request.user_id,
-                        conversation_summary=_conversation_context_text(request),
-                        reference_context=reference_context,
-                        skill_instructions=_skill_instructions(selected_skill),
-                        output_language=request.output_language,
-                    )
-                ).document.markdown
+                creation_markdown = (
+                    self._confirmed_preview_markdown(request, preview_run_id)
+                    if reuses_create_preview
+                    else None
+                )
+                if reuses_create_preview and creation_markdown is None:
+                    return _clarify_document_change(route, CLARIFY_PREVIEW_MESSAGE)
+                if creation_markdown is None:
+                    reference_context = self._resolve_reference_context(request, route)
+                    creation_markdown = self._markdown_create_use_case.execute(
+                        MarkdownCreateRequest(
+                            instruction=request.message,
+                            workspace_id=request.workspace_id,
+                            user_id=request.user_id,
+                            conversation_summary=_conversation_context_text(request),
+                            reference_context=reference_context,
+                            skill_instructions=_skill_instructions(selected_skill),
+                            output_language=request.output_language,
+                        )
+                    ).document.markdown
                 content = StartAgentRunContent(markdown=creation_markdown)
             elif route.action == "workspace_workflow" and route.document_operation == "edit":
                 markdown_context = request.active_markdown_context
@@ -305,15 +324,15 @@ class HandleAgentTurnUseCase:
                     markdown_context.target is None
                     or markdown_context.target.type != "current_section"
                 ):
-                    return _clarify_document_edit(route, CLARIFY_INSERT_AFTER_TARGET_MESSAGE)
+                    return _clarify_document_change(route, CLARIFY_INSERT_AFTER_TARGET_MESSAGE)
                 target = markdown_context.target or _whole_document_target(markdown_context.markdown)
                 edit = (
                     self._confirmed_preview_edit(request, preview_run_id)
-                    if reuses_preview
+                    if reuses_edit_preview
                     else None
                 )
-                if reuses_preview and edit is None:
-                    return _clarify_document_edit(route, CLARIFY_PREVIEW_MESSAGE)
+                if reuses_edit_preview and edit is None:
+                    return _clarify_document_change(route, CLARIFY_PREVIEW_MESSAGE)
                 if edit is None:
                     reference_context = self._resolve_reference_context(request, route)
                     edit = self._markdown_edit_use_case.execute(
@@ -332,7 +351,7 @@ class HandleAgentTurnUseCase:
                     ).edit
                 edited_markdown = apply_markdown_edit(markdown_context.markdown, edit)
                 if not edit.changed or edited_markdown == markdown_context.markdown:
-                    return _clarify_document_edit(route, NO_CHANGES_MESSAGE)
+                    return _clarify_document_change(route, NO_CHANGES_MESSAGE)
                 actual_target = edit.actual_target
                 content = StartAgentRunContent(
                     markdown=edited_markdown,
@@ -396,7 +415,12 @@ class HandleAgentTurnUseCase:
                     output_language=request.output_language,
                 )
             )
-            return AgentTurnResult(action="markdown_edit", route=route, edit=result.edit)
+            return AgentTurnResult(
+                action="markdown_edit",
+                route=route,
+                edit=result.edit,
+                source_markdown_sha256=_markdown_sha256(markdown_context.markdown),
+            )
 
         if route.action == "clarify":
             if route.edit_goal == "template_transform":
@@ -431,6 +455,27 @@ class HandleAgentTurnUseCase:
         request: AgentTurnRequest,
         run_id: str | None,
     ) -> MarkdownEditOperation | None:
+        result = self._completed_preview_result(request, run_id, match_document=True)
+        markdown_context = request.active_markdown_context
+        if result is None or markdown_context is None:
+            return None
+        return _preview_edit(result, markdown_context.markdown)
+
+    def _confirmed_preview_markdown(
+        self,
+        request: AgentTurnRequest,
+        run_id: str | None,
+    ) -> str | None:
+        result = self._completed_preview_result(request, run_id, match_document=False)
+        return _preview_created_markdown(result)
+
+    def _completed_preview_result(
+        self,
+        request: AgentTurnRequest,
+        run_id: str | None,
+        *,
+        match_document: bool,
+    ) -> object | None:
         if (
             self._markdown_turn_repository is None
             or run_id is None
@@ -446,14 +491,16 @@ class HandleAgentTurnUseCase:
         if (
             not status
             or status.get("status") != "completed"
-            or status.get("document_id") != request.document_id
-            or status.get("base_version") != request.base_version
+            or (
+                match_document
+                and (
+                    status.get("document_id") != request.document_id
+                    or status.get("base_version") != request.base_version
+                )
+            )
         ):
             return None
-        markdown_context = request.active_markdown_context
-        if markdown_context is None:
-            return None
-        return _preview_edit(status.get("result"), markdown_context.markdown)
+        return status.get("result")
 
     def _answer_query(
         self,
@@ -601,17 +648,21 @@ def _direct_mutation_confirmed(
     )
 
 
-def _latest_markdown_preview_run_id(request: AgentTurnRequest) -> str | None:
+def _latest_markdown_preview(request: AgentTurnRequest) -> tuple[str, str] | None:
     if request.conversation_context is None:
         return None
     for message in reversed(request.conversation_context.recent_messages):
         if message.role == "assistant":
-            return message.run_id if message.action == "markdown_edit" else None
+            if message.action in {"markdown_create", "markdown_edit"} and message.run_id:
+                return message.action, message.run_id
+            return None
     return None
 
 
 def _preview_edit(value: object, markdown: str) -> MarkdownEditOperation | None:
     if not isinstance(value, dict) or value.get("action") != "markdown_edit":
+        return None
+    if value.get("source_markdown_sha256") != _markdown_sha256(markdown):
         return None
     edit = value.get("edit")
     if not isinstance(edit, dict) or edit.get("changed") is not True:
@@ -653,7 +704,22 @@ def _preview_edit(value: object, markdown: str) -> MarkdownEditOperation | None:
     )
 
 
-def _clarify_document_edit(route: AgentTurnRoute, message: str) -> AgentTurnResult:
+def _preview_created_markdown(value: object) -> str | None:
+    if not isinstance(value, dict) or value.get("action") != "markdown_create":
+        return None
+    generated = value.get("generated_markdown")
+    if not isinstance(generated, dict):
+        return None
+    markdown = generated.get("markdown")
+    return markdown if isinstance(markdown, str) and markdown.strip() else None
+
+
+def _markdown_sha256(markdown: str) -> str:
+    return hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+
+
+def _clarify_document_change(route: AgentTurnRoute, message: str) -> AgentTurnResult:
+    keeps_edit_context = route.document_operation == "edit"
     return AgentTurnResult(
         action="clarify",
         route=replace(
@@ -662,6 +728,8 @@ def _clarify_document_edit(route: AgentTurnRoute, message: str) -> AgentTurnResu
             confidence=0.0,
             reason=message,
             retrieval_source="none",
+            document_operation="edit" if keeps_edit_context else "none",
+            edit_goal=route.edit_goal if keeps_edit_context else None,
             persist=False,
         ),
         message=message,

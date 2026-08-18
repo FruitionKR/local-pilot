@@ -228,7 +228,7 @@ components:
           title: Recent Conversation Summary
         recent_messages:
           items:
-            $ref: '#/components/schemas/ConversationMessageRequest'
+            $ref: '#/components/schemas/AgentConversationMessageRequest'
           maxItems: 6
           title: Recent Messages
           type: array
@@ -239,6 +239,40 @@ components:
           - type: 'null'
           title: Reference Context
       title: AgentConversationContextRequest
+      type: object
+    AgentConversationMessageRequest:
+      properties:
+        action:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Action
+        agent_route:
+          anyOf:
+          - $ref: '#/components/schemas/ConversationAgentRouteRequest'
+          - type: 'null'
+        content:
+          maxLength: 4000
+          minLength: 1
+          title: Content
+          type: string
+        role:
+          enum:
+          - user
+          - assistant
+          title: Role
+          type: string
+        run_id:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Run Id
+      required:
+      - role
+      - content
+      title: AgentConversationMessageRequest
       type: object
     AgentToolExecuteAuthorizationRequest:
       properties:
@@ -491,6 +525,11 @@ components:
             $ref: '#/components/schemas/SkillCandidateResponse'
           title: Skill Candidates
           type: array
+        source_markdown_sha256:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Markdown Sha256
         updated_conversation_summary:
           anyOf:
           - type: string
@@ -727,6 +766,49 @@ components:
       - model
       - selection_mode
       title: ChatWikiRunIn
+      type: object
+    ConversationAgentRouteRequest:
+      properties:
+        action:
+          maxLength: 64
+          minLength: 1
+          title: Action
+          type: string
+        document_operation:
+          enum:
+          - none
+          - create
+          - edit
+          title: Document Operation
+          type: string
+        edit_goal:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Edit Goal
+        persist:
+          title: Persist
+          type: boolean
+        retrieval_source:
+          enum:
+          - none
+          - workspace
+          - web
+          title: Retrieval Source
+          type: string
+        selected_skill_id:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Selected Skill Id
+      required:
+      - action
+      - retrieval_source
+      - document_operation
+      - persist
+      title: ConversationAgentRouteRequest
       type: object
     ConversationMessageRequest:
       properties:

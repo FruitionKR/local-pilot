@@ -14,7 +14,7 @@ from app.modules.agent.infrastructure.chat_completions_turn_router import (
     ChatCompletionsTurnRouter,
     _local_guard,
 )
-from app.modules.query.domain.entities import ConversationMessage
+from app.modules.query.domain.entities import ConversationAgentRoute, ConversationMessage
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
 
@@ -74,6 +74,12 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
                             content="일기로 쓸 제목의 분위기나 주제를 알려주세요.",
                             action="conversation_reply",
                             run_id="agent_preview_1",
+                            agent_route=ConversationAgentRoute(
+                                action="conversation_reply",
+                                retrieval_source="none",
+                                document_operation="none",
+                                persist=False,
+                            ),
                         ),
                         ConversationMessage(
                             role="user",
@@ -90,7 +96,11 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             payload["recent_messages"][1]["action"],
             "conversation_reply",
         )
-        self.assertEqual(payload["recent_messages"][1]["run_id"], "agent_preview_1")
+        self.assertNotIn("run_id", payload["recent_messages"][1])
+        self.assertEqual(
+            payload["recent_messages"][1]["agent_route"]["action"],
+            "conversation_reply",
+        )
 
     def test_keeps_structured_compound_route_without_semantic_rewrite(self) -> None:
         response = route_response("workspace_workflow")

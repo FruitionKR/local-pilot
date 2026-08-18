@@ -1,3 +1,4 @@
+import hashlib
 import unittest
 from dataclasses import replace
 
@@ -1362,6 +1363,9 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 "status": "completed",
                 "result": {
                     "action": "markdown_edit",
+                    "source_markdown_sha256": hashlib.sha256(
+                        "# 제목\n\nBEFORE".encode("utf-8")
+                    ).hexdigest(),
                     "edit": {
                         "operation": "replace",
                         "actual_target": {"type": "selection", "start_line": 3, "end_line": 3},
@@ -1412,6 +1416,214 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(editor.requests, [])
         content = getattr(starter.requests[0], "content")
         self.assertEqual(getattr(content, "markdown"), "# 제목\n\nAFTER")
+
+    def test_preview_confirmation_rejects_changed_source_markdown(self) -> None:
+        starter = RecordingAgentRunStarter()
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.99,
+            reason="approve previous preview",
+            edit_goal="other",
+            document_operation="edit",
+            persist=True,
+        )
+        repository = FixedMarkdownTurnRepository(
+            {
+                "document_id": "document-1",
+                "base_version": 3,
+                "status": "completed",
+                "result": {
+                    "action": "markdown_edit",
+                    "source_markdown_sha256": hashlib.sha256(
+                        "# 제목\n\nBEFORE".encode("utf-8")
+                    ).hexdigest(),
+                    "edit": {
+                        "operation": "replace",
+                        "actual_target": {"type": "selection", "start_line": 3, "end_line": 3},
+                        "changed": True,
+                        "summary": "미리보기 변경",
+                        "replacement_markdown": "AFTER",
+                    },
+                },
+            }
+        )
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                    summary="호출되면 안 됨",
+                    replacement_markdown="WRONG",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(route, route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+            markdown_turn_repository=repository,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="이대로 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+                base_version=3,
+                conversation_context=AgentConversationContext(
+                    recent_messages=(
+                        ConversationMessage(
+                            role="assistant",
+                            content="편집안을 만들었습니다.",
+                            action="markdown_edit",
+                            run_id="agent-preview-1",
+                        ),
+                    )
+                ),
+                active_markdown_context=ActiveMarkdownContext(
+                    markdown="# 제목\n\n사용자가 바꾼 원문",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "clarify")
+        self.assertEqual(editor.requests, [])
+        self.assertEqual(starter.requests, [])
+
+    def test_preview_confirmation_reuses_exact_previous_created_markdown(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            ),
+            create_result=MarkdownCreateResult(
+                document=GeneratedMarkdownDocument(
+                    title="다시 생성됨",
+                    summary="호출되면 안 됨",
+                    markdown="# WRONG",
+                )
+            ),
+        )
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.99,
+            reason="approve previous preview",
+            edit_goal="create_from_chat",
+            document_operation="create",
+            persist=True,
+        )
+        repository = FixedMarkdownTurnRepository(
+            {
+                "document_id": None,
+                "base_version": None,
+                "status": "completed",
+                "result": {
+                    "action": "markdown_create",
+                    "generated_markdown": {
+                        "title": "Wiki Ingest 운영 가이드",
+                        "summary": "Wiki 근거로 만든 초안",
+                        "markdown": "# Wiki Ingest 운영 가이드\n\n1. 문서를 수집합니다.",
+                    },
+                },
+            }
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(route, route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+            markdown_turn_repository=repository,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="이대로 새 문서로 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                conversation_context=AgentConversationContext(
+                    recent_messages=(
+                        ConversationMessage(
+                            role="assistant",
+                            content="새 문서 미리보기를 만들었습니다.",
+                            action="markdown_create",
+                            run_id="agent-create-preview-1",
+                        ),
+                    )
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "workspace_workflow")
+        self.assertEqual(repository.requests, [("workspace-1", "user-1", "agent-create-preview-1")])
+        self.assertEqual(editor.create_requests, [])
+        content = getattr(starter.requests[0], "content")
+        self.assertEqual(
+            getattr(content, "markdown"),
+            "# Wiki Ingest 운영 가이드\n\n1. 문서를 수집합니다.",
+        )
+
+    def test_preview_confirmation_missing_created_markdown_returns_valid_clarification(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.99,
+            reason="approve previous preview",
+            edit_goal="create_from_chat",
+            document_operation="create",
+            persist=True,
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(route, route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+            markdown_turn_repository=FixedMarkdownTurnRepository(None),  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="이대로 새 문서로 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                conversation_context=AgentConversationContext(
+                    recent_messages=(
+                        ConversationMessage(
+                            role="assistant",
+                            content="새 문서 미리보기를 만들었습니다.",
+                            action="markdown_create",
+                            run_id="missing-preview",
+                        ),
+                    )
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "clarify")
+        self.assertEqual(result.route.document_operation, "none")
+        self.assertIsNone(result.route.edit_goal)
+        self.assertFalse(result.route.persist)
+        self.assertEqual(starter.requests, [])
 
     def test_persistent_insert_after_without_section_returns_clarification(self) -> None:
         starter = RecordingAgentRunStarter()
@@ -1704,6 +1916,12 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(result.action, "markdown_edit")
         self.assertIsNotNone(result.edit)
         self.assertEqual(result.edit.target, target)
+        self.assertEqual(
+            result.source_markdown_sha256,
+            hashlib.sha256(
+                "첫 줄\n둘째 줄\n긴 문장입니다.\n반복 문장입니다.\n마지막 문장입니다.".encode("utf-8")
+            ).hexdigest(),
+        )
         self.assertEqual(editor.requests[0].instruction, "줄여줘")
         self.assertEqual(editor.requests[0].edit_goal, "shorten")
         self.assertEqual(editor.requests[0].workspace_id, "workspace-1")

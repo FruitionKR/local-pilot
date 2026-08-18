@@ -111,6 +111,7 @@ class AgentTurnResult:
     route: AgentTurnRoute
     query_answer: QueryAnswer | None = None
     edit: MarkdownEditOperation | None = None
+    source_markdown_sha256: str | None = None
     generated_markdown: GeneratedMarkdownDocument | None = None
     message: str | None = None
     skill_candidates: tuple[SkillCandidate, ...] = ()
