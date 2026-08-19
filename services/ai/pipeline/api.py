@@ -17,7 +17,6 @@ from app.modules.skill.interfaces.http.routes import agent_router as agent_skill
 from app.modules.skill.interfaces.http.routes import router as skill_router
 from app.modules.wiki_ingestion.interfaces.http.routes import router as pipeline_router
 from app.modules.wiki_ingestion.interfaces.http.schemas import (
-    CHAT_APPEND_SEMANTIC_PROMPT,
     CHAT_SEMANTIC_PROMPT,
     DOCUMENT_SEMANTIC_PROMPT,
     ChatWikiRunIn,

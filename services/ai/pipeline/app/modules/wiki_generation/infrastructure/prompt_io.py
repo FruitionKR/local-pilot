@@ -153,25 +153,6 @@ SOURCE BLOCKS:
 """.rstrip() + "\n"
 
 
-def render_source_accumulation_user_prompt(payload: dict[str, Any], source_blocks: Sequence[SourceBlock]) -> str:
-    context_json = json.dumps(payload.get("context", {}), ensure_ascii=False, indent=2)
-    draft_json = json.dumps(payload.get("draft", {}), ensure_ascii=False, indent=2)
-    block_lines = "\n".join(b.to_llm_line() for b in source_blocks)
-    return f"""Stage input: SourceAccumulationEvaluation
-
-Evaluate the accumulated draft and return a corrected structured source update.
-
-CONTEXT:
-{context_json}
-
-ACCUMULATED DRAFT:
-{draft_json}
-
-SOURCE BLOCKS:
-{block_lines}
-""".rstrip() + "\n"
-
-
 def _unique(items: Iterable[str]) -> list[str]:
     seen = set()
     out = []

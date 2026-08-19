@@ -32,7 +32,6 @@ from app.modules.wiki_generation.infrastructure.prompt_io import (
     render_concept_resolution_user_prompt,
     render_section_polish_user_prompt,
     render_semantic_user_prompt,
-    render_source_accumulation_user_prompt,
 )
 from app.modules.wiki_generation.infrastructure.json_output_parser import (
     JsonDict,
@@ -302,27 +301,8 @@ class GenericChatCompletionsSectionPolisher:
         return parse_section_polish_object(content)
 
 
-class GenericChatCompletionsSourceAccumulator:
-    def __init__(
-        self,
-        client: ChatCompletionsJsonClient,
-        system_prompt: str,
-        schema_prompt_provider: Callable[[str], str] | None = None,
-    ) -> None:
-        self.client = client
-        self.system_prompt = system_prompt
-        self.schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
-
-    def evaluate(self, payload: JsonDict, source_blocks: Sequence[SourceBlock]) -> JsonDict:
-        return self.client.complete_json(
-            with_schema_prompt(self.system_prompt, self.schema_prompt_provider("edit")),
-            render_source_accumulation_user_prompt(payload, source_blocks),
-        )
-
-
 # Backwards-compatible aliases.
 ApiSemanticExtractor = GenericChatCompletionsExtractor
 ApiConceptPageGenerator = GenericChatCompletionsConceptPageGenerator
 ApiConceptResolver = GenericChatCompletionsConceptResolver
 ApiSectionPolisher = GenericChatCompletionsSectionPolisher
-ApiSourceAccumulator = GenericChatCompletionsSourceAccumulator

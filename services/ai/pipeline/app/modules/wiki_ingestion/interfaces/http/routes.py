@@ -33,7 +33,6 @@ from app.modules.wiki_ingestion.interfaces.http.dependencies import (
     get_wiki_maintenance,
 )
 from app.modules.wiki_ingestion.interfaces.http.schemas import (
-    CHAT_APPEND_SEMANTIC_PROMPT,
     CHAT_SEMANTIC_PROMPT,
     ChatWikiRunIn,
     IngestOperationRestoreIn,
@@ -297,14 +296,7 @@ def _run_pipeline_request(
     reingest_source_blocks: list[dict[str, Any]] = []
 
     if isinstance(payload, ChatWikiRunIn):
-        input_markdown, input_source, input_name = _resolve_chat_wiki_input(
-            payload,
-            document,
-            user_id,
-            workspace_id,
-            repository,
-            source_reader,
-        )
+        input_markdown, input_source, input_name = _resolve_chat_wiki_input(payload)
     elif isinstance(payload, ReingestRunIn):
         reingest_source_context = _require_reingest_source_context(
             payload.document_id,
@@ -396,14 +388,7 @@ def _build_pipeline_command(
         workspace_id,
         repository,
     )
-    existing_source_context = reingest_source_context or (
-        _load_existing_source_context_for_run(
-            payload,
-            user_id,
-            workspace_id,
-            repository,
-        )
-    )
+    existing_source_context = reingest_source_context
     return PipelineRunCommand(
         run_id=run_id,
         operation_id=payload.operation_id,
@@ -414,6 +399,10 @@ def _build_pipeline_command(
         reingest=isinstance(payload, ReingestRunIn),
         input=input_name,
         input_markdown=input_markdown,
+        input_blocks=[
+            {"block_id": block.block_id, "text": block.text}
+            for block in getattr(payload, "input_blocks", None) or []
+        ],
         input_name=input_name,
         out=str(out),
         mode=payload.mode,
@@ -423,11 +412,14 @@ def _build_pipeline_command(
         max_packet_chars=payload.max_packet_chars,
         overlap_blocks=payload.overlap_blocks,
         model=payload.model,
-        system_prompt=_semantic_prompt_for_run(payload, existing_source_context),
+        system_prompt=(
+            payload.chat_system_prompt
+            if isinstance(payload, ChatWikiRunIn)
+            else payload.system_prompt
+        ),
         concept_system_prompt=payload.concept_system_prompt,
         concept_resolution_system_prompt=payload.concept_resolution_system_prompt,
         section_polish_system_prompt=payload.section_polish_system_prompt,
-        source_accumulation_system_prompt=payload.source_accumulation_system_prompt,
         wiki_evaluator_system_prompt=payload.wiki_evaluator_system_prompt,
         existing_wiki_dir=payload.existing_wiki_dir,
         existing_concept_index=existing_concept_index,
@@ -456,37 +448,6 @@ def _load_existing_concept_index_for_run(
     except Exception:
         logger.exception("failed to load existing concept index for pipeline run")
         return []
-
-
-def _load_existing_source_context_for_run(
-    payload: PipelineRunIn | ReingestRunIn | ChatWikiRunIn,
-    user_id: str,
-    workspace_id: str,
-    repository: PipelineRunRepositoryPort,
-) -> dict[str, Any] | None:
-    if getattr(payload, "selection_mode", None) != "full" or not payload.document_id:
-        return None
-    try:
-        return repository.latest_source_page_context(
-            payload.document_id,
-            user_id,
-            workspace_id,
-        )
-    except Exception:
-        logger.exception("failed to load existing source page context for pipeline run")
-        return None
-
-
-def _semantic_prompt_for_run(
-    payload: PipelineRunIn | ReingestRunIn | ChatWikiRunIn,
-    existing_source_context: dict[str, Any] | None,
-) -> str:
-    selection_mode = getattr(payload, "selection_mode", None)
-    if not selection_mode:
-        return payload.system_prompt
-    if selection_mode == "full" and existing_source_context:
-        return payload.chat_append_system_prompt
-    return payload.chat_system_prompt
 
 
 def _require_reingest_source_context(
@@ -519,34 +480,6 @@ def _load_existing_source_blocks(
         return repository.list_source_blocks(document_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-def _validate_chat_inline_markdown(
-    payload: ChatWikiRunIn,
-    user_id: str,
-    workspace_id: str,
-    repository: PipelineRunRepositoryPort,
-) -> None:
-    if not payload.input_markdown:
-        return
-    if payload.selection_mode != "full":
-        raise HTTPException(
-            status_code=422,
-            detail="input_markdown is only allowed for full chat accumulation",
-        )
-    try:
-        existing_source_context = repository.latest_source_page_context(
-            payload.document_id,
-            user_id,
-            workspace_id,
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    if not existing_source_context:
-        raise HTTPException(
-            status_code=422,
-            detail="input_markdown requires an existing source page for full chat accumulation",
-        )
 
 
 def _safe_name(value: str) -> str:
@@ -619,24 +552,10 @@ def _load_stored_document_input(
     return input_markdown, f"storage:{object_uri}", input_name
 
 
-def _resolve_chat_wiki_input(
-    payload: ChatWikiRunIn,
-    document: dict[str, Any],
-    user_id: str,
-    workspace_id: str,
-    repository: PipelineRunRepositoryPort,
-    source_reader: PipelineSourceReaderPort,
-) -> tuple[str, str, str]:
-    if payload.input_markdown:
-        _validate_chat_inline_markdown(
-            payload,
-            user_id,
-            workspace_id,
-            repository,
-        )
-        input_name = payload.input_name or "chat.md"
-        return payload.input_markdown, f"inline:{input_name}", input_name
-    return _load_stored_document_input(document, source_reader)
+def _resolve_chat_wiki_input(payload: ChatWikiRunIn) -> tuple[str, str, str]:
+    """채팅은 항상 inline이다. 블록은 payload가 들고 오므로 storage 원문을 다시 읽지 않는다."""
+    input_name = payload.input_name or "chat.md"
+    return payload.input_markdown, f"inline:{input_name}", input_name
 
 
 def _execute_pipeline_run(

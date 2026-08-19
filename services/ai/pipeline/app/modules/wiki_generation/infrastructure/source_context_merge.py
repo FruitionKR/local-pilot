@@ -48,70 +48,6 @@ def active_source_artifact(
     return result
 
 
-def apply_same_source_core_context(
-    normalized: dict[str, Any],
-    source_artifact: dict[str, Any] | None,
-) -> tuple[dict[str, Any], list[SourceBlock]]:
-    if not source_artifact:
-        return normalized, []
-    result = copy.deepcopy(normalized)
-    contexts = _source_context_candidates(source_artifact)
-    if not contexts:
-        return result, []
-
-    context_blocks = []
-    evidence_units = list(result.get("evidence_units", []))
-    for concept in result.get("concept_ledger", []):
-        matches = [context for context in contexts if _matches_concept(concept, context)]
-        if not matches:
-            continue
-        refs = unique_keep_order([ref for context in matches for ref in context.get("refs", [])])
-        evidence_ids = []
-        for index, context in enumerate(matches, start=1):
-            evidence_id = f"same_source_context_{concept['slug']}_{index:03d}"
-            evidence_ids.append(evidence_id)
-            evidence_units.append(
-                {
-                    "evidence_id": evidence_id,
-                    "claim": context["claim"],
-                    "source_document_id": source_artifact.get("document_id"),
-                    "anchor_reference_ids": context["refs"],
-                    "related_concept_slugs": [concept["slug"]],
-                    "confidence": 0.8,
-                    "origin": "same_source_context",
-                }
-            )
-            context_blocks.extend(_context_blocks(source_artifact, context))
-        concept["display_reference_ids"] = unique_keep_order(concept.get("display_reference_ids", []) + refs)
-        concept["anchor_reference_ids"] = unique_keep_order(concept.get("anchor_reference_ids", []) + refs)
-        concept["evidence_claim_ids"] = unique_keep_order(concept.get("evidence_claim_ids", []) + evidence_ids)
-        source_document_id = source_artifact.get("document_id")
-        if source_document_id:
-            concept["source_document_ids"] = unique_keep_order(concept.get("source_document_ids", []) + [source_document_id])
-        result.setdefault("same_source_context_merges", []).append(
-            {
-                "slug": concept["slug"],
-                "refs": refs,
-                "evidence_ids": evidence_ids,
-            }
-        )
-
-    core_concepts = result.get("concept_ledger", [])
-    result["section_candidates"] = [
-        item
-        for item in result.get("section_candidates", [])
-        if not _matches_any_concept(item, core_concepts)
-    ]
-    result["mentions"] = [
-        item
-        for item in result.get("mentions", [])
-        if not _matches_any_concept(item, core_concepts)
-    ]
-    if context_blocks:
-        result["evidence_units"] = evidence_units
-    return result, _unique_blocks(context_blocks)
-
-
 def source_page_context_normalized(normalized: dict[str, Any], source_artifact: dict[str, Any] | None) -> dict[str, Any]:
     if not source_artifact:
         return normalized
@@ -178,31 +114,6 @@ def source_context_blocks(source_artifact: dict[str, Any] | None) -> list[Source
     for item in source_artifact.get("evidence_claims", []):
         blocks.extend(_artifact_item_blocks(source_artifact, item, item.get("claim") or "기존 evidence"))
     return _unique_blocks(blocks)
-
-
-def _source_context_candidates(source_artifact: dict[str, Any]) -> list[dict[str, Any]]:
-    candidates = []
-    for level, key in [("section", "section_candidates"), ("mention", "mentions")]:
-        for item in source_artifact.get(key, []):
-            refs = item.get("evidence_block_ids", []) or []
-            if not refs:
-                continue
-            term = str(item.get("term") or item.get("title") or item.get("name") or item.get("slug") or "").strip()
-            slug = slugify(str(item.get("slug") or term))
-            if not slug:
-                continue
-            context = str(item.get("context") or term).strip()
-            candidates.append(
-                {
-                    "level": level,
-                    "term": term,
-                    "slug": slug,
-                    "aliases": item.get("aliases", []) or [],
-                    "claim": context or term or slug,
-                    "refs": refs,
-                }
-            )
-    return candidates
 
 
 def _existing_source_context_note(source_artifact: dict[str, Any]) -> dict[str, Any] | None:
@@ -414,24 +325,6 @@ def _token_subset_match(left: str, right: str) -> bool:
     left_tokens = {token for token in left.split("-") if len(token) >= 4}
     right_tokens = {token for token in right.split("-") if len(token) >= 4}
     return bool(left_tokens and right_tokens and (left_tokens <= right_tokens or right_tokens <= left_tokens))
-
-
-def _context_blocks(source_artifact: dict[str, Any], context: dict[str, Any]) -> list[SourceBlock]:
-    document_id = source_artifact.get("document_id") or ""
-    text = context["claim"]
-    return [
-        SourceBlock(
-            document_id=document_id,
-            block_id=ref,
-            source_reference_id=ref,
-            text=text,
-            line_start=0,
-            line_end=0,
-            section_path=["기존 source page context"],
-            block_type="same_source_context",
-        )
-        for ref in context["refs"]
-    ]
 
 
 def _unique_blocks(blocks: list[SourceBlock]) -> list[SourceBlock]:
