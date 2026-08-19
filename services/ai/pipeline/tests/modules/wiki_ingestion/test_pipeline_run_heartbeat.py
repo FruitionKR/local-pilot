@@ -154,6 +154,129 @@ def test_restore_updates_current_markdown_and_links(monkeypatch) -> None:
     invalidate.assert_called_once_with("user-1", "ws-1")
 
 
+def test_restore_resolves_unchanged_active_link_target(monkeypatch) -> None:
+    monkeypatch.setenv("S3_BUCKET", "wiki-bucket")
+    connection = Mock()
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    def execute(query, params=None):
+        cursor = Mock()
+        normalized = " ".join(str(query).split())
+        if normalized.startswith("SELECT id, page_type, slug, user_id"):
+            if "status = 'active'" in normalized:
+                cursor.fetchall.return_value = [{
+                    "id": "page-target",
+                    "page_type": "concept",
+                    "slug": "target",
+                    "user_id": "user-1",
+                }]
+            else:
+                cursor.fetchall.return_value = [{
+                    "id": "page-c3",
+                    "page_type": "concept",
+                    "slug": "c3",
+                    "user_id": "user-1",
+                }]
+        elif normalized.startswith("SELECT DISTINCT embedding_vector_id"):
+            cursor.fetchall.return_value = []
+        return cursor
+
+    connection.execute.side_effect = execute
+    with (
+        patch.object(database, "connect", return_value=connection),
+        patch.object(database, "invalidate_concept_index"),
+        patch.object(database, "read_text_object", return_value="# Restored C3\n"),
+    ):
+        database.apply_restored_wiki_state(
+            "ws-1",
+            [{
+                "page_id": "page-c3",
+                "markdown_key": "wiki/ws-1/pages/page-c3/ops/restore-1.md",
+            }],
+            {
+                "removed_links": [],
+                "restored_links": [{
+                    "source": "concept:c3",
+                    "target": "concept:target",
+                    "relation": "related_to",
+                }],
+            },
+            False,
+        )
+
+    link_call = next(
+        call
+        for call in connection.execute.call_args_list
+        if "INSERT INTO wiki_page_links" in str(call.args[0])
+    )
+    assert link_call.args[1] == (
+        "page-c3",
+        "page-target",
+        "related_to",
+        None,
+        None,
+        "ws-1",
+    )
+
+
+def test_restore_does_not_resolve_unchanged_active_link_source(monkeypatch) -> None:
+    monkeypatch.setenv("S3_BUCKET", "wiki-bucket")
+    connection = Mock()
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    def execute(query, params=None):
+        cursor = Mock()
+        normalized = " ".join(str(query).split())
+        if normalized.startswith("SELECT id, page_type, slug, user_id"):
+            if "status = 'active'" in normalized:
+                cursor.fetchall.return_value = [{
+                    "id": "page-unchanged-source",
+                    "page_type": "concept",
+                    "slug": "unchanged-source",
+                    "user_id": "user-1",
+                }]
+            else:
+                cursor.fetchall.return_value = [{
+                    "id": "page-c3",
+                    "page_type": "concept",
+                    "slug": "c3",
+                    "user_id": "user-1",
+                }]
+        elif normalized.startswith("SELECT DISTINCT embedding_vector_id"):
+            cursor.fetchall.return_value = []
+        return cursor
+
+    connection.execute.side_effect = execute
+    with (
+        patch.object(database, "connect", return_value=connection),
+        patch.object(database, "invalidate_concept_index"),
+        patch.object(database, "read_text_object", return_value="# Restored C3\n"),
+    ):
+        database.apply_restored_wiki_state(
+            "ws-1",
+            [{
+                "page_id": "page-c3",
+                "markdown_key": "wiki/ws-1/pages/page-c3/ops/restore-1.md",
+            }],
+            {
+                "removed_links": [],
+                "restored_links": [{
+                    "source": "concept:unchanged-source",
+                    "target": "concept:c3",
+                    "relation": "related_to",
+                }],
+            },
+            False,
+        )
+
+    assert not any(
+        "INSERT INTO wiki_page_links" in str(call.args[0])
+        for call in connection.execute.call_args_list
+    )
+
+
 def test_restore_reactivates_deleted_page_without_linking_unrelated_deleted_page(
     monkeypatch,
 ) -> None:
