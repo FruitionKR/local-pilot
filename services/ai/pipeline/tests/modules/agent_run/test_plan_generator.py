@@ -501,6 +501,9 @@ class PlanGeneratorTest(unittest.TestCase):
             plan.operations[2].arguments["folder_id"],
             {"$operation_result": "plan-1-op-2", "field": "id"},
         )
+        self.assertEqual(plan.operations[1].depends_on, ("plan-1-op-1",))
+        self.assertEqual(plan.operations[2].depends_on, ("plan-1-op-2",))
+        self.assertIsNone(plan.operations[2].destination_parent_id)
 
     def _generate_create_document(self, candidate: dict[str, object]) -> AgentPlan:
         client = CapturingClient()
