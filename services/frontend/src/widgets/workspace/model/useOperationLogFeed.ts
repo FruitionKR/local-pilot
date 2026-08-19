@@ -29,20 +29,27 @@ export function useOperationLogFeed(isActive: boolean) {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   // 로그 뷰를 다시 열면 이전 요청의 응답을 버린다.
   const requestIdRef = useRef(0);
+  const silentPollInFlightRef = useRef(false);
 
   const refresh = useCallback(async (
     preferredOperationId?: string,
     options?: { silent?: boolean }
   ) => {
     if (!isActive) return;
-    const requestId = ++requestIdRef.current;
-    if (!options?.silent) setIsLoading(true);
-    setErrorMessage(null);
-    setLoadMoreErrorMessage(null);
+    const silent = options?.silent === true;
+    if (silent && silentPollInFlightRef.current) return;
+    const requestId = silent ? requestIdRef.current : ++requestIdRef.current;
+    if (silent) {
+      silentPollInFlightRef.current = true;
+    } else {
+      setIsLoading(true);
+      setErrorMessage(null);
+      setLoadMoreErrorMessage(null);
+    }
     try {
       const response = await fetchOperationLogs({ size: PAGE_SIZE });
       if (requestIdRef.current !== requestId) return;
-      if (options?.silent) {
+      if (silent) {
         setItems((previous) => {
           const merged = mergeRefreshedLogPage(previous, response.logs);
           setSelectedOperationId((current) => pickSelectedOperationId(
@@ -60,11 +67,12 @@ export function useOperationLogFeed(isActive: boolean) {
         ));
       }
     } catch (error: unknown) {
-      if (requestIdRef.current === requestId) {
+      if (requestIdRef.current === requestId && !silent) {
         setErrorMessage(getErrorMessage(error, "로그를 불러오지 못했습니다."));
       }
     } finally {
-      if (requestIdRef.current === requestId && !options?.silent) setIsLoading(false);
+      if (silent) silentPollInFlightRef.current = false;
+      if (requestIdRef.current === requestId && !silent) setIsLoading(false);
     }
   }, [isActive]);
 
@@ -72,6 +80,7 @@ export function useOperationLogFeed(isActive: boolean) {
     if (!isActive) {
       // 화면을 떠난 뒤 도착한 목록 응답이 현재 상태를 덮지 못하게 한다.
       requestIdRef.current += 1;
+      silentPollInFlightRef.current = false;
       setIsLoading(false);
       setIsLoadingMore(false);
       return;
