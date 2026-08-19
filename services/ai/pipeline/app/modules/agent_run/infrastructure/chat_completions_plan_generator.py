@@ -248,6 +248,15 @@ def _validate_plan_against_hierarchy(
         }.get(operation.tool_name)
         if destination_key:
             destination = operation.arguments.get(destination_key)
+            if (
+                operation.tool_name in {"create_folder", "create_document"}
+                and isinstance(destination, dict)
+                and (
+                    operation.destination_parent_id is not None
+                    or not _valid_create_destination_reference(operation, destination, operations)
+                )
+            ):
+                raise ValueError("Agent plan destination must match the tool arguments.")
             if not isinstance(destination, dict) and destination != operation.destination_parent_id:
                 raise ValueError("Agent plan destination must match the tool arguments.")
             if isinstance(destination, str):
@@ -322,6 +331,22 @@ def _operation_references(value: object) -> set[str]:
     if isinstance(value, list):
         return set().union(*(_operation_references(item) for item in value), set())
     return set()
+
+
+def _valid_create_destination_reference(
+    operation: AgentPlanOperation,
+    value: dict[str, object],
+    operations: dict[str, AgentPlanOperation],
+) -> bool:
+    if set(value) != {"$operation_result", "field"} or value.get("field") != "id":
+        return False
+    dependency_id = value.get("$operation_result")
+    dependency = operations.get(dependency_id) if isinstance(dependency_id, str) else None
+    return (
+        dependency is not None
+        and dependency.tool_name == "create_folder"
+        and dependency.id in operation.depends_on
+    )
 
 
 def _valid_base_version_reference(

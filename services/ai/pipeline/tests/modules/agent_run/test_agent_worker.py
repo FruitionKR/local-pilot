@@ -295,6 +295,255 @@ class AgentWorkerTest(unittest.TestCase):
             arguments={"folder_id": "folder-1"},
         )
 
+    def test_root_create_document_ignores_wrong_response_folder(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        gateway = MagicMock()
+        gateway.read.return_value = {"items": []}
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
+        operation = replace(
+            _approved_plan().operations[0],
+            tool_name="create_document",
+            target_type="document",
+            target_id=None,
+            base_version=None,
+            destination_parent_id=None,
+            arguments={
+                "display_name": "새 문서",
+                "folder_id": None,
+                "content_artifact_id": "artifact-1",
+                "content_hash": "sha256:abc",
+            },
+        )
+
+        self.assertFalse(
+            worker._verify_operation(
+                _executing_context(),
+                operation,
+                {
+                    "id": "document-created",
+                    "filename": "새 문서.md",
+                    "current_version": 1,
+                    "folder_id": "wrong-folder",
+                },
+            )
+        )
+        gateway.read.assert_called_once_with(
+            "list_root_items",
+            run_id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            arguments={},
+        )
+
+    def test_dynamic_create_folder_verification_uses_resolved_parent_from_prior_result(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        repository.mark_run_status.return_value = True
+        gateway = MagicMock()
+        gateway.read.side_effect = [
+            {"items": [{"id": "parent-created", "type": "folder", "name": "상위 폴더"}]},
+            {"items": [{"id": "child-created", "type": "folder", "name": "하위 폴더"}]},
+        ]
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
+        first = replace(
+            _approved_plan().operations[0],
+            tool_name="create_folder",
+            target_type="folder",
+            target_id=None,
+            base_version=None,
+            destination_parent_id=None,
+            arguments={"name": "상위 폴더", "parent_folder_id": None},
+            status="succeeded",
+        )
+        second = replace(
+            first,
+            id="plan-1-op-2",
+            sequence=2,
+            arguments={
+                "name": "하위 폴더",
+                "parent_folder_id": {"$operation_result": "plan-1-op-1", "field": "id"},
+            },
+            depends_on=("plan-1-op-1",),
+        )
+        repository.load_context.return_value = _executing_context()
+        repository.load_current_plan.return_value = replace(
+            _approved_plan(),
+            operations=(first, second),
+        )
+        repository.load_operation_results.return_value = {
+            "plan-1-op-1": {"id": "parent-created", "parent_folder_id": "wrong-parent", "name": "상위 폴더"},
+            "plan-1-op-2": {"id": "child-created", "parent_folder_id": "wrong-parent", "name": "하위 폴더"},
+        }
+
+        worker._verify_run("run-1")
+
+        self.assertEqual(gateway.read.call_args_list[0].kwargs["arguments"], {})
+        self.assertEqual(
+            gateway.read.call_args_list[1].kwargs["arguments"],
+            {"folder_id": "parent-created"},
+        )
+
+    def test_create_folder_verification_rejects_wrong_actual_parent(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        gateway = MagicMock()
+        gateway.read.return_value = {"items": []}
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
+        operation = replace(
+            _approved_plan().operations[0],
+            tool_name="create_folder",
+            target_type="folder",
+            target_id=None,
+            base_version=None,
+            destination_parent_id=None,
+            arguments={
+                "name": "하위 폴더",
+                "parent_folder_id": {"$operation_result": "plan-1-op-1", "field": "id"},
+            },
+        )
+
+        self.assertFalse(
+            worker._verify_operation(
+                _executing_context(),
+                operation,
+                {"id": "child-created", "parent_folder_id": "wrong-parent", "name": "하위 폴더"},
+                {"parent_folder_id": "parent-created"},
+            )
+        )
+        gateway.read.assert_called_once_with(
+            "list_folder_children",
+            run_id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            arguments={"folder_id": "parent-created"},
+        )
+
+    def test_top_level_create_folder_verification_uses_root_for_resolved_none(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        gateway = MagicMock()
+        gateway.read.return_value = {
+            "items": [{"id": "folder-created", "type": "folder", "name": "루트 폴더"}]
+        }
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
+        operation = replace(
+            _approved_plan().operations[0],
+            tool_name="create_folder",
+            target_type="folder",
+            target_id=None,
+            base_version=None,
+            destination_parent_id=None,
+            arguments={"name": "루트 폴더", "parent_folder_id": None},
+        )
+
+        self.assertTrue(
+            worker._verify_operation(
+                _executing_context(),
+                operation,
+                {"id": "folder-created", "parent_folder_id": "wrong-parent", "name": "루트 폴더"},
+                {"parent_folder_id": None},
+            )
+        )
+        gateway.read.assert_called_once_with(
+            "list_root_items",
+            run_id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            arguments={},
+        )
+
+    def test_static_create_folder_verification_keeps_destination_parent_fallback(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        gateway = MagicMock()
+        gateway.read.return_value = {
+            "items": [{"id": "folder-created", "type": "folder", "name": "정적 폴더"}]
+        }
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
+        operation = replace(
+            _approved_plan().operations[0],
+            tool_name="create_folder",
+            target_type="folder",
+            target_id=None,
+            base_version=None,
+            destination_parent_id="folder-1",
+            arguments={"name": "정적 폴더", "parent_folder_id": "folder-1"},
+        )
+
+        self.assertTrue(
+            worker._verify_operation(
+                _executing_context(),
+                operation,
+                {"id": "folder-created", "parent_folder_id": "wrong-parent", "name": "정적 폴더"},
+            )
+        )
+        gateway.read.assert_called_once_with(
+            "list_folder_children",
+            run_id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            arguments={"folder_id": "folder-1"},
+        )
+
+    def test_dynamic_nested_create_document_verification_uses_contract_response(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        repository.mark_run_status.return_value = True
+        gateway = MagicMock()
+        gateway.read.side_effect = [
+            {"items": [{"id": "folder-created", "type": "folder", "name": "새 폴더"}]},
+            {"items": [{"id": "document-created", "type": "document", "name": "새 문서"}]},
+        ]
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
+        first = replace(
+            _approved_plan().operations[0],
+            tool_name="create_folder",
+            target_type="folder",
+            target_id=None,
+            base_version=None,
+            destination_parent_id=None,
+            arguments={"name": "새 폴더", "parent_folder_id": None},
+            status="succeeded",
+        )
+        second = replace(
+            first,
+            id="plan-1-op-2",
+            sequence=2,
+            tool_name="create_document",
+            target_type="document",
+            destination_parent_id=None,
+            depends_on=("plan-1-op-1",),
+            arguments={
+                "display_name": "새 문서",
+                "folder_id": {"$operation_result": "plan-1-op-1", "field": "id"},
+                "content_artifact_id": "artifact-1",
+                "content_hash": "sha256:abc",
+            },
+            status="succeeded",
+        )
+        repository.load_context.return_value = _executing_context()
+        repository.load_current_plan.return_value = replace(
+            _approved_plan(),
+            operations=(first, second),
+        )
+        repository.load_operation_results.return_value = {
+            "plan-1-op-1": {"id": "folder-created", "parent_folder_id": None, "name": "새 폴더"},
+            "plan-1-op-2": {"id": "document-created", "filename": "새 문서.md", "current_version": 1},
+        }
+
+        worker._verify_run("run-1")
+
+        self.assertEqual(
+            gateway.read.call_args_list[0].kwargs["arguments"],
+            {},
+        )
+        self.assertEqual(
+            gateway.read.call_args_list[1].kwargs["arguments"],
+            {"folder_id": "folder-created"},
+        )
+        repository.finish_run_from_operations.assert_called_once_with("run-1")
+
     def test_resolves_approved_dependency_output_without_changing_other_arguments(self) -> None:
         arguments = {
             "document_id": "document-1",
