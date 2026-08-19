@@ -68,7 +68,8 @@ public class ChatWikiExportReconciler {
                 reconcileOne(document);
             } catch (RuntimeException e) {
                 // 이 문서만 건너뛴다. reconciled_at을 남기지 않았으므로 다음 tick에 다시 시도한다.
-                log.warn("[chat-wiki][reconcile] 건너뜀 document={} error={}", document.getId(), e.getMessage());
+                // 예외를 마지막 인자로 넘겨 스택을 남긴다. DB 쓰기 실패까지 여기로 모이므로 메시지만으론 부족하다.
+                log.warn("[chat-wiki][reconcile] 건너뜀 document={}", document.getId(), e);
             }
         }
     }
