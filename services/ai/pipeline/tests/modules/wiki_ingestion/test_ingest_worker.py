@@ -158,6 +158,26 @@ def test_build_payload_uses_workspace_command_snapshot() -> None:
     assert payload.model == "gpt-5-nano"
 
 
+def test_build_chat_payload_defaults_to_partial_selection_mode() -> None:
+    payload = ingest_worker._build_payload(
+        {
+            "run_id": "run-1",
+            "kind": "chat_wiki",
+            "document_id": "chat-document-1",
+            "workspace_id": "workspace-1",
+            "user_id": "user-1",
+            "provider": "openai",
+            "model": "gpt-5-nano",
+            "input_markdown": "# Chat Export\n\nQ : 질문\nA : 답변",
+            "input_blocks": [
+                {"block_id": "session-1:pair-1", "text": "Q : 질문\nA : 답변"}
+            ],
+        }
+    )
+
+    assert payload.selection_mode == "partial"
+
+
 def test_build_payload_requires_runtime_provider_and_model() -> None:
     with pytest.raises(ValueError, match="requires provider and model"):
         ingest_worker._build_payload(

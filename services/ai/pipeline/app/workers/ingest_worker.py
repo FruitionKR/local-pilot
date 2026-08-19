@@ -81,7 +81,7 @@ def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
         if command.get("kind") == "chat_wiki":
             return ChatWikiRunIn(
                 **common,
-                selection_mode=command.get("selection_mode") or "full",
+                selection_mode=command.get("selection_mode") or "partial",
                 input_markdown=command.get("input_markdown"),
                 input_blocks=command.get("input_blocks") or [],
             )

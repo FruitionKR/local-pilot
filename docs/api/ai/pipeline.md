@@ -83,7 +83,8 @@ Kafka command를 발행하면 ingest worker가 같은 실행 로직을 호출한
 
 `input_markdown`과 `input_blocks`는 둘 다 필수다. 문답 경계와 `session_id:pair_id` provenance는 backend가 확정해
 `input_blocks`로 넘기고, pipeline은 Markdown을 다시 쪼개지 않는다. `block_id`가 그대로 `source_blocks.block_id`가
-되므로 Markdown 본문에는 이 id가 들어가지 않는다.
+되므로 Markdown 본문에는 이 id가 들어가지 않는다. 채팅 Wiki export는 항상 독립 source page를 생성하며
+`selection_mode`는 기존 저장·command 계약에 맞춰 `partial`만 허용한다.
 
 #### 5. Response body
 

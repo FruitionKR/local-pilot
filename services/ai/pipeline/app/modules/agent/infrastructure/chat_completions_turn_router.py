@@ -2,7 +2,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.core.llm_env import (
     api_key_from_env,
@@ -21,6 +21,8 @@ from app.modules.agent.domain.entities import (
     RetrievalSource,
 )
 from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
+from app.modules.skill.domain.entities import SkillCapability
+from app.modules.skill.domain.policy import CAPABILITY_TOOLS
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
@@ -279,6 +281,46 @@ def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[st
         failures.append("chat_answer requires workspace or web retrieval_source")
     if route.retrieval_source == "web" and request.allow_web_search is not True:
         failures.append("web retrieval requires allow_web_search true")
+    required_capabilities = set(route.required_capabilities)
+    handles_document = route.action in {
+        "markdown_create",
+        "markdown_edit",
+        "workspace_workflow",
+    }
+    if (
+        handles_document
+        and route.document_operation == "create"
+        and not required_capabilities.intersection({"document-create", "template"})
+    ):
+        failures.append("document_operation create requires document-create or template capability")
+    if (
+        handles_document
+        and route.document_operation == "edit"
+        and not required_capabilities.intersection({"document-edit", "template"})
+    ):
+        failures.append("document_operation edit requires document-edit or template capability")
+    if route.document_operation != "create" and "document-create" in required_capabilities:
+        failures.append("document-create capability requires document_operation create")
+    if route.document_operation != "edit" and "document-edit" in required_capabilities:
+        failures.append("document-edit capability requires document_operation edit")
+    if route.document_operation == "none" and "template" in required_capabilities:
+        failures.append("template capability requires a document operation")
+    if "folder-organize" in required_capabilities and route.action not in {
+        "folder_organize",
+        "workspace_workflow",
+    }:
+        failures.append("folder-organize capability requires a persistent Workspace action")
+    if route.action == "folder_organize" and required_capabilities != {"folder-organize"}:
+        failures.append("folder_organize requires only the folder-organize capability")
+    if route.action == "workspace_workflow" and not required_capabilities:
+        failures.append("workspace_workflow requires at least one capability")
+    if route.action not in {
+        "markdown_create",
+        "markdown_edit",
+        "folder_organize",
+        "workspace_workflow",
+    } and required_capabilities:
+        failures.append(f"action {route.action} must not require Skill capabilities")
     return failures
 
 
@@ -387,6 +429,22 @@ def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:
     else:
         skill_candidates = tuple(candidate.strip() for candidate in raw_skill_candidates)
 
+    raw_required_capabilities = value.get("required_capabilities")
+    if (
+        not isinstance(raw_required_capabilities, list)
+        or not all(
+            isinstance(capability, str) and capability in CAPABILITY_TOOLS
+            for capability in raw_required_capabilities
+        )
+        or len(set(raw_required_capabilities)) != len(raw_required_capabilities)
+    ):
+        failures.append("required_capabilities must be an array of unique supported capabilities")
+        required_capabilities: tuple[SkillCapability, ...] = ()
+    else:
+        required_capabilities = tuple(
+            sorted(cast(SkillCapability, capability) for capability in raw_required_capabilities)
+        )
+
     return AgentTurnRoute(
         action=action,
         confidence=confidence,
@@ -397,6 +455,7 @@ def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:
         retrieval_source=retrieval_source,
         document_operation=document_operation,
         persist=persist,
+        required_capabilities=required_capabilities,
     ), failures
 
 

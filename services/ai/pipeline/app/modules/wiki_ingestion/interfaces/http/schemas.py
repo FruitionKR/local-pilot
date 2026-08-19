@@ -16,7 +16,6 @@ from app.modules.wiki_ingestion.application.models import (
 
 DOCUMENT_SEMANTIC_PROMPT = "prompts/semantic_extraction.system.md"
 CHAT_SEMANTIC_PROMPT = "prompts/chat_semantic_extraction.system.md"
-CHAT_APPEND_SEMANTIC_PROMPT = "prompts/chat_semantic_append.system.md"
 
 
 class _PipelineRunBase(BaseModel):
@@ -45,9 +44,6 @@ class _PipelineRunBase(BaseModel):
     concept_system_prompt: str = "prompts/concept_page_generation.system.md"
     concept_resolution_system_prompt: str = "prompts/concept_resolution.system.md"
     section_polish_system_prompt: str = "prompts/section_polish.system.md"
-    source_accumulation_system_prompt: str = (
-        "prompts/source_accumulation_evaluator.system.md"
-    )
     wiki_evaluator_system_prompt: str = "prompts/wiki_generation_evaluator.system.md"
     existing_wiki_dir: str | None = None
     wiki_evaluation_loop: bool = True
@@ -103,8 +99,8 @@ class ChatSourceBlockIn(BaseModel):
 
 
 class ChatWikiRunIn(_PipelineRunBase):
-    selection_mode: Literal["full", "partial"] = Field(
-        description="full은 기존 chat source page에 누적하고, partial은 독립 source page를 생성합니다.",
+    selection_mode: Literal["partial"] = Field(
+        description="채팅 Wiki export는 항상 독립 source page를 생성하므로 partial만 지원합니다.",
     )
     input_markdown: str = Field(
         min_length=1,
@@ -115,7 +111,6 @@ class ChatWikiRunIn(_PipelineRunBase):
         description="문답 단위 source block 목록입니다. 파이프라인은 Markdown을 다시 쪼개지 않고 이 목록을 그대로 씁니다.",
     )
     chat_system_prompt: str = CHAT_SEMANTIC_PROMPT
-    chat_append_system_prompt: str = CHAT_APPEND_SEMANTIC_PROMPT
 
 
 class PipelineRunOut(BaseModel):

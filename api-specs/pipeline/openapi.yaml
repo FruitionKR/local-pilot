@@ -734,6 +734,16 @@ components:
         reason:
           title: Reason
           type: string
+        required_capabilities:
+          items:
+            enum:
+            - document-create
+            - document-edit
+            - folder-organize
+            - template
+            type: string
+          title: Required Capabilities
+          type: array
         retrieval_source:
           enum:
           - none
@@ -807,10 +817,6 @@ components:
     ChatWikiRunIn:
       additionalProperties: false
       properties:
-        chat_append_system_prompt:
-          default: prompts/chat_semantic_append.system.md
-          title: Chat Append System Prompt
-          type: string
         chat_system_prompt:
           default: prompts/chat_semantic_extraction.system.md
           title: Chat System Prompt
@@ -914,15 +920,9 @@ components:
           title: Section Polish System Prompt
           type: string
         selection_mode:
-          description: full은 기존 chat source page에 누적하고, partial은 독립 source page를 생성합니다.
-          enum:
-          - full
-          - partial
+          const: partial
+          description: 채팅 Wiki export는 항상 독립 source page를 생성하므로 partial만 지원합니다.
           title: Selection Mode
-          type: string
-        source_accumulation_system_prompt:
-          default: prompts/source_accumulation_evaluator.system.md
-          title: Source Accumulation System Prompt
           type: string
         source_content_hash:
           anyOf:
@@ -1493,10 +1493,6 @@ components:
           default: prompts/section_polish.system.md
           title: Section Polish System Prompt
           type: string
-        source_accumulation_system_prompt:
-          default: prompts/source_accumulation_evaluator.system.md
-          title: Source Accumulation System Prompt
-          type: string
         source_content_hash:
           anyOf:
           - type: string
@@ -1890,10 +1886,6 @@ components:
         section_polish_system_prompt:
           default: prompts/section_polish.system.md
           title: Section Polish System Prompt
-          type: string
-        source_accumulation_system_prompt:
-          default: prompts/source_accumulation_evaluator.system.md
-          title: Source Accumulation System Prompt
           type: string
         source_content_hash:
           anyOf:
