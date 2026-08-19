@@ -4,21 +4,35 @@ import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.domain.ChatSession;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 저장된 채팅 세션을 llmPipeline이 처리할 수 있는 Markdown 원문으로 직렬화한다.
+ * 저장된 채팅 세션을 llmPipeline이 처리할 수 있는 Markdown 원문과 문답 단위 source block으로 직렬화한다.
  * 형식은 docs/backlog/spec/chat-to-wiki-contract.md §4를 따른다.
  *
- * 문답(pair) 1쌍을 하나의 단위로 만들고, 각 문답 앞에 원본을 특정하는 {@code [session_id:pair_id]} prefix를 붙인다.
+ * 문답(pair) 1쌍이 하나의 block이다. 원본을 특정하는 {@code session_id:pair_id} provenance는 Markdown 본문이
+ * 아니라 block의 {@code blockId}로만 전달한다. 본문에 id를 넣지 않으므로 사용자에게 그대로 보여줄 수 있다.
  */
 @Component
 public class ChatWikiMarkdownSerializer {
 
+    /** 직렬화 결과. markdown은 사용자에게 보여줄 본문, blocks는 파이프라인에 넘길 provenance 단위다. */
+    public record ChatWikiSource(String markdown, List<ChatSourceBlock> blocks) {
+
+        /** 완결된 문답이 하나도 없으면 위키화할 것이 없다. */
+        public boolean isEmpty() {
+            return blocks.isEmpty();
+        }
+    }
+
+    /** 문답 1쌍. blockId는 {@code session_id:pair_id}이며 text에는 그 id가 들어가지 않는다. */
+    public record ChatSourceBlock(String blockId, String text) {}
+
     /** completed user+assistant가 모두 있는 문답만 대화 순서대로 직렬화한다. messages는 created_at 오름차순 가정. */
-    public String serialize(ChatSession session, List<ChatMessage> messages) {
+    public ChatWikiSource serialize(ChatSession session, List<ChatMessage> messages) {
         // pair_id별로 user/assistant 발화를 모은다 (등장 순서 보존).
         Map<String, String[]> pairs = new LinkedHashMap<>();
         for (ChatMessage message : messages) {
@@ -33,6 +47,7 @@ public class ChatWikiMarkdownSerializer {
             }
         }
 
+        List<ChatSourceBlock> blocks = new ArrayList<>();
         StringBuilder sb = new StringBuilder("# Chat Export\n\n");
         for (Map.Entry<String, String[]> entry : pairs.entrySet()) {
             String user = entry.getValue()[0];
@@ -40,11 +55,11 @@ public class ChatWikiMarkdownSerializer {
             if (user == null || assistant == null) {
                 continue; // 불완전한 문답은 제외 (§4: user·assistant 모두 포함)
             }
-            sb.append('[').append(session.getId()).append(':').append(entry.getKey()).append("]Q : ")
-              .append(collapseBlankLines(user)).append('\n');
-            sb.append("A : ").append(collapseBlankLines(assistant)).append("\n\n");
+            String text = "Q : " + collapseBlankLines(user) + "\nA : " + collapseBlankLines(assistant);
+            blocks.add(new ChatSourceBlock(session.getId() + ":" + entry.getKey(), text));
+            sb.append(text).append("\n\n");
         }
-        return sb.toString();
+        return new ChatWikiSource(sb.toString(), List.copyOf(blocks));
     }
 
     /** §4: 문답 1쌍 안에는 빈 줄을 넣지 않는다. 발화 내부의 빈 줄을 단일 개행으로 접는다. */

@@ -190,6 +190,59 @@ def test_build_payload_requires_runtime_provider_and_model() -> None:
         )
 
 
+def test_build_payload_rejects_chat_command_without_source_blocks() -> None:
+    """배포 전환기에 남은 구 형식 command. 재시도해도 못 고치므로 폐기 대상으로 표시한다."""
+    with pytest.raises(ingest_worker.UnprocessableIngestCommand, match="payload is invalid"):
+        ingest_worker._build_payload(
+            {
+                "run_id": "run-1",
+                "kind": "chat_wiki",
+                "document_id": "chatdoc-1",
+                "workspace_id": "workspace-1",
+                "user_id": "user-1",
+                "provider": "openai",
+                "model": "gpt-5-nano",
+                "selection_mode": "partial",
+                # input_markdown·input_blocks 없음
+            }
+        )
+
+
+def test_build_payload_rejects_command_without_document_id() -> None:
+    """필수 키 누락도 재시도로 못 고치므로 같은 폐기 경로를 탄다."""
+    with pytest.raises(ingest_worker.UnprocessableIngestCommand, match="payload is invalid"):
+        ingest_worker._build_payload(
+            {
+                "run_id": "run-1",
+                "kind": "document",
+                "workspace_id": "workspace-1",
+                "user_id": "user-1",
+                "provider": "openai",
+                "model": "gpt-5-nano",
+                # document_id 없음
+            }
+        )
+
+
+def test_build_payload_accepts_chat_command_with_source_blocks() -> None:
+    payload = ingest_worker._build_payload(
+        {
+            "run_id": "run-1",
+            "kind": "chat_wiki",
+            "document_id": "chatdoc-1",
+            "workspace_id": "workspace-1",
+            "user_id": "user-1",
+            "provider": "openai",
+            "model": "gpt-5-nano",
+            "selection_mode": "partial",
+            "input_markdown": "# Chat Export\n\nQ : 질문\nA : 답변",
+            "input_blocks": [{"block_id": "session_1:pair_1", "text": "Q : 질문\nA : 답변"}],
+        }
+    )
+
+    assert payload.input_blocks[0].block_id == "session_1:pair_1"
+
+
 def test_terminal_failed_result_keeps_failed_event_status() -> None:
     command = {"run_id": "run-1", "kind": "document"}
     result = {"status": "failed", "summary": "pipeline failed"}

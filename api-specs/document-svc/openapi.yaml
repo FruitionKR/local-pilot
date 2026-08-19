@@ -941,7 +941,7 @@ paths:
       - Query
   /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki:
     post:
-      description: 세션(full) 또는 선택 문답(partial)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 위키 생성은 파이프라인이 비동기로 수행합니다.
+      description: 선택한 문답(pair_ids)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 호출할 때마다 새 문서와 독립 Wiki 페이지가 만들어집니다. 위키 생성은 파이프라인이 비동기로 수행합니다.
       operationId: exportToWiki
       parameters:
       - example: ws_9d47a0e9a6324341b47562553b75f92a
@@ -4082,7 +4082,7 @@ components:
           description: 질문·답변을 묶는 ID. Wiki export에서 선택 단위로 쓴다.
         partial_wiki_page_ids:
           type: array
-          description: 부분 선택 export로 만들어진 Wiki 페이지 ID 목록
+          description: 이 문답을 내보내 만들어진 Wiki 페이지 ID 목록
           items:
             type: string
         provider:
@@ -4118,9 +4118,6 @@ components:
           type: boolean
           description: 이 질의에 웹 검색이 허용됐는지. 실행 당시 값이 snapshot으로 남는다.
           example: false
-        wiki_page_id:
-          type: string
-          description: 이 메시지에서 만들어진 Wiki 페이지 ID
     ChatMessagesResponse:
       type: object
       properties:
@@ -4182,16 +4179,9 @@ components:
       properties:
         pair_ids:
           type: array
-          description: partial일 때 내보낼 문답(pair) ID 목록. full이면 무시된다.
+          description: 내보낼 문답(pair) ID 목록. 비어 있을 수 없다.
           items:
             type: string
-        selection_mode:
-          type: string
-          description: "full은 세션 전체, partial은 선택한 문답만 내보낸다."
-          enum:
-          - full
-          - partial
-          example: full
     ChatWikiExportResponse:
       type: object
       description: 채팅 Wiki export 접수 결과. 실제 처리는 비동기다.

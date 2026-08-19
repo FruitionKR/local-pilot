@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 채팅 Wiki page화 API. 세션을 Markdown 문서로 직렬화해 기존 문서 ingestion 파이프라인에 넣는다.
+ * 채팅 Wiki page화 API. 선택한 문답을 Markdown 문서로 직렬화해 기존 문서 ingestion 파이프라인에 넣는다.
  * (docs/backlog/spec/chat-to-wiki-contract.md)
  */
 @RestController
@@ -34,8 +34,8 @@ public class ChatWikiExportController {
     }
 
     @Operation(summary = "채팅 Wiki page화",
-            description = "세션(full) 또는 선택 문답(partial)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. "
-                    + "위키 생성은 파이프라인이 비동기로 수행합니다.")
+            description = "선택한 문답(pair_ids)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 호출할 때마다 "
+                    + "새 문서와 독립 Wiki 페이지가 만들어집니다. 위키 생성은 파이프라인이 비동기로 수행합니다.")
     @ApiResponse(responseCode = "202", description = "Wiki 생성 작업이 대기열에 등록됨",
             content = @Content(schema = @Schema(implementation = ChatWikiExportResponse.class)))
     @PostMapping("/{session_id}/wiki")
