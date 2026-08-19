@@ -7,6 +7,7 @@ from app.modules.agent_run.infrastructure.chat_completions_plan_generator import
     normalize_plan_candidate,
 )
 from app.modules.agent_run.domain.entities import ContentArtifactReference
+from app.modules.agent_run.domain.plan import AgentPlan
 
 
 class CapturingClient:
@@ -135,6 +136,10 @@ class PlanGeneratorTest(unittest.TestCase):
         self.assertNotRegex(prompt, r'"arguments"\s*:\s*\{\s*\}')
         self.assertIn(
             "every key required by the selected backend tool, including nullable keys with explicit null",
+            prompt,
+        )
+        self.assertIn(
+            "For create_folder and create_document, destination_parent_id must exactly match the corresponding parent_folder_id or folder_id argument; for a top-level/root create, set both to null.",
             prompt,
         )
         self.assertIn("Operation sequence numbers are 1-based", prompt)
@@ -408,6 +413,117 @@ class PlanGeneratorTest(unittest.TestCase):
         self.assertEqual(operation.destination_parent_id, "folder-1")
         self.assertEqual(operation.arguments["content_artifact_id"], "artifact-create")
         self.assertEqual(operation.arguments["content_hash"], "sha256:create")
+
+    def test_create_document_requires_consistent_destination_metadata(self) -> None:
+        candidate = {
+            "summary": "최상위에 문서를 저장합니다.",
+            "operations": [
+                {
+                    "tool_name": "create_document",
+                    "target_type": "document",
+                    "target_id": None,
+                    "base_version": None,
+                    "source_parent_id": None,
+                    "destination_parent_id": "folder-active",
+                    "arguments": {
+                        "display_name": "새 문서.md",
+                        "folder_id": None,
+                        "content_artifact_id": "artifact-create",
+                        "content_hash": "sha256:create",
+                    },
+                    "reason": "최상위에 저장합니다.",
+                    "depends_on": [],
+                }
+            ],
+        }
+
+        with self.assertRaisesRegex(ValueError, "destination"):
+            self._generate_create_document(candidate)
+
+    def test_create_operations_allow_trusted_created_folder_reference_with_null_metadata(self) -> None:
+        candidate = {
+            "summary": "새 폴더에 문서를 저장합니다.",
+            "operations": [
+                {
+                    "tool_name": "create_folder",
+                    "target_type": "folder",
+                    "target_id": None,
+                    "base_version": None,
+                    "source_parent_id": None,
+                    "destination_parent_id": None,
+                    "arguments": {"name": "새 폴더", "parent_folder_id": None},
+                    "reason": "새 폴더를 만듭니다.",
+                    "depends_on": [],
+                },
+                {
+                    "tool_name": "create_folder",
+                    "target_type": "folder",
+                    "target_id": None,
+                    "base_version": None,
+                    "source_parent_id": None,
+                    "destination_parent_id": None,
+                    "arguments": {
+                        "name": "하위 폴더",
+                        "parent_folder_id": {
+                            "$operation_result": "plan-1-op-1",
+                            "field": "id",
+                        },
+                    },
+                    "reason": "새 폴더 아래에 하위 폴더를 만듭니다.",
+                    "depends_on": [1],
+                },
+                {
+                    "tool_name": "create_document",
+                    "target_type": "document",
+                    "target_id": None,
+                    "base_version": None,
+                    "source_parent_id": None,
+                    "destination_parent_id": None,
+                    "arguments": {
+                        "display_name": "새 문서.md",
+                        "folder_id": {"$operation_result": "plan-1-op-2", "field": "id"},
+                        "content_artifact_id": "artifact-create",
+                        "content_hash": "sha256:create",
+                    },
+                    "reason": "새 폴더에 저장합니다.",
+                    "depends_on": [2],
+                },
+            ],
+        }
+
+        plan = self._generate_create_document(candidate)
+        self.assertEqual(
+            plan.operations[1].arguments["parent_folder_id"],
+            {"$operation_result": "plan-1-op-1", "field": "id"},
+        )
+        self.assertIsNone(plan.operations[1].destination_parent_id)
+        self.assertEqual(
+            plan.operations[2].arguments["folder_id"],
+            {"$operation_result": "plan-1-op-2", "field": "id"},
+        )
+        self.assertEqual(plan.operations[1].depends_on, ("plan-1-op-1",))
+        self.assertEqual(plan.operations[2].depends_on, ("plan-1-op-2",))
+        self.assertIsNone(plan.operations[2].destination_parent_id)
+
+    def _generate_create_document(self, candidate: dict[str, object]) -> AgentPlan:
+        client = CapturingClient()
+        client.complete_json = lambda _system_prompt, _user_prompt, **_kwargs: candidate  # type: ignore[method-assign]
+        return ChatCompletionsPlanGenerator(client, "system").generate(
+            run_id="run-1",
+            plan_id="plan-1",
+            version=1,
+            instruction="문서를 저장해줘",
+            hierarchy=[{"id": "folder-active", "type": "folder", "current_version": 1}],
+            skill_instructions=None,
+            allowed_tools=("create_folder", "create_document"),
+            content_artifacts=(
+                ContentArtifactReference(
+                    id="artifact-create",
+                    content_hash="sha256:create",
+                    purpose="create_document",
+                ),
+            ),
+        )
 
     def test_edit_artifact_rejects_unrelated_mutation_plan(self) -> None:
         client = CapturingClient()

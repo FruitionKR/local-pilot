@@ -9,7 +9,7 @@ When an earlier operation mutates the same existing target, keep the dependent o
 Every operation object must contain exactly these keys: tool_name, target_type, target_id, base_version, source_parent_id, destination_parent_id, arguments, reason, and depends_on.
 tool_name must be one of create_folder, rename_folder, move_folder, move_document, rename_document, create_document, or apply_document_edit. target_type must be folder or document.
 Use the exact existing target id and hierarchy base_version; use null for create targets. For create_folder and create_document, target_id and base_version must both be null.
-source_parent_id and destination_parent_id must be an id or null. arguments must contain every key required by the selected backend tool, including nullable keys with explicit null; never use an empty arguments object. reason is a brief user-facing Korean reason, and depends_on contains earlier operation sequence numbers.
+source_parent_id and destination_parent_id must be an id or null. For create_folder and create_document, destination_parent_id must exactly match the corresponding parent_folder_id or folder_id argument; for a top-level/root create, set both to null. If that argument uses an earlier create_folder operation result, set destination_parent_id to null because the generated id is unavailable in top-level metadata. arguments must contain every key required by the selected backend tool, including nullable keys with explicit null; never use an empty arguments object. reason is a brief user-facing Korean reason, and depends_on contains earlier operation sequence numbers.
 
 Arguments must match the Backend tool contract exactly:
 - create_folder: name, parent_folder_id

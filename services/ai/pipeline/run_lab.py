@@ -277,6 +277,7 @@ def _run_wiki_generation_loop(
         events=log,
         evaluation_artifacts=EvaluationArtifactAdapter(out, save_debug_json),
         source_block_ids=[block.block_id for block in blocks],
+        packet_block_ids={packet.chunk_id: packet.block_ids for packet in packets},
     ).run(
         semantic_system_prompt=semantic_system_prompt,
         source_context=source_context,

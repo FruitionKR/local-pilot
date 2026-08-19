@@ -34,6 +34,13 @@ def test_intent_prompt_defines_supported_boundaries() -> None:
     assert "A workspace document entry's display name or filename" in prompt
     assert "A Markdown H1 or title inside the document body" in prompt
     assert "every Skill kind required" in prompt
+    assert "Do not infer `template` from meta words" in prompt
+    assert "Naming an output genre" in prompt
+    assert "Bind each requested action to its explicit object" in prompt
+    assert "Dividing documents among folders" in prompt
+    assert "Do not add `document-edit` unless" in prompt
+    assert "Select multiple Skill kinds only when" in prompt
+    assert "select `template` with `fixed-template`" in prompt
     assert '"skill_kinds"' in prompt
     assert "do not return tool names" in prompt
     assert '"allowed_tools"' not in prompt
@@ -210,6 +217,17 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(client.provider, "claude")
         self.assertEqual(client.config.model, "claude-sonnet-5")
         self.assertEqual(client.config.api_key, "claude-key")
+        self.assertIsNone(client.config.temperature)
+
+    def test_skill_builder_uses_deterministic_openai_temperature(self) -> None:
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "openai-key"}, clear=True):
+            generator = build_skill_authoring_generator(
+                provider="openai",
+                model="gpt-5-nano",
+            )
+
+        client = generator._client  # type: ignore[attr-defined]
+        self.assertEqual(client.config.temperature, 0.0)
 
     def build_use_case(
         self,

@@ -10,6 +10,11 @@ Judge whether:
 - Section candidates and mentions are not incorrectly promoted into core concepts.
 - Observations are useful retrieval units, not broken or duplicated chunk artifacts.
 - Evidence claims are atomic and linked to direct source blocks.
+- Multi-packet semantic coverage is complete: meaning-bearing blocks from every
+  packet are represented by at least one anchored item, including concepts and
+  relationships that continue across packet boundaries. Do not accept a pass
+  when a packet's meaning-bearing content is omitted merely because other packets
+  are well covered.
 - The structure will help downstream query retrieval.
 
 Hard grounding rule:
@@ -35,6 +40,8 @@ Diagnostic issue types:
 - duplicate_observation
 - broken_observation
 - observation_missing_ref
+- semantic_coverage_gap
+- invalid_ref
 
 Issue contract:
 - Put every problem that must be corrected before acceptance in `issues`.
