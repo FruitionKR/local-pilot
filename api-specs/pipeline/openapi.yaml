@@ -796,13 +796,27 @@ components:
       - operation_hash
       title: ApproveAgentPlanRequest
       type: object
+    ChatSourceBlockIn:
+      description: 채팅 문답 1쌍. block_id는 `session_id:pair_id` provenance이고 text에는 그 id가 들어가지 않는다.
+      properties:
+        block_id:
+          description: '`session_id:pair_id` 형식의 문답 provenance. source_blocks.block_id로 그대로 저장됩니다.'
+          minLength: 1
+          title: Block Id
+          type: string
+        text:
+          description: 문답 본문. id를 포함하지 않습니다.
+          minLength: 1
+          title: Text
+          type: string
+      required:
+      - block_id
+      - text
+      title: ChatSourceBlockIn
+      type: object
     ChatWikiRunIn:
       additionalProperties: false
       properties:
-        chat_append_system_prompt:
-          default: prompts/chat_semantic_append.system.md
-          title: Chat Append System Prompt
-          type: string
         chat_system_prompt:
           default: prompts/chat_semantic_extraction.system.md
           title: Chat System Prompt
@@ -834,12 +848,18 @@ components:
           - type: string
           - type: 'null'
           title: Existing Wiki Dir
+        input_blocks:
+          description: 문답 단위 source block 목록입니다. 파이프라인은 Markdown을 다시 쪼개지 않고 이 목록을 그대로 씁니다.
+          items:
+            $ref: '#/components/schemas/ChatSourceBlockIn'
+          minItems: 1
+          title: Input Blocks
+          type: array
         input_markdown:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: 기존 source page가 있는 full 누적에서 backend가 중복 필터링해 직렬화한 신규 pair Markdown입니다.
+          description: backend가 직렬화한 채팅 Markdown입니다. 문서 제목 추출에만 쓰이며 블록 분할에는 쓰지 않습니다.
+          minLength: 1
           title: Input Markdown
+          type: string
         input_name:
           anyOf:
           - type: string
@@ -900,15 +920,9 @@ components:
           title: Section Polish System Prompt
           type: string
         selection_mode:
-          description: full은 기존 chat source page에 누적하고, partial은 독립 source page를 생성합니다.
-          enum:
-          - full
-          - partial
+          const: partial
+          description: 채팅 Wiki export는 항상 독립 source page를 생성하므로 partial만 지원합니다.
           title: Selection Mode
-          type: string
-        source_accumulation_system_prompt:
-          default: prompts/source_accumulation_evaluator.system.md
-          title: Source Accumulation System Prompt
           type: string
         source_content_hash:
           anyOf:
@@ -958,6 +972,8 @@ components:
       - provider
       - model
       - selection_mode
+      - input_markdown
+      - input_blocks
       title: ChatWikiRunIn
       type: object
     ConversationAgentRouteRequest:
@@ -1477,10 +1493,6 @@ components:
           default: prompts/section_polish.system.md
           title: Section Polish System Prompt
           type: string
-        source_accumulation_system_prompt:
-          default: prompts/source_accumulation_evaluator.system.md
-          title: Source Accumulation System Prompt
-          type: string
         source_content_hash:
           anyOf:
           - type: string
@@ -1874,10 +1886,6 @@ components:
         section_polish_system_prompt:
           default: prompts/section_polish.system.md
           title: Section Polish System Prompt
-          type: string
-        source_accumulation_system_prompt:
-          default: prompts/source_accumulation_evaluator.system.md
-          title: Source Accumulation System Prompt
           type: string
         source_content_hash:
           anyOf:

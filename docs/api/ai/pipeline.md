@@ -70,9 +70,21 @@ Kafka command를 발행하면 ingest worker가 같은 실행 로직을 호출한
   "document_id": "chatdoc_123",
   "provider": "openai",
   "model": "gpt-5-nano",
-  "selection_mode": "full"
+  "selection_mode": "partial",
+  "input_markdown": "# Chat Export\n\nQ : 검색 인덱싱은 어떻게 동작하나요?\nA : 역색인을 사용합니다.",
+  "input_blocks": [
+    {
+      "block_id": "session_1b9f4c7e2a8d4f1e:pair_0a97d25e4f83",
+      "text": "Q : 검색 인덱싱은 어떻게 동작하나요?\nA : 역색인을 사용합니다."
+    }
+  ]
 }
 ```
+
+`input_markdown`과 `input_blocks`는 둘 다 필수다. 문답 경계와 `session_id:pair_id` provenance는 backend가 확정해
+`input_blocks`로 넘기고, pipeline은 Markdown을 다시 쪼개지 않는다. `block_id`가 그대로 `source_blocks.block_id`가
+되므로 Markdown 본문에는 이 id가 들어가지 않는다. 채팅 Wiki export는 항상 독립 source page를 생성하며
+`selection_mode`는 기존 저장·command 계약에 맞춰 `partial`만 허용한다.
 
 #### 5. Response body
 
@@ -133,7 +145,7 @@ Kafka command를 발행하면 ingest worker가 같은 실행 로직을 호출한
 curl -X POST "$PIPELINE/chat-wiki/runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"document_id":"chatdoc_123","provider":"openai","model":"gpt-5-nano","selection_mode":"full"}'
+  --data '{"document_id":"chatdoc_123","provider":"openai","model":"gpt-5-nano","selection_mode":"partial","input_markdown":"# Chat Export\n\nQ : 질문\nA : 답변","input_blocks":[{"block_id":"session_1:pair_1","text":"Q : 질문\nA : 답변"}]}'
 ```
 
 ```json
