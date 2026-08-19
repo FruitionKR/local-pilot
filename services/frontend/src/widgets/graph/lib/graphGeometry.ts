@@ -4,6 +4,13 @@ import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_WIDTH, GRAPH_ZOOM } from "@/entities/
 const GRAPH_VIEW_PADDING = 80;
 const GRAPH_PAN_MARGIN = 48;
 
+// 최소 줌에서도 보이는 화면 전체를 노드 이동에 쓸 수 있도록 world 경계를 최소 줌 배율만큼 넓힌다.
+const GRAPH_BOUNDS_SCALE = 1 / GRAPH_ZOOM.min;
+const GRAPH_BOUNDS_MARGIN = {
+  x: (GRAPH_WIDTH * (GRAPH_BOUNDS_SCALE - 1)) / 2,
+  y: (GRAPH_HEIGHT * (GRAPH_BOUNDS_SCALE - 1)) / 2
+};
+
 export function clampGraphZoom(nextZoom: number) {
   return Math.min(GRAPH_ZOOM.max, Math.max(GRAPH_ZOOM.min, nextZoom));
 }
@@ -34,8 +41,8 @@ export function clampGraphPan({
   zoom: number;
 }) {
   const scale = canvasWorldScale(canvas, zoom);
-  const maxX = panLimit(canvas.clientWidth, GRAPH_WIDTH * scale);
-  const maxY = panLimit(canvas.clientHeight, GRAPH_HEIGHT * scale);
+  const maxX = panLimit(canvas.clientWidth, (GRAPH_WIDTH + GRAPH_BOUNDS_MARGIN.x * 2) * scale);
+  const maxY = panLimit(canvas.clientHeight, (GRAPH_HEIGHT + GRAPH_BOUNDS_MARGIN.y * 2) * scale);
 
   return {
     x: Math.min(maxX, Math.max(-maxX, pan.x)),
@@ -93,15 +100,12 @@ export function clampGraphPosition({
 }) {
   const margin = node ? nodeSize / 2 + 4 : 0;
   return {
-    x: Math.min(GRAPH_WIDTH - margin, Math.max(margin, position.x)),
-    y: Math.min(GRAPH_HEIGHT - margin, Math.max(margin, position.y))
+    x: Math.min(GRAPH_WIDTH + GRAPH_BOUNDS_MARGIN.x - margin, Math.max(-GRAPH_BOUNDS_MARGIN.x + margin, position.x)),
+    y: Math.min(GRAPH_HEIGHT + GRAPH_BOUNDS_MARGIN.y - margin, Math.max(-GRAPH_BOUNDS_MARGIN.y + margin, position.y))
   };
 }
 
 function panLimit(viewportSize: number, contentSize: number) {
-  if (contentSize <= viewportSize - GRAPH_PAN_MARGIN * 2) {
-    return Math.max(0, (viewportSize - contentSize) / 2 - GRAPH_PAN_MARGIN);
-  }
-
-  return Math.max(0, (contentSize - viewportSize) / 2 + GRAPH_PAN_MARGIN);
+  // 축소 시에도 그래프를 뷰포트 가장자리까지 옮길 수 있도록 여백만큼 이동 범위를 넓힌다.
+  return Math.abs(viewportSize - contentSize) / 2 + GRAPH_PAN_MARGIN;
 }
