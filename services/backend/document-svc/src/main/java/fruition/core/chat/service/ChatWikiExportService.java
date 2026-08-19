@@ -69,7 +69,7 @@ public class ChatWikiExportService {
         return buildMaskedSource(session, messages).markdown();
     }
 
-    /** 선택한 문답을 새 문서로 저장하고 처리 큐에 등록한다. */
+    /** 선택된(full=전체 / partial=선택 문답) 채팅을 원문 문서로 저장한 뒤 일반 ingest 큐에 등록한다. */
     @Transactional
     public ChatWikiExportResponse export(String workspaceId, String userId, String sessionId,
                                          ChatWikiExportRequest request) {

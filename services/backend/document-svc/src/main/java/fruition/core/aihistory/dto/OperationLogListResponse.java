@@ -42,6 +42,10 @@ public record OperationLogListResponse(
                     example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")
             String targetDocumentId,
 
+            @JsonProperty("target_display_name")
+            @Schema(description = "작업 시작 시점의 대상 표시 이름")
+            String targetDisplayName,
+
             @Schema(description = "작업 요약")
             String summary,
 
@@ -67,6 +71,7 @@ public record OperationLogListResponse(
                     log.getOperationType().name(),
                     log.getStatus().name(),
                     log.getTargetDocumentId(),
+                    log.getTargetDisplayName(),
                     log.getSummary(),
                     log.getChangedResourceCount(),
                     log.getRestoredFrom(),

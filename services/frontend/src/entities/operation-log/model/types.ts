@@ -18,6 +18,7 @@ export interface OperationLogItem {
   operation_type: OperationType;
   status: string;
   target_document_id: string | null;
+  target_display_name: string | null;
   summary: string | null;
   changed_resource_count: number;
   restored_from: string | null;
@@ -49,6 +50,7 @@ export interface OperationChange {
   id: number;
   resource_type: string;
   resource_id: string;
+  resource_display_name: string | null;
   before_revision: number | null;
   after_revision: number | null;
   change_type: string;

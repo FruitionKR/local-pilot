@@ -5,8 +5,8 @@ import {
   fetchOperationLogDetail,
   fetchRestorePreview,
   formatOperationLogDescription,
+  formatOperationLogTitle,
   restoreOperation,
-  OPERATION_TYPE_LABELS,
   type OperationChange,
   type OperationLogDetail
 } from "@/entities/operation-log";
@@ -31,7 +31,9 @@ const STATUS_LABELS: Record<string, string> = {
 
 /** 변경 리소스 하나의 diff를 Figma 754:10436 형태로 렌더링한다. */
 function ChangeDiff({ change }: { change: OperationChange }) {
-  const heading = change.change_summary || `${change.resource_type} · ${change.change_type}`;
+  const heading = change.resource_display_name
+    || change.change_summary
+    || `${change.resource_type} · ${change.change_type}`;
 
   return (
     <div className={styles["change"]}>
@@ -82,11 +84,13 @@ export function LogView({
   operationId,
   restoredOperationIds,
   documentTitles,
+  onOpenTargetDocument,
   onRestoreComplete
 }: {
   operationId: string | null;
   restoredOperationIds: ReadonlySet<string>;
   documentTitles: ReadonlyMap<string, string>;
+  onOpenTargetDocument: (documentId: string, title: string) => void;
   onRestoreComplete: (operationId: string) => Promise<void>;
 }) {
   const [detail, setDetail] = useState<OperationLogDetail | null>(null);
@@ -121,9 +125,9 @@ export function LogView({
   }, [operationId]);
 
   const statusLabel = detail ? STATUS_LABELS[detail.status] : undefined;
-  const documentTitle = detail?.target_document_id
+  const documentTitle = detail?.target_display_name ?? (detail?.target_document_id
     ? documentTitles.get(detail.target_document_id)
-    : undefined;
+    : undefined);
   const description = detail
     ? formatOperationLogDescription(detail, documentTitle)
     : "";
@@ -185,7 +189,7 @@ export function LogView({
         ) : (
           <article className={styles["card"]}>
             <header className={styles["card-header"]}>
-              <h3># {OPERATION_TYPE_LABELS[detail.operation_type]}</h3>
+              <h3># {formatOperationLogTitle(detail)}</h3>
               <p className={styles["card-description"]}>
                 <span>{description}</span>
                 {statusLabel && detail.status !== "succeeded" && (
@@ -194,6 +198,17 @@ export function LogView({
                   </span>
                 )}
               </p>
+              {detail.operation_type === "ingest"
+                && detail.target_document_id
+                && documentTitle && (
+                  <button
+                    type="button"
+                    className={styles["target-document-button"]}
+                    onClick={() => onOpenTargetDocument(detail.target_document_id!, documentTitle)}
+                  >
+                    원본 문서 · {documentTitle}
+                  </button>
+                )}
               {canRestore && (
                 <button
                   type="button"

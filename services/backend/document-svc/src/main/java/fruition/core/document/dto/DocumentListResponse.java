@@ -50,6 +50,10 @@ public record DocumentListResponse(
             @Schema(description = "처리 완료 시각(ISO-8601 UTC). 처리 전이면 없다.")
             Instant processedAt,
 
+            @JsonProperty("processing_started_at")
+            @Schema(description = "현재 처리 작업의 시작 시각(ISO-8601 UTC). 처리 시작 전이면 없다.")
+            Instant processingStartedAt,
+
             @JsonProperty("error_message")
             @Schema(description = "status=failed일 때의 실패 사유")
             String errorMessage,

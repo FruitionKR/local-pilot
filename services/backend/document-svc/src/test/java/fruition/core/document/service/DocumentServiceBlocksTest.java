@@ -1162,7 +1162,8 @@ class DocumentServiceBlocksTest {
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
         when(storageProps.getBucket()).thenReturn("bucket");
-        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, document.getId()))
+        when(ingestOperationStarter.start(eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
+                anyString(), any(Instant.class)))
                 .thenReturn("op_ingest_1");
 
         fruition.core.document.dto.DocumentIngestResponse response =
@@ -1763,19 +1764,20 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("chat_export 문서는 chatWiki=true로 파이프라인 요청을 라우팅한다")
-    void enqueueIngest_chatExport_routesChatWiki() {
+    @DisplayName("chat_export 문서도 일반 document ingest로 라우팅한다")
+    void enqueueIngest_chatExport_routesGenericDocumentIngest() {
         Document chatDoc = new Document("chatdoc_1", WORKSPACE_ID, USER_ID, "c.md", "text/markdown", 10L,
                 "sources/documents/chatdoc_1/original", "h_chat", "chat_export");
         chatDoc.assignSelectionMode("full");
-        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, "chatdoc_1")).thenReturn("op_ingest_1");
+        when(ingestOperationStarter.start(eq(WORKSPACE_ID), eq(USER_ID), eq("chatdoc_1"),
+                anyString(), any(Instant.class))).thenReturn("op_ingest_1");
         documentService.enqueueIngest(chatDoc);
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<String> runId = ArgumentCaptor.forClass(String.class);
         verify(ingestCommandOutbox).enqueue(runId.capture(), eq("chatdoc_1"), eq(USER_ID), eq(WORKSPACE_ID),
                 eq("full"), any(), any(), chatWiki.capture(), eq("op_ingest_1"), anyLong(), any());
-        assertThat(chatWiki.getValue()).isTrue();
+        assertThat(chatWiki.getValue()).isFalse();
         assertThat(chatDoc.getPipelineRunId()).isEqualTo(runId.getValue());
     }
 
@@ -1784,7 +1786,8 @@ class DocumentServiceBlocksTest {
     void enqueueIngest_upload_routesGeneric() {
         Document doc = new Document("doc_up", WORKSPACE_ID, USER_ID, "u.pdf", "application/pdf", 10L,
                 "sources/documents/doc_up/original", "h_up"); // origin 기본값 "upload"
-        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, "doc_up")).thenReturn("op_ingest_1");
+        when(ingestOperationStarter.start(eq(WORKSPACE_ID), eq(USER_ID), eq("doc_up"),
+                anyString(), any(Instant.class))).thenReturn("op_ingest_1");
         documentService.enqueueIngest(doc);
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);

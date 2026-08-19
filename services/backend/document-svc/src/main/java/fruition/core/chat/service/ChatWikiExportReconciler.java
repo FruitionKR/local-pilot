@@ -28,7 +28,8 @@ import java.util.regex.Pattern;
  * {@code chat_partial_wiki}에 기록하는 것뿐이다(1:N). export마다 독립 source page가 생기므로
  * 세션을 특정 page에 연결하지 않는다. 멱등하게 동작한다.
  *
- * session_id와 pair_id는 source_block block_id의 {@code session_id:pair_id} provenance에서 파싱한다(별도 저장 없음).
+ * session_id와 pair_id는 채팅 전용 처리의 source block ID 또는 일반 ingest가 보존한 원문
+ * {@code [session_id:pair_id]Q : ...}에서 파싱한다(별도 저장 없음).
  */
 @Component
 public class ChatWikiExportReconciler {
@@ -37,6 +38,8 @@ public class ChatWikiExportReconciler {
 
     /** source_block block_id의 {@code session_id:pair_id} provenance. group(1)=session_id, group(2)=pair_id. */
     private static final Pattern PAIR_REF = Pattern.compile("(?U)^([^:\\s]+):([^:\\s]+)$");
+    /** 일반 document ingest의 source block 본문에 남는 채팅 원문 prefix. */
+    private static final Pattern PAIR_TEXT_REF = Pattern.compile("(?U)^\\[([^:\\s\\]]+):([^:\\s\\]]+)]Q\\s*:");
 
     private final DocumentRepository documentRepository;
     private final PipelineWikiStateRequester pipelineWikiStateRequester;
@@ -79,15 +82,12 @@ public class ChatWikiExportReconciler {
         var wikiContext = pipelineWikiStateRequester.documentContext(
                 document.getWorkspaceId(), document.getId());
 
-        // source_blocks의 block_id에 보존된 session_id:pair_id provenance에서 세션과 문답을 파싱
+        // 채팅 전용 block_id 또는 일반 ingest가 보존한 원문 prefix에서 세션과 문답을 파싱한다.
         Set<String> sessionIds = new LinkedHashSet<>();
         Set<String> pairIds = new LinkedHashSet<>();
         for (var block : wikiContext.sourceBlocks()) {
-            if (block.blockId() == null) {
-                continue;
-            }
-            Matcher matcher = PAIR_REF.matcher(block.blockId());
-            if (!matcher.matches()) {
+            Matcher matcher = pairReference(block);
+            if (matcher == null) {
                 continue;
             }
             sessionIds.add(matcher.group(1));
@@ -121,6 +121,22 @@ public class ChatWikiExportReconciler {
             documentRepository.save(document);
             return null;
         });
+    }
+
+    private Matcher pairReference(PipelineWikiStateRequester.SourceBlock block) {
+        if (block.blockId() != null) {
+            Matcher blockIdMatcher = PAIR_REF.matcher(block.blockId());
+            if (blockIdMatcher.matches()) {
+                return blockIdMatcher;
+            }
+        }
+        if (block.text() != null) {
+            Matcher textMatcher = PAIR_TEXT_REF.matcher(block.text());
+            if (textMatcher.find()) {
+                return textMatcher;
+            }
+        }
+        return null;
     }
 
     /** 내보낸 문답을 pair별로 기록한다(멱등·부분 실패 후 재시도 가능). */

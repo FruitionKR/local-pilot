@@ -48,7 +48,8 @@ public class OperationQueryController {
 
     @Operation(summary = "AI 작업 로그 목록",
             description = "최신순으로 반환합니다. 문서 편집은 실제 변경에 성공한 작업만 포함하며, "
-                    + "로그 테이블만 읽고 diff를 계산하지 않습니다.")
+                    + "status를 생략하면 진행 중인 작업은 제외합니다. status=processing 명시 조회는 "
+                    + "활성 작업 탐지에 사용할 수 있습니다. 로그 테이블만 읽고 diff를 계산하지 않습니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",

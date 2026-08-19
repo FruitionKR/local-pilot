@@ -10,7 +10,7 @@ import java.util.List;
  *
  * @param pairIds 위키화할 문답(pair) id 목록. 세션 전체를 내보낼 때도 모든 pair id를 담아 보낸다.
  */
-@Schema(description = "채팅 내용을 Wiki 페이지로 내보내는 요청")
+@Schema(description = "채팅 내용을 Markdown 원문 문서로 추출한 뒤 일반 Ingest로 보내는 요청")
 public record ChatWikiExportRequest(
         @JsonProperty("pair_ids")
         @Schema(description = "내보낼 문답(pair) ID 목록. 비어 있을 수 없다.")

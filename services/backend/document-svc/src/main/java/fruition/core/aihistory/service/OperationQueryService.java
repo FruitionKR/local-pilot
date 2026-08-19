@@ -60,6 +60,8 @@ public class OperationQueryService {
         List<OperationLog> found = operationLogRepository.findPage(
                 workspaceId, parseType(type), parseStatus(status), parseCursor(cursor),
                 OperationType.document_edit, OperationStatus.succeeded,
+                List.of(OperationStatus.processing, OperationStatus.applying,
+                        OperationStatus.notify_pending, OperationStatus.rebuilding),
                 PageRequest.of(0, limit + 1));
 
         // 한 건 더 읽어 다음 페이지가 있는지 본다.

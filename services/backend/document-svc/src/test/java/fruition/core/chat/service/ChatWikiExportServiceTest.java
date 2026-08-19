@@ -298,8 +298,8 @@ class ChatWikiExportServiceTest {
     }
 
     @Test
-    @DisplayName("본문에는 id를 넣지 않고 블록에만 provenance를 남긴다")
-    void keepsProvenanceOutOfMarkdownBody() {
+    @DisplayName("일반 Ingest가 보존하도록 본문에도 provenance를 남긴다")
+    void keepsProvenanceInMarkdownBody() {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
         when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
@@ -311,7 +311,9 @@ class ChatWikiExportServiceTest {
 
         service.export(WS, USER, SESSION, new ChatWikiExportRequest(List.of("p1", "p2")));
 
-        assertThat(markdown.getValue()).contains("Q : 질문1").contains("Q : 질문2").doesNotContain("session_1:");
+        assertThat(markdown.getValue())
+                .contains("[session_1:p1]Q : 질문1")
+                .contains("[session_1:p2]Q : 질문2");
         assertThat(blocks.getValue().get(0).text()).isEqualTo("Q : 질문1\nA : 답변1");
     }
 }

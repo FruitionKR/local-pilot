@@ -5,6 +5,7 @@ import {
   appendLogPage,
   collectRestoredOperationIds,
   fetchOperationLogs,
+  mergeRefreshedLogPage,
   pickSelectedOperationId,
   type OperationLogItem
 } from "@/entities/operation-log";
@@ -12,6 +13,7 @@ import { getErrorMessage } from "@/shared/lib/errors";
 
 /** 사이드바 목록 한 페이지 크기. 백엔드 기본은 20, 최대는 100이다. */
 const PAGE_SIZE = 30;
+const LOG_POLL_INTERVAL_MS = 5_000;
 
 /**
  * 로그 뷰의 작업 목록. 유형 조건 없이 최신순 한 페이지를 받고 가장 최근 작업을 자동으로 고른다.
@@ -27,28 +29,50 @@ export function useOperationLogFeed(isActive: boolean) {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   // 로그 뷰를 다시 열면 이전 요청의 응답을 버린다.
   const requestIdRef = useRef(0);
+  const silentPollInFlightRef = useRef(false);
 
-  const refresh = useCallback(async (preferredOperationId?: string) => {
+  const refresh = useCallback(async (
+    preferredOperationId?: string,
+    options?: { silent?: boolean }
+  ) => {
     if (!isActive) return;
-    const requestId = ++requestIdRef.current;
-    setIsLoading(true);
-    setErrorMessage(null);
-    setLoadMoreErrorMessage(null);
+    const silent = options?.silent === true;
+    if (silent && silentPollInFlightRef.current) return;
+    const requestId = silent ? requestIdRef.current : ++requestIdRef.current;
+    if (silent) {
+      silentPollInFlightRef.current = true;
+    } else {
+      setIsLoading(true);
+      setErrorMessage(null);
+      setLoadMoreErrorMessage(null);
+    }
     try {
       const response = await fetchOperationLogs({ size: PAGE_SIZE });
       if (requestIdRef.current !== requestId) return;
-      setItems(response.logs);
-      setNextCursor(response.next_cursor);
-      setSelectedOperationId((current) => pickSelectedOperationId(
-        response.logs,
-        preferredOperationId ?? current
-      ));
+      if (silent) {
+        setItems((previous) => {
+          const merged = mergeRefreshedLogPage(previous, response.logs);
+          setSelectedOperationId((current) => pickSelectedOperationId(
+            merged,
+            preferredOperationId ?? current
+          ));
+          return merged;
+        });
+      } else {
+        setItems(response.logs);
+        setNextCursor(response.next_cursor);
+        setSelectedOperationId((current) => pickSelectedOperationId(
+          response.logs,
+          preferredOperationId ?? current
+        ));
+      }
     } catch (error: unknown) {
-      if (requestIdRef.current === requestId) {
+      if (requestIdRef.current === requestId && !silent) {
         setErrorMessage(getErrorMessage(error, "로그를 불러오지 못했습니다."));
       }
     } finally {
-      if (requestIdRef.current === requestId) setIsLoading(false);
+      if (silent) silentPollInFlightRef.current = false;
+      if (requestIdRef.current === requestId && !silent) setIsLoading(false);
     }
   }, [isActive]);
 
@@ -56,11 +80,21 @@ export function useOperationLogFeed(isActive: boolean) {
     if (!isActive) {
       // 화면을 떠난 뒤 도착한 목록 응답이 현재 상태를 덮지 못하게 한다.
       requestIdRef.current += 1;
+      silentPollInFlightRef.current = false;
       setIsLoading(false);
       setIsLoadingMore(false);
       return;
     }
     void refresh();
+  }, [isActive, refresh]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    const intervalId = window.setInterval(
+      () => void refresh(undefined, { silent: true }),
+      LOG_POLL_INTERVAL_MS
+    );
+    return () => window.clearInterval(intervalId);
   }, [isActive, refresh]);
 
   const selectOperation = useCallback((operationId: string) => {

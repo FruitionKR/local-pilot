@@ -46,6 +46,8 @@
 
 활성 문서의 호환용 평면 목록을 반환하며 파일명 검색을 지원합니다.
 
+처리가 시작된 문서는 `processing_started_at`을 반환한다. 프론트는 이 서버 시각을 기준으로 Ingest 경과 시간을 표시한다.
+
 #### 3. Auth 필요 여부
 
 - 필요
@@ -78,7 +80,8 @@
       "error_message": "string",
       "extracted_text_uri": "string",
       "file_type": "pdf",
-      "filename": "설계문서.pdf"
+      "filename": "설계문서.pdf",
+      "processing_started_at": "2026-08-13T04:25:24.371948Z"
     }
   ]
 }
@@ -130,7 +133,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
       "error_message": "string",
       "extracted_text_uri": "string",
       "file_type": "pdf",
-      "filename": "설계문서.pdf"
+      "filename": "설계문서.pdf",
+      "processing_started_at": "2026-08-13T04:25:24.371948Z"
     }
   ]
 }

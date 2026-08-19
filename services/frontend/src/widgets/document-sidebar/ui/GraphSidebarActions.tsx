@@ -6,6 +6,7 @@ import { isLintActionEnabled, selectActiveIngestDocuments } from "@/features/wik
 import { useActiveLintOperation } from "@/features/wiki-ingest/model/useActiveLintOperation";
 import { fetchWikiMaintenanceStatus } from "@/features/document-notifications";
 import type { DocumentItemResponse } from "@/entities/document";
+import { formatElapsedMinutes } from "@/features/wiki-ingest/model/activeLintOperation";
 import styles from "./DocumentSidebar.module.css";
 
 /** 그래프 뷰에서 문서 트리 자리를 대신하는 위키 액션 패널(Ingest / Lint). */
@@ -105,6 +106,9 @@ export function GraphSidebarActions({
               <span className={styles["graph-active-kind"]}>Ingest</span>
               <span className={styles["graph-active-label"]} title={document.filename}>
                 {document.filename}
+                {document.processing_started_at
+                  ? ` · ${formatElapsedMinutes(document.processing_started_at)}`
+                  : ""}
               </span>
             </li>
           ))}
