@@ -440,7 +440,7 @@ class PlanGeneratorTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "destination"):
             self._generate_create_document(candidate)
 
-    def test_create_document_allows_trusted_created_folder_reference_with_null_metadata(self) -> None:
+    def test_create_operations_allow_trusted_created_folder_reference_with_null_metadata(self) -> None:
         candidate = {
             "summary": "새 폴더에 문서를 저장합니다.",
             "operations": [
@@ -456,6 +456,23 @@ class PlanGeneratorTest(unittest.TestCase):
                     "depends_on": [],
                 },
                 {
+                    "tool_name": "create_folder",
+                    "target_type": "folder",
+                    "target_id": None,
+                    "base_version": None,
+                    "source_parent_id": None,
+                    "destination_parent_id": None,
+                    "arguments": {
+                        "name": "하위 폴더",
+                        "parent_folder_id": {
+                            "$operation_result": "plan-1-op-1",
+                            "field": "id",
+                        },
+                    },
+                    "reason": "새 폴더 아래에 하위 폴더를 만듭니다.",
+                    "depends_on": [1],
+                },
+                {
                     "tool_name": "create_document",
                     "target_type": "document",
                     "target_id": None,
@@ -464,20 +481,25 @@ class PlanGeneratorTest(unittest.TestCase):
                     "destination_parent_id": None,
                     "arguments": {
                         "display_name": "새 문서.md",
-                        "folder_id": {"$operation_result": "plan-1-op-1", "field": "id"},
+                        "folder_id": {"$operation_result": "plan-1-op-2", "field": "id"},
                         "content_artifact_id": "artifact-create",
                         "content_hash": "sha256:create",
                     },
                     "reason": "새 폴더에 저장합니다.",
-                    "depends_on": [1],
+                    "depends_on": [2],
                 },
             ],
         }
 
         plan = self._generate_create_document(candidate)
         self.assertEqual(
-            plan.operations[1].arguments["folder_id"],
+            plan.operations[1].arguments["parent_folder_id"],
             {"$operation_result": "plan-1-op-1", "field": "id"},
+        )
+        self.assertIsNone(plan.operations[1].destination_parent_id)
+        self.assertEqual(
+            plan.operations[2].arguments["folder_id"],
+            {"$operation_result": "plan-1-op-2", "field": "id"},
         )
 
     def _generate_create_document(self, candidate: dict[str, object]) -> AgentPlan:
