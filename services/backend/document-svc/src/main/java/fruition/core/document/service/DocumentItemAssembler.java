@@ -95,13 +95,13 @@ public class DocumentItemAssembler {
 
     /**
      * 마지막 ingest 스냅샷(content_hash)과 현재 편집본(current_content_hash)이 다르면 재분석이 필요하다.
+     * 스냅샷이 없는 문서(content_hash null)는 아직 한 번도 ingest되지 않은 것이므로 재분석 대상이다.
      * 처리 중이면 이미 재분석이 진행 중이므로 제외한다. 실패(failed)는 기존 오류 표시가 담당한다.
      */
     static boolean needsReingest(Document document) {
         return document.getDocumentRole() == DocumentRole.EDITABLE
                 && document.getStatus() != DocumentStatus.processing
                 && document.getCurrentContentHash() != null
-                && document.getContentHash() != null
                 && !document.getCurrentContentHash().equals(document.getContentHash());
     }
 
