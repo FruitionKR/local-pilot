@@ -35,7 +35,7 @@ public class ChatWikiExportController {
 
     @Operation(summary = "채팅 Wiki page화",
             description = "세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 "
-                    + "일반 문서 Ingest를 요청합니다. 위키 생성은 파이프라인이 비동기로 수행합니다.")
+                    + "일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다.")
     @ApiResponse(responseCode = "202", description = "Wiki 생성 작업이 대기열에 등록됨",
             content = @Content(schema = @Schema(implementation = ChatWikiExportResponse.class)))
     @PostMapping("/{session_id}/wiki")
