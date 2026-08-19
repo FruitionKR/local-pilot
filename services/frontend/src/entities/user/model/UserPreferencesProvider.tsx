@@ -10,7 +10,7 @@ import {
   type ReactNode
 } from "react";
 import { usePathname } from "next/navigation";
-import { getSelectedWorkspaceId } from "@/shared/lib/auth";
+import { getSelectedWorkspaceId, isPublicAuthPath } from "@/shared/lib/auth";
 import { fetchMe } from "../api/auth";
 import {
   DEFAULT_USER_PREFERENCES,
@@ -62,6 +62,10 @@ export function UserPreferencesProvider({ children }: { children: ReactNode }) {
     setStorageKey(null);
     setGraphStorageKey(null);
     setPreferencesReady(false);
+    if (isPublicAuthPath(pathname)) {
+      setPreferencesReady(true);
+      return;
+    }
     fetchMe()
       .then((user) => {
         if (ignore) return;

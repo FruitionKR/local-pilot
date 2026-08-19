@@ -94,6 +94,9 @@ jobs:
       - name: Run auth storage tests
         run: npm run test:auth-storage
 
+      - name: Run error helper tests
+        run: npm run test:errors
+
       - name: Run workspace layout tests
         run: npm run test:workspace-layout
 

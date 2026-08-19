@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { clearAuth, getAccessToken, saveAccessToken } from "../src/shared/lib/auth.ts";
+import {
+  clearAuth,
+  getAccessToken,
+  isPublicAuthPath,
+  saveAccessToken,
+  withAuthRefreshLock
+} from "../src/shared/lib/auth.ts";
 
 function createStorage(initial = {}) {
   const values = new Map(Object.entries(initial));
@@ -35,4 +41,44 @@ test("클라이언트 인증 초기화 시 메모리 토큰과 워크스페이�
 
   assert.equal(getAccessToken(), null);
   assert.equal(localStorage.getItem("fruition.workspace_id"), null);
+});
+
+test("인증 화면과 랜딩 화면은 공개 경로로 판별한다", () => {
+  assert.equal(isPublicAuthPath("/"), true);
+  assert.equal(isPublicAuthPath("/login"), true);
+  assert.equal(isPublicAuthPath("/signup/verify"), true);
+  assert.equal(isPublicAuthPath("/home"), false);
+  assert.equal(isPublicAuthPath("/workspaces"), false);
+});
+
+test("refresh 작업은 origin 공유 Web Lock 안에서 실행한다", async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const events = [];
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      locks: {
+        request: async (name, refresh) => {
+          events.push(`lock:${name}`);
+          return refresh();
+        }
+      }
+    }
+  });
+
+  try {
+    const result = await withAuthRefreshLock(async () => {
+      events.push("refresh");
+      return true;
+    });
+
+    assert.equal(result, true);
+    assert.deepEqual(events, ["lock:fruition.auth.refresh", "refresh"]);
+  } finally {
+    if (originalNavigator) {
+      Object.defineProperty(globalThis, "navigator", originalNavigator);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
 });

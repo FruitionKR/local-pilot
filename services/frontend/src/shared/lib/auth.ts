@@ -3,6 +3,16 @@
 const ACCESS_TOKEN_STORAGE_KEY = "fruition.access_token";
 const REFRESH_TOKEN_STORAGE_KEY = "fruition.refresh_token";
 const WORKSPACE_STORAGE_KEY = "fruition.workspace_id";
+const AUTH_REFRESH_LOCK_NAME = "fruition.auth.refresh";
+const PUBLIC_AUTH_PATHS = new Set([
+  "/",
+  "/forgot-password",
+  "/login",
+  "/oauth/callback",
+  "/reset-password",
+  "/signup",
+  "/signup/verify"
+]);
 
 let accessToken: string | null = null;
 
@@ -25,6 +35,16 @@ export function clearAuth() {
   accessToken = null;
   removeLegacyStoredTokens();
   window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+}
+
+export function isPublicAuthPath(pathname: string): boolean {
+  return PUBLIC_AUTH_PATHS.has(pathname);
+}
+
+/** 같은 origin의 여러 탭이 refresh 쿠키를 동시에 회전하지 않도록 직렬화한다. */
+export async function withAuthRefreshLock<T>(refresh: () => Promise<T>): Promise<T> {
+  if (typeof navigator === "undefined" || !navigator.locks) return refresh();
+  return await navigator.locks.request(AUTH_REFRESH_LOCK_NAME, refresh);
 }
 
 function removeLegacyStoredTokens() {

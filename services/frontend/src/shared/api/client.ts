@@ -1,4 +1,9 @@
-import { getAccessToken, getSelectedWorkspaceId, saveAccessToken } from "@/shared/lib/auth";
+import {
+  getAccessToken,
+  getSelectedWorkspaceId,
+  saveAccessToken,
+  withAuthRefreshLock
+} from "@/shared/lib/auth";
 
 // 공통 에러 메시지 상수
 export const ERROR_MESSAGES = {
@@ -47,7 +52,7 @@ let refreshPromise: Promise<boolean> | null = null;
 
 async function tryRefreshTokens(): Promise<boolean> {
   if (!refreshPromise) {
-    refreshPromise = (async () => {
+    refreshPromise = withAuthRefreshLock(async () => {
       try {
         const response = await fetch("/api/auth/refresh", {
           method: "POST"
@@ -60,7 +65,7 @@ async function tryRefreshTokens(): Promise<boolean> {
       } catch {
         return false;
       }
-    })().finally(() => {
+    }).finally(() => {
       refreshPromise = null;
     });
   }
