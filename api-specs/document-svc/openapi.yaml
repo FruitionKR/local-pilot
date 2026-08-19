@@ -474,7 +474,7 @@ paths:
       - AI Models
   /api/workspaces/{workspace_id}/ai-operation-logs:
     get:
-      description: 최신순으로 반환합니다. 로그 테이블만 읽으며 diff를 계산하지 않습니다.
+      description: "최신순으로 반환합니다. 문서 편집은 실제 변경에 성공한 작업만 포함하며, 로그 테이블만 읽고 diff를 계산하지 않습니다."
       operationId: list_3
       parameters:
       - example: ws_9d47a0e9a6324341b47562553b75f92a
@@ -965,12 +965,12 @@ paths:
               $ref: "#/components/schemas/ChatWikiExportRequest"
         required: true
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ChatWikiExportResponse"
-          description: OK
+          description: Wiki 생성 작업이 대기열에 등록됨
       summary: 채팅 Wiki page화
       tags:
       - Chat Sessions
@@ -1640,8 +1640,8 @@ paths:
         schema:
           type: string
       responses:
-        "200":
-          description: OK
+        "204":
+          description: 잠금 해제 성공
       summary: 편집 잠금 해제
       tags:
       - Document Edit Lock
@@ -2678,34 +2678,7 @@ paths:
           content:
             '*/*':
               schema:
-                type: object
-                properties:
-                  allowed_tools:
-                    type: string
-                  capabilities:
-                    type: string
-                  description:
-                    type: string
-                  instructions_markdown:
-                    type: string
-                  issues:
-                    type: string
-                  name:
-                    type: string
-                  question:
-                    type: string
-                  scope_type:
-                    type: string
-                  skill_id:
-                    type: string
-                  skill_markdown:
-                    type: string
-                  status:
-                    type: string
-                  version_id:
-                    type: string
-                required:
-                - status
+                $ref: "#/components/schemas/SkillAuthoringResponse"
           description: 초안 작성 성공
         "400":
           content:
@@ -2777,34 +2750,7 @@ paths:
           content:
             '*/*':
               schema:
-                type: object
-                properties:
-                  allowed_tools:
-                    type: string
-                  capabilities:
-                    type: string
-                  description:
-                    type: string
-                  instructions_markdown:
-                    type: string
-                  issues:
-                    type: string
-                  name:
-                    type: string
-                  question:
-                    type: string
-                  scope_type:
-                    type: string
-                  skill_id:
-                    type: string
-                  skill_markdown:
-                    type: string
-                  status:
-                    type: string
-                  version_id:
-                    type: string
-                required:
-                - status
+                $ref: "#/components/schemas/SkillAuthoringResponse"
           description: 게시 성공
         "400":
           content:
@@ -2933,30 +2879,7 @@ paths:
           content:
             '*/*':
               schema:
-                type: object
-                properties:
-                  description:
-                    type: string
-                  instructions_markdown:
-                    type: string
-                  issues:
-                    type: string
-                  name:
-                    type: string
-                  question:
-                    type: string
-                  scope_type:
-                    type: string
-                  skill_id:
-                    type: string
-                  skill_markdown:
-                    type: string
-                  status:
-                    type: string
-                  version_id:
-                    type: string
-                required:
-                - status
+                $ref: "#/components/schemas/SkillAuthoringResponse"
           description: 수정 성공
         "400":
           content:
@@ -3725,12 +3648,8 @@ paths:
               $ref: "#/components/schemas/InitialNoteRequest"
         required: true
       responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                type: object
-          description: OK
+        "204":
+          description: 초기 노트 생성 완료
       tags:
       - internal-document-controller
 components:
@@ -6037,6 +5956,10 @@ components:
       type: object
       description: AI 모델 설정. 기본값은 openai + gpt-5-nano다.
       properties:
+        can_update:
+          type: boolean
+          description: 호출자가 이 설정을 변경할 수 있는지(워크스페이스 OWNER 여부)
+          example: true
         ingest_lint:
           $ref: "#/components/schemas/AiModelSelectionResponse"
           description: ingest·lint에 쓰는 provider/model 조합
@@ -6089,6 +6012,40 @@ components:
       required:
       - instruction
       - scope_type
+    SkillAuthoringResponse:
+      type: object
+      properties:
+        allowed_tools:
+          type: array
+          items:
+            type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        instructions_markdown:
+          type: string
+        issues:
+          type: array
+          items: {}
+        name:
+          type: string
+        question:
+          type: string
+        scope_type:
+          type: string
+        skill_id:
+          type: string
+        skill_markdown:
+          type: string
+        status:
+          type: string
+        version_id:
+          type: string
+      required:
+      - status
     SkillDraftSourceSelector:
       type: object
       description: Skill 초안의 출처가 되는 이전 run

@@ -22,6 +22,7 @@ export function useOperationLogFeed(isActive: boolean) {
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [loadMoreErrorMessage, setLoadMoreErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   // 로그 뷰를 다시 열면 이전 요청의 응답을 버린다.
@@ -32,6 +33,7 @@ export function useOperationLogFeed(isActive: boolean) {
     const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setErrorMessage(null);
+    setLoadMoreErrorMessage(null);
     try {
       const response = await fetchOperationLogs({ size: PAGE_SIZE });
       if (requestIdRef.current !== requestId) return;
@@ -69,6 +71,7 @@ export function useOperationLogFeed(isActive: boolean) {
     if (!nextCursor || isLoadingMore) return;
     const requestId = requestIdRef.current;
     setIsLoadingMore(true);
+    setLoadMoreErrorMessage(null);
     try {
       const response = await fetchOperationLogs({ cursor: nextCursor, size: PAGE_SIZE });
       if (requestIdRef.current !== requestId) return;
@@ -76,7 +79,7 @@ export function useOperationLogFeed(isActive: boolean) {
       setNextCursor(response.next_cursor);
     } catch (error: unknown) {
       if (requestIdRef.current === requestId) {
-        setErrorMessage(getErrorMessage(error, "로그를 불러오지 못했습니다."));
+        setLoadMoreErrorMessage(getErrorMessage(error, "로그를 더 불러오지 못했습니다."));
       }
     } finally {
       if (requestIdRef.current === requestId) setIsLoadingMore(false);
@@ -90,6 +93,7 @@ export function useOperationLogFeed(isActive: boolean) {
     selectedOperationId,
     hasMore: Boolean(nextCursor),
     errorMessage,
+    loadMoreErrorMessage,
     isLoading,
     isLoadingMore,
     restoredOperationIds,

@@ -1,4 +1,9 @@
-import { OPERATION_TYPE_LABELS, type OperationLogItem } from "@/entities/operation-log";
+import {
+  formatOperationLogDescription,
+  groupOperationLogsByDate,
+  OPERATION_TYPE_LABELS,
+  type OperationLogItem
+} from "@/entities/operation-log";
 import { cx } from "@/shared/lib/classNames";
 import { formatRelativeTime } from "@/shared/lib/time";
 import styles from "./DocumentSidebar.module.css";
@@ -9,8 +14,10 @@ export function LogSidebarEntries({
   selectedOperationId,
   hasMore,
   errorMessage,
+  loadMoreErrorMessage,
   isLoading,
   isLoadingMore,
+  documentTitles,
   onSelect,
   onLoadMore
 }: {
@@ -18,8 +25,10 @@ export function LogSidebarEntries({
   selectedOperationId: string | null;
   hasMore: boolean;
   errorMessage: string | null;
+  loadMoreErrorMessage: string | null;
   isLoading: boolean;
   isLoadingMore: boolean;
+  documentTitles: ReadonlyMap<string, string>;
   onSelect: (operationId: string) => void;
   onLoadMore: () => void;
 }) {
@@ -32,30 +41,46 @@ export function LogSidebarEntries({
   if (items.length === 0) {
     return <p className={styles["log-entries-message"]}>아직 기록된 AI 작업이 없습니다.</p>;
   }
+  const groups = groupOperationLogsByDate(items);
 
   return (
     <div className={styles["log-entries"]} role="listbox" aria-label="작업 로그">
-      {items.map((item) => (
-        <button
-          key={item.operation_id}
-          type="button"
-          role="option"
-          aria-selected={item.operation_id === selectedOperationId}
-          className={cx(
-            styles["log-entry"],
-            item.operation_id === selectedOperationId && styles["is-active"]
-          )}
-          onClick={(event) => {
-            event.stopPropagation();
-            onSelect(item.operation_id);
-          }}
-        >
-          <span className={styles["log-entry-label"]}>
-            {OPERATION_TYPE_LABELS[item.operation_type]}
-          </span>
-          <span className={styles["log-entry-time"]}>{formatRelativeTime(item.created_at)}</span>
-          <span className={styles["log-entry-summary"]}>{item.summary ?? "요약 없음"}</span>
-        </button>
+      {groups.map((group) => (
+        <section key={group.dateKey} className={styles["log-date-group"]} aria-label={group.label}>
+          <div className={styles["log-date-heading"]}>
+            <span>{group.label}</span>
+            <span className={styles["log-date-divider"]} aria-hidden />
+          </div>
+          {group.items.map((item) => (
+            <button
+              key={item.operation_id}
+              type="button"
+              role="option"
+              aria-selected={item.operation_id === selectedOperationId}
+              className={cx(
+                styles["log-entry"],
+                item.operation_id === selectedOperationId && styles["is-active"]
+              )}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelect(item.operation_id);
+              }}
+            >
+              <span className={styles["log-entry-label"]}>
+                {OPERATION_TYPE_LABELS[item.operation_type]}
+              </span>
+              <span className={styles["log-entry-time"]}>{formatRelativeTime(item.created_at)}</span>
+              <span className={styles["log-entry-summary"]}>
+                {formatOperationLogDescription(
+                  item,
+                  item.target_document_id
+                    ? documentTitles.get(item.target_document_id)
+                    : undefined
+                )}
+              </span>
+            </button>
+          ))}
+        </section>
       ))}
       {hasMore && (
         <button
@@ -67,8 +92,11 @@ export function LogSidebarEntries({
           }}
           disabled={isLoadingMore}
         >
-          {isLoadingMore ? "불러오는 중…" : "더 보기"}
+          {isLoadingMore ? "불러오는 중…" : loadMoreErrorMessage ? "다시 시도" : "더 보기"}
         </button>
+      )}
+      {loadMoreErrorMessage && (
+        <p className={styles["log-entries-message"]} role="alert">{loadMoreErrorMessage}</p>
       )}
     </div>
   );

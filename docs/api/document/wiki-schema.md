@@ -2,7 +2,8 @@
 
 [API 문서](../README.md) / [document-svc](README.md)
 
-Wiki 스키마 조회·초안·미리보기·활성화 API다.
+Wiki 스키마 조회·초안·미리보기·활성화 Gateway API다. Backend가 워크스페이스 권한을 검증하고
+사용자·워크스페이스 정보를 추가해 ai-svc 내부 HTTP로 전달한다.
 
 - API 수: 4
 
@@ -86,7 +87,10 @@ Wiki 스키마 조회·초안·미리보기·활성화 API다.
   "name": "설계 문서 스키마",
   "preview_markdown": "string",
   "raw_markdown": "string",
-  "schema_version": "v1"
+  "schema_version": "v1",
+  "status": "active",
+  "user_id": "user_123",
+  "workspace_id": "ws_9d47a0e9a6324341b47562553b75f92a"
 }
 ```
 
@@ -145,7 +149,10 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-s
   "name": "설계 문서 스키마",
   "preview_markdown": "string",
   "raw_markdown": "string",
-  "schema_version": "v1"
+  "schema_version": "v1",
+  "status": "active",
+  "user_id": "user_123",
+  "workspace_id": "ws_9d47a0e9a6324341b47562553b75f92a"
 }
 ```
 
@@ -235,7 +242,10 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-s
     "name": "설계 문서 스키마",
     "preview_markdown": "string",
     "raw_markdown": "string",
-    "schema_version": "v1"
+    "schema_version": "v1",
+    "status": "draft",
+    "user_id": "user_123",
+    "workspace_id": "ws_9d47a0e9a6324341b47562553b75f92a"
   }
 }
 ```
@@ -300,7 +310,10 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-
     "name": "설계 문서 스키마",
     "preview_markdown": "string",
     "raw_markdown": "string",
-    "schema_version": "v1"
+    "schema_version": "v1",
+    "status": "draft",
+    "user_id": "user_123",
+    "workspace_id": "ws_9d47a0e9a6324341b47562553b75f92a"
   }
 }
 ```
@@ -523,7 +536,10 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-
   "name": "설계 문서 스키마",
   "preview_markdown": "string",
   "raw_markdown": "string",
-  "schema_version": "v1"
+  "schema_version": "v1",
+  "status": "active",
+  "user_id": "user_123",
+  "workspace_id": "ws_9d47a0e9a6324341b47562553b75f92a"
 }
 ```
 
@@ -582,7 +598,10 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-
   "name": "설계 문서 스키마",
   "preview_markdown": "string",
   "raw_markdown": "string",
-  "schema_version": "v1"
+  "schema_version": "v1",
+  "status": "active",
+  "user_id": "user_123",
+  "workspace_id": "ws_9d47a0e9a6324341b47562553b75f92a"
 }
 ```
 

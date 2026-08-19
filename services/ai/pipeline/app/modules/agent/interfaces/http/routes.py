@@ -124,6 +124,7 @@ def _to_response(result: AgentTurnResult) -> AgentTurnResponse:
         message=result.message,
         chat=query_to_response(result.query_answer) if result.query_answer else None,
         edit=_edit_to_response(result) if result.edit else None,
+        source_markdown_sha256=result.source_markdown_sha256,
         generated_markdown=_generated_markdown_to_response(result),
         skill_candidates=[
             SkillCandidateResponse(

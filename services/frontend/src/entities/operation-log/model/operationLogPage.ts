@@ -1,5 +1,53 @@
 import type { OperationLogItem } from "./types";
 
+export type OperationLogDateGroup = {
+  dateKey: string;
+  label: string;
+  items: OperationLogItem[];
+};
+
+/** Figma 로그 사이드바처럼 최신순 작업을 사용자의 날짜 기준으로 묶는다. */
+export function groupOperationLogsByDate(
+  items: OperationLogItem[],
+  timeZone?: string
+): OperationLogDateGroup[] {
+  const formatter = new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    timeZone
+  });
+  const groups: OperationLogDateGroup[] = [];
+
+  for (const item of items) {
+    const parts = formatter.formatToParts(new Date(item.created_at));
+    const year = parts.find((part) => part.type === "year")?.value ?? "";
+    const month = parts.find((part) => part.type === "month")?.value ?? "";
+    const day = parts.find((part) => part.type === "day")?.value ?? "";
+    const dateKey = `${year}-${month}-${day}`;
+    const current = groups.at(-1);
+    if (current?.dateKey === dateKey) {
+      current.items.push(item);
+    } else {
+      groups.push({ dateKey, label: `${month}월 ${day}일`, items: [item] });
+    }
+  }
+
+  return groups;
+}
+
+/** 목록과 상세 헤더가 같은 문서·작업 설명을 사용한다. */
+export function formatOperationLogDescription(
+  item: Pick<OperationLogItem, "summary">,
+  documentTitle?: string
+): string {
+  const summary = item.summary?.trim();
+  if (documentTitle && summary && summary !== documentTitle) {
+    return `${documentTitle} / ${summary}`;
+  }
+  return documentTitle ?? summary ?? "상세 정보 없음";
+}
+
 /**
  * 최신순 로그 목록의 다음 페이지를 이어붙인다.
  * 커서 경계에서 같은 operation_id가 다시 오면 한 번만 남긴다.

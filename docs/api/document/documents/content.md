@@ -70,7 +70,7 @@
 - HTTP `200`: 이미지 반환
 - Content-Type: `*/*`
 
-```json
+```text
 <binary>
 ```
 
@@ -81,7 +81,7 @@
 | `304` | 캐시된 이미지 사용 | `없음` |
 | `404` | asset 또는 워크스페이스를 찾을 수 없음 | `ErrorResponse` |
 
-```json
+```text
 <binary>
 ```
 
@@ -102,7 +102,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/assets
   -H 'Authorization: Bearer <access_token>'
 ```
 
-```json
+```text
 <binary>
 ```
 
@@ -225,7 +225,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 |---|---|
 | 목적 | 편집기 종료 시 호출한다. 보유자 본인의 잠금만 해제하며 멱등이다. |
 | 입력 | **Path** — `workspace_id`: `string`, `document_id`: `string` |
-| 출력 | `200` 성공 |
+| 출력 | `204` 잠금 해제 성공 — 본문 없음 |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -259,7 +259,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docum
 
 #### 5. Response body
 
-- HTTP `200`: OK
+- HTTP `204`: 잠금 해제 성공
 - Body: 없음
 
 #### 6. Error response
@@ -283,10 +283,7 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/doc
   -H 'Authorization: Bearer <access_token>'
 ```
 
-```json
-{
-}
-```
+응답 본문 없음.
 
 #### 10. 구현 파일
 
@@ -700,7 +697,7 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
 - HTTP `200`: Markdown 다운로드
 - Content-Type: `*/*`
 
-```json
+```text
 <binary>
 ```
 
@@ -736,7 +733,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
   -H 'Authorization: Bearer <access_token>'
 ```
 
-```json
+```text
 <binary>
 ```
 
@@ -793,7 +790,7 @@ MinIO에 저장된 원본 파일을 스트리밍합니다. PDF는 inline, 그 �
 - HTTP `200`: 원본 파일 반환
 - Content-Type: `*/*`
 
-```json
+```text
 <binary>
 ```
 
@@ -829,7 +826,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
   -H 'Authorization: Bearer <access_token>'
 ```
 
-```json
+```text
 <binary>
 ```
 

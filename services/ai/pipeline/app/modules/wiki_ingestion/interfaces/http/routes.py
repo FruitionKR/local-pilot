@@ -51,21 +51,21 @@ from app.modules.wiki_ingestion.infrastructure import (
 )
 
 
-router = APIRouter(tags=["pipeline"])
+router = APIRouter()
 logger = logging.getLogger("fruition.pipeline")
 
 
-@router.get("/wiki/graph")
+@router.get("/wiki/graph", tags=["wiki"])
 def get_wiki_graph(workspace_id: str) -> dict[str, Any]:
     return database.get_wiki_graph(workspace_id)
 
 
-@router.post("/wiki/pages/lookup")
+@router.post("/wiki/pages/lookup", tags=["wiki"])
 def lookup_wiki_pages(payload: WikiPageLookupIn) -> list[dict[str, Any]]:
     return database.lookup_wiki_pages(payload.page_ids, payload.workspace_id)
 
 
-@router.get("/wiki/pages/{page_id}")
+@router.get("/wiki/pages/{page_id}", tags=["wiki"])
 def get_wiki_page(page_id: str, workspace_id: str) -> dict[str, Any]:
     page = database.get_wiki_page(workspace_id, page_id)
     if page is None:
@@ -73,7 +73,7 @@ def get_wiki_page(page_id: str, workspace_id: str) -> dict[str, Any]:
     return page
 
 
-@router.patch("/wiki/pages/{page_id}/rename")
+@router.patch("/wiki/pages/{page_id}/rename", tags=["wiki"])
 def rename_wiki_page(page_id: str, payload: WikiPageRenameIn) -> dict[str, Any]:
     try:
         page = database.rename_wiki_page(
@@ -90,7 +90,7 @@ def rename_wiki_page(page_id: str, payload: WikiPageRenameIn) -> dict[str, Any]:
     return page
 
 
-@router.get("/wiki/documents/{document_id}/context")
+@router.get("/wiki/documents/{document_id}/context", tags=["wiki"])
 def get_document_wiki_context(
     document_id: str,
     workspace_id: str,
@@ -98,17 +98,17 @@ def get_document_wiki_context(
     return database.get_document_wiki_context(document_id, workspace_id)
 
 
-@router.delete("/wiki/workspaces/{workspace_id}/documents/{document_id}")
+@router.delete("/wiki/workspaces/{workspace_id}/documents/{document_id}", tags=["wiki"])
 def delete_document_wiki_data(workspace_id: str, document_id: str) -> None:
     database.delete_document_wiki_data(workspace_id, document_id)
 
 
-@router.get("/wiki/workspaces/{workspace_id}/last-updated")
+@router.get("/wiki/workspaces/{workspace_id}/last-updated", tags=["wiki"])
 def get_last_wiki_updated(workspace_id: str) -> dict[str, Any]:
     return {"updated_at": database.get_last_wiki_updated_at(workspace_id)}
 
 
-@router.post("/wiki/ingest-restore-runs")
+@router.post("/wiki/ingest-restore-runs", tags=["wiki"])
 def restore_ingest_operation(
     payload: IngestOperationRestoreIn,
     use_case: RestoreWikiPagesUseCase = Depends(
@@ -120,7 +120,7 @@ def restore_ingest_operation(
     )
 
 
-@router.post("/wiki/lint-restore-runs")
+@router.post("/wiki/lint-restore-runs", tags=["wiki"])
 def restore_lint_operation(
     payload: LintOperationRestoreIn,
     use_case: RestoreWikiPagesUseCase = Depends(
@@ -146,7 +146,7 @@ def _execute_restore(execute: Callable[[], dict[str, Any]]) -> dict[str, Any]:
         ) from exc
 
 
-@router.post("/wiki/maintenance/lint", response_model=WikiLintOut)
+@router.post("/wiki/maintenance/lint", response_model=WikiLintOut, tags=["wiki"])
 def lint_wiki_workspace(
     payload: WikiLintIn,
     maintenance: WikiMaintenancePort = Depends(get_wiki_maintenance),
@@ -167,7 +167,7 @@ def lint_wiki_workspace(
     return WikiLintOut.model_validate(result)
 
 
-@router.post("/pipeline/runs", response_model=PipelineRunOut)
+@router.post("/pipeline/runs", response_model=PipelineRunOut, tags=["wiki-ingest"])
 def run_pipeline_endpoint(
     payload: PipelineRunIn,
     background_tasks: BackgroundTasks,
@@ -184,7 +184,7 @@ def run_pipeline_endpoint(
     )
 
 
-@router.post("/pipeline/reingest-runs", response_model=PipelineRunOut)
+@router.post("/pipeline/reingest-runs", response_model=PipelineRunOut, tags=["wiki-ingest"])
 def run_reingest_pipeline_endpoint(
     payload: ReingestRunIn,
     background_tasks: BackgroundTasks,
@@ -201,7 +201,7 @@ def run_reingest_pipeline_endpoint(
     )
 
 
-@router.post("/chat-wiki/runs", response_model=PipelineRunOut)
+@router.post("/chat-wiki/runs", response_model=PipelineRunOut, tags=["wiki-ingest"])
 def run_chat_wiki_endpoint(
     payload: ChatWikiRunIn,
     background_tasks: BackgroundTasks,
@@ -218,7 +218,7 @@ def run_chat_wiki_endpoint(
     )
 
 
-@router.get("/pipeline/runs/{run_id}")
+@router.get("/pipeline/runs/{run_id}", tags=["wiki-ingest"])
 def get_pipeline_run(
     run_id: str,
     repository: PipelineRunRepositoryPort = Depends(get_pipeline_run_repository),
@@ -232,7 +232,11 @@ def get_pipeline_run(
     return row
 
 
-@router.get("/pipeline/runs/{run_id}/logs", response_class=PlainTextResponse)
+@router.get(
+    "/pipeline/runs/{run_id}/logs",
+    response_class=PlainTextResponse,
+    tags=["wiki-ingest"],
+)
 def get_pipeline_logs(
     run_id: str,
     repository: PipelineRunRepositoryPort = Depends(get_pipeline_run_repository),

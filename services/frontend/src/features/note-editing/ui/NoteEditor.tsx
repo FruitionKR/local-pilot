@@ -339,9 +339,14 @@ export function NoteEditor({
     return () => {
       isDisposed = true;
       if (crepeRef.current === crepe) crepeRef.current = null;
-      // DOM은 먼저 떼어 화면에서 즉시 사라지게 하고, 내부 정리는 create가 끝난 뒤에 한다.
-      host.remove();
-      void ready.catch(() => {}).then(() => crepe.destroy());
+      // 이전 편집기는 즉시 숨기되 Milkdown 내부 destroy가 끝날 때까지 DOM에 유지한다.
+      // 먼저 떼면 내부 컴포넌트가 parentNode.removeChild를 호출할 때 부모가 null일 수 있다.
+      host.hidden = true;
+      void ready
+        .catch(() => {})
+        .then(() => crepe.destroy())
+        .catch(() => {})
+        .finally(() => host.remove());
     };
   }, [documentId, sourceMode]);
 

@@ -68,6 +68,17 @@ export interface RestorePreviewResponse {
   delete_count: number;
   restore_count: number;
   rebuild_count: number;
+  pages: Array<{
+    page_id: string;
+    action: "delete" | "restore" | "rebuild";
+    target_revision: number | null;
+    contribution_count: number;
+  }>;
+  document?: {
+    document_id: string;
+    from_version: number;
+    to_version: number;
+  };
   preview_token: string;
 }
 

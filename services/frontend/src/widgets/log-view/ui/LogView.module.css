@@ -54,8 +54,7 @@
 .card {
   /* 카드 세로 리듬과 diff 격자를 한 곳에서 잡는다 */
   --log-pad-x: 24px;
-  --log-gutter: 52px;
-  --log-row-line-height: 22px;
+  --log-gutter: 56px;
 
   overflow: hidden;
   background: var(--panel);
@@ -67,7 +66,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 20px var(--log-pad-x) 16px;
+  min-height: 59px;
+  padding: 20px var(--log-pad-x);
 }
 
 .card-header h3 {
@@ -109,13 +109,6 @@
 .card-status.is-failed {
   color: #ff8f87;
   background: #3a1f1d;
-}
-
-.card-time {
-  flex: 0 0 auto;
-  color: var(--subdued);
-  font-size: 12px;
-  font-weight: 500;
 }
 
 .rollback-button {
@@ -160,7 +153,7 @@
 .card-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
   padding-bottom: 20px;
 }
 
@@ -172,7 +165,7 @@
 
 .change-heading {
   margin: 0;
-  padding: 0 var(--log-pad-x) 8px;
+  padding: 10px var(--log-pad-x);
   font-size: 14px;
   font-weight: 500;
   letter-spacing: -0.28px;
@@ -191,59 +184,46 @@
 }
 
 .hunk + .hunk {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
-/* hunk 기준점. 거터 숫자가 어디서 시작하는지 알려준다 */
-.hunk-header {
-  padding: 4px var(--log-pad-x);
-  color: var(--muted);
-  background: var(--soft);
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: var(--log-row-line-height);
-}
-
-/* diff 라인: old/new 줄번호 거터 2칸 + 본문 (초록 추가 / 빨강 삭제).
-   고정폭 격자라 자릿수·부호 유무와 무관하게 모든 행의 본문 시작 위치가 같다. */
+/* Figma diff 행: 단일 줄번호 gutter + +/- 아이콘과 본문 */
 .diff-line {
   display: grid;
-  grid-template-columns:
-    calc(var(--log-gutter) + var(--log-pad-x))
-    var(--log-gutter)
-    minmax(0, 1fr);
+  grid-template-columns: var(--log-gutter) minmax(0, 1fr);
   align-items: stretch;
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 13px;
-  line-height: var(--log-row-line-height);
+  min-height: 33px;
+  font-size: 14px;
+  line-height: 1.2;
+  letter-spacing: -0.28px;
 }
 
 .diff-gutter {
-  padding: 3px 8px;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px 8px var(--log-pad-x);
   color: var(--subdued);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  text-align: right;
   user-select: none;
-}
-
-.diff-gutter:first-child {
-  padding-left: var(--log-pad-x);
 }
 
 .diff-content {
   min-width: 0;
-  padding: 3px var(--log-pad-x) 3px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px var(--log-pad-x) 8px 8px;
   color: var(--ink);
-  font-weight: 500;
+  font-weight: 600;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.diff-sign {
-  display: inline-block;
-  width: 2ch;
-  font-weight: 600;
+.diff-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
 }
 
 .diff-line.is-add .diff-gutter {

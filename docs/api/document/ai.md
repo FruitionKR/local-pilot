@@ -2,7 +2,8 @@
 
 [API 문서](../README.md) / [document-svc](README.md)
 
-사용자용 AI 모델 설정과 AI 작업·변환·ingest API다.
+사용자용 AI 모델 설정과 AI 작업·변환·ingest Gateway API다. 모델 설정은 access-svc,
+변환은 converter, ingest·Wiki 복구는 Kafka를 통해 각 소유 서비스에 전달한다.
 
 - API 수: 9
 
@@ -13,7 +14,7 @@
 | [`GET /api/ai-models`](#summary-get-api-ai-models) | 선택할 수 있는 provider/model 조합을 반환합니다. API key는 노출하지 않습니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-model-settings`](#summary-get-api-workspaces-workspace-id-ai-model-settings) | ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와 MEMBER 모두 조회할 수 있습니다. |
 | [`PUT /api/workspaces/{workspace_id}/ai-model-settings`](#summary-put-api-workspaces-workspace-id-ai-model-settings) | ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있고, 활성 model catalog에 있는 조합만 허용합니다. |
-| [`GET /api/workspaces/{workspace_id}/ai-operation-logs`](#summary-get-api-workspaces-workspace-id-ai-operation-logs) | 최신순으로 반환합니다. 로그 테이블만 읽으며 diff를 계산하지 않습니다. |
+| [`GET /api/workspaces/{workspace_id}/ai-operation-logs`](#summary-get-api-workspaces-workspace-id-ai-operation-logs) | 최신순으로 반환합니다. 문서 편집은 실제 변경에 성공한 작업만 포함하며, 로그 테이블만 읽고 diff를 계산하지 않습니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}`](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id) | 그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다. |
 | [`POST /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore`](#summary-post-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore) | 복구 대상에 따라 처리 방식이 다릅니다. 문서 편집 복구는 즉시 완료되어 200을 반환하고, Wiki 복구는 queued 상태로 등록되어 202를 반환합니다. 미리보기와 같은 계산을 다시 하고 Wiki에 반영합니다. 받치는 기여가 남지 않은 페이지는 삭제하고, 되돌릴 버전이 그대로 있는 페이지는 그 내용으로 복원하며, 남은 조각을 합쳐야 하는 페이지는 llmPipeline에 재작성을 맡깁니다. 재작성이 있으면 status가 rebuilding으로 돌아오며 결과는 로그 상세로 확인합니다. ingest 되돌리기는 Wiki만 되돌리고 원문 문서는 건드리지 않습니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore-preview`](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore-preview) | 이 작업을 되돌리면 무엇이 삭제·복원·재작성되는지 계산합니다. 지목한 작업과 그 이후 같은 문서의 작업을 전부 걷어내며, 그 과정에서 만들어진 페이지는 삭제됩니다. 문서 편집 복구는 canonical 편집 revision을 확인하며, 응답의 preview_token은 복구 실행에 그대로 전달해야 합니다. |
@@ -158,9 +159,11 @@ ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와
 
 - HTTP `200`: 조회 성공
 - Content-Type: `*/*` (`SettingsResponse`)
+- `can_update`: 호출자가 이 설정을 변경할 수 있는지(워크스페이스 OWNER 여부). MEMBER는 `false`를 받고 UI는 읽기 전용으로 표시한다.
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -192,7 +195,6 @@ ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와
 
 - 인증된 사용자만 호출할 수 있다.
 - path의 `workspace_id`에 대한 활성 멤버십을 검증한다.
-- 워크스페이스 OWNER 권한이 필요하다.
 
 #### 9. 예시 요청/응답
 
@@ -203,6 +205,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -273,6 +276,7 @@ ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있�
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -325,6 +329,7 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -364,7 +369,7 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 #### 2. 목적
 
-최신순으로 반환합니다. 로그 테이블만 읽으며 diff를 계산하지 않습니다.
+최신순으로 반환합니다. 문서 편집은 실제 변경에 성공한 작업만 포함하며, 로그 테이블만 읽고 diff를 계산하지 않습니다.
 
 #### 3. Auth 필요 여부
 
@@ -530,7 +535,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
               "content": "string",
               "new_line": 10,
               "old_line": 10,
-              "type": "string"
+              "type": "CONTEXT"
             }
           ],
           "new_lines": 5,
@@ -626,7 +631,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
               "content": "string",
               "new_line": 10,
               "old_line": 10,
-              "type": "string"
+              "type": "CONTEXT"
             }
           ],
           "new_lines": 5,
@@ -728,6 +733,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 #### 5. Response body
 
 - HTTP `200`: 문서 편집 복구 즉시 완료
+- HTTP `202`: Wiki 복구 작업이 대기열에 등록됨
 - Content-Type: `*/*` (`RestoreExecuteResponse`)
 
 ```json

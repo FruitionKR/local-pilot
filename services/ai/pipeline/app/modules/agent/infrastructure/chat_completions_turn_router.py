@@ -95,6 +95,18 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                         "role": message.role,
                         "content": message.content,
                         "action": message.action,
+                        "agent_route": (
+                            {
+                                "action": message.agent_route.action,
+                                "retrieval_source": message.agent_route.retrieval_source,
+                                "document_operation": message.agent_route.document_operation,
+                                "persist": message.agent_route.persist,
+                                "edit_goal": message.agent_route.edit_goal,
+                                "selected_skill_id": message.agent_route.selected_skill_id,
+                            }
+                            if message.agent_route
+                            else None
+                        ),
                     }
                     for message in request.conversation_context.recent_messages
                 ]

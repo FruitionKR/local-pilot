@@ -5,6 +5,8 @@ import fruition.core.document.dto.InternalPipelineDocumentResponse;
 import fruition.shared.util.ErrorResponse;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -36,6 +38,7 @@ public class InternalDocumentController {
     }
 
     /** 새 워크스페이스의 초기 노트 생성. 실패는 DocumentService가 best-effort로 처리한다. */
+    @ApiResponse(responseCode = "204", description = "초기 노트 생성 완료", content = @Content)
     @PostMapping("/internal/workspaces/{workspace_id}/initial-note")
     public ResponseEntity<?> createInitialNote(
             @PathVariable("workspace_id") String workspaceId,

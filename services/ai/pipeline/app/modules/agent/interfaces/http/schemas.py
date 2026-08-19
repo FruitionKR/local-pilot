@@ -1,6 +1,6 @@
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StrictBool, model_validator
 
 from app.core.untrusted_input import validate_untrusted_payload
 from app.core.llm_env import resolve_llm_selection
@@ -11,6 +11,7 @@ from app.modules.agent.domain.entities import (
     PendingSkillProposal,
 )
 from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
+from app.modules.query.domain.entities import ConversationAgentRoute, ConversationMessage
 from app.modules.query.interfaces.http.schemas import ConversationMessageRequest, QueryResponse
 from app.modules.skill.interfaces.http.schemas import (
     CapabilityValue,
@@ -47,6 +48,38 @@ class ActiveMarkdownContextRequest(BaseModel):
         )
 
 
+class ConversationAgentRouteRequest(BaseModel):
+    action: str = Field(..., min_length=1, max_length=64)
+    retrieval_source: Literal["none", "workspace", "web"]
+    document_operation: Literal["none", "create", "edit"]
+    persist: StrictBool
+    edit_goal: str | None = Field(default=None, max_length=64)
+    selected_skill_id: str | None = Field(default=None, max_length=128)
+
+    def to_domain(self) -> ConversationAgentRoute:
+        return ConversationAgentRoute(
+            action=self.action,
+            retrieval_source=self.retrieval_source,
+            document_operation=self.document_operation,
+            persist=self.persist,
+            edit_goal=self.edit_goal,
+            selected_skill_id=self.selected_skill_id,
+        )
+
+
+class AgentConversationMessageRequest(ConversationMessageRequest):
+    agent_route: ConversationAgentRouteRequest | None = None
+
+    def to_domain(self) -> ConversationMessage:
+        return ConversationMessage(
+            role=self.role,
+            content=self.content,
+            action=self.action,
+            run_id=self.run_id,
+            agent_route=self.agent_route.to_domain() if self.agent_route else None,
+        )
+
+
 class PendingSkillProposalRequest(BaseModel):
     scope_type: Literal["personal", "team"]
     name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -68,7 +101,7 @@ class PendingSkillProposalRequest(BaseModel):
 
 class AgentConversationContextRequest(BaseModel):
     recent_conversation_summary: str | None = None
-    recent_messages: list[ConversationMessageRequest] = Field(default_factory=list, max_length=6)
+    recent_messages: list[AgentConversationMessageRequest] = Field(default_factory=list, max_length=6)
     reference_context: dict[str, Any] | None = None
     pending_skill_proposal: PendingSkillProposalRequest | None = None
 
@@ -217,6 +250,7 @@ class AgentTurnResponse(BaseModel):
     message: str | None = None
     chat: QueryResponse | None = None
     edit: MarkdownEditOperationResponse | None = None
+    source_markdown_sha256: str | None = None
     generated_markdown: GeneratedMarkdownResponse | None = None
     skill_candidates: list[SkillCandidateResponse] = Field(default_factory=list)
     run_id: str | None = None

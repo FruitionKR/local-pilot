@@ -61,7 +61,8 @@ class OperationQueryServiceTest {
                 "Wiki lint로 페이지 2개를 변경했습니다.", 2,
                 Instant.parse("2026-08-04T01:00:00Z"));
         when(operationLogRepository.findPage(eq(WORKSPACE_ID), eq(OperationType.lint),
-                eq(null), any(Instant.class), any(Pageable.class)))
+                eq(null), any(Instant.class), eq(OperationType.document_edit),
+                eq(OperationStatus.succeeded), any(Pageable.class)))
                 .thenReturn(List.of(lint));
 
         var response = service.list(WORKSPACE_ID, USER_ID, "lint", null, null, 20);
@@ -290,6 +291,6 @@ class OperationQueryServiceTest {
                 .isInstanceOf(WorkspaceNotFoundException.class);
 
         verify(operationLogRepository, never()).findPage(
-                any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any());
     }
 }
