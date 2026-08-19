@@ -1180,6 +1180,20 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
+    @DisplayName("Wiki 페이지 제목에 슬래시가 있어도 이름 확정이 실패하지 않는다")
+    void confirmChatExportName_sanitizesUnusableCharacters() {
+        Document chatDoc = new Document(
+                "chatdoc_slash", WORKSPACE_ID, USER_ID, "[채팅] 첫 질문.md", "text/markdown", 10L,
+                "sources/documents/chatdoc_slash/original", "h", "chat_export");
+        when(documentRepository.findRootPageNormalizedFilenames(WORKSPACE_ID)).thenReturn(List.of());
+
+        // 예외가 나면 reconciler 트랜잭션 전체가 롤백돼 채팅 후처리가 영구히 막힌다.
+        documentService.confirmChatExportName(chatDoc, "CI/CD 파이프라인");
+
+        assertThat(chatDoc.getFilename()).isEqualTo("[채팅] CI CD 파이프라인.md");
+    }
+
+    @Test
     @DisplayName("이름 확정을 두 번 해도 자기 이름과 충돌해 번호가 붙지 않는다")
     void confirmChatExportName_isIdempotent() {
         Document chatDoc = new Document(

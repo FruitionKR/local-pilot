@@ -188,6 +188,22 @@ def test_build_payload_rejects_chat_command_without_source_blocks() -> None:
         )
 
 
+def test_build_payload_rejects_command_without_document_id() -> None:
+    """필수 키 누락도 재시도로 못 고치므로 같은 폐기 경로를 탄다."""
+    with pytest.raises(ingest_worker.UnprocessableIngestCommand, match="payload is invalid"):
+        ingest_worker._build_payload(
+            {
+                "run_id": "run-1",
+                "kind": "document",
+                "workspace_id": "workspace-1",
+                "user_id": "user-1",
+                "provider": "openai",
+                "model": "gpt-5-nano",
+                # document_id 없음
+            }
+        )
+
+
 def test_build_payload_accepts_chat_command_with_source_blocks() -> None:
     payload = ingest_worker._build_payload(
         {

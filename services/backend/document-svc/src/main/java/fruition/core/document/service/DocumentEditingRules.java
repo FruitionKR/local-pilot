@@ -95,6 +95,22 @@ final class DocumentEditingRules {
         }
     }
 
+    /**
+     * 파일명으로 쓸 수 없는 문자를 걷어낸다. 사람이 직접 지은 이름이 아니라 AI가 만든 제목처럼
+     * {@link #normalizeDisplayName}을 통과하지 못할 수 있는 값에 쓴다. 쓸 게 남지 않으면 빈 문자열이다.
+     */
+    static String sanitizeDisplayName(String displayName) {
+        if (displayName == null) {
+            return "";
+        }
+        String cleaned = displayName
+                .replaceAll("[/\\\\]", " ")
+                .replaceAll("\\p{Cntrl}", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return cleaned.equals(".") || cleaned.equals("..") ? "" : cleaned;
+    }
+
     private static MarkdownContent markdown(String markdown, byte[] bytes) {
         if (bytes.length > MAX_MARKDOWN_BYTES) {
             throw new MarkdownContentTooLargeException("Markdown 본문은 UTF-8 기준 5MB 이하여야 합니다.");

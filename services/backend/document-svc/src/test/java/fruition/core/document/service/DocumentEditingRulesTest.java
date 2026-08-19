@@ -108,4 +108,32 @@ class DocumentEditingRulesTest {
         assertThat(result.displayName()).isEqualTo("검색 인덱싱 (3)");
         assertThat(result.filename()).isEqualTo("검색 인덱싱 (3).md");
     }
+
+    @Test
+    @DisplayName("파일명에 못 쓰는 문자를 걷어낸다")
+    void sanitizeDisplayName_stripsUnusableCharacters() {
+        assertThat(DocumentEditingRules.sanitizeDisplayName("CI/CD 파이프라인")).isEqualTo("CI CD 파이프라인");
+        assertThat(DocumentEditingRules.sanitizeDisplayName("a\\b")).isEqualTo("a b");
+        assertThat(DocumentEditingRules.sanitizeDisplayName("앞\n뒤")).isEqualTo("앞 뒤");
+    }
+
+    @Test
+    @DisplayName("정제 결과가 이름으로 쓸 수 없으면 빈 문자열이다")
+    void sanitizeDisplayName_returnsEmptyWhenUnusable() {
+        assertThat(DocumentEditingRules.sanitizeDisplayName(null)).isEmpty();
+        assertThat(DocumentEditingRules.sanitizeDisplayName("   ")).isEmpty();
+        assertThat(DocumentEditingRules.sanitizeDisplayName("/")).isEmpty();
+        assertThat(DocumentEditingRules.sanitizeDisplayName("..")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("정제한 이름은 normalizeDisplayName 검증을 통과한다")
+    void sanitizedNameIsAcceptedByUniqueFilename() {
+        String sanitized = DocumentEditingRules.sanitizeDisplayName("[채팅] CI/CD 파이프라인");
+
+        DocumentEditingRules.Filename result =
+                DocumentEditingRules.uniqueFilename(sanitized, java.util.Set.of());
+
+        assertThat(result.filename()).isEqualTo("[채팅] CI CD 파이프라인.md");
+    }
 }

@@ -66,18 +66,18 @@ def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
         raise UnprocessableIngestCommand("ingest command requires user_id and workspace_id")
     if not str(command.get("provider") or "").strip() or not str(command.get("model") or "").strip():
         raise UnprocessableIngestCommand("ingest command requires provider and model")
-    common = {
-        "document_id": command["document_id"],
-        "user_id": command.get("user_id"),
-        "workspace_id": command.get("workspace_id"),
-        "operation_id": command.get("operation_id"),
-        "source_revision": command.get("source_revision"),
-        "source_content_hash": command.get("source_content_hash"),
-        "model": str(command["model"]).strip(),
-        "provider": str(command.get("provider") or "").strip(),
-        "wait": True,
-    }
     try:
+        common = {
+            "document_id": command["document_id"],
+            "user_id": command.get("user_id"),
+            "workspace_id": command.get("workspace_id"),
+            "operation_id": command.get("operation_id"),
+            "source_revision": command.get("source_revision"),
+            "source_content_hash": command.get("source_content_hash"),
+            "model": str(command["model"]).strip(),
+            "provider": str(command.get("provider") or "").strip(),
+            "wait": True,
+        }
         if command.get("kind") == "chat_wiki":
             return ChatWikiRunIn(
                 **common,
@@ -86,9 +86,10 @@ def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
                 input_blocks=command.get("input_blocks") or [],
             )
         return PipelineRunIn(**common)
-    except ValidationError as exc:
+    except (ValidationError, KeyError) as exc:
+        # KeyError는 command에 필수 키가 없는 경우다. 둘 다 재시도로는 못 고친다.
         raise UnprocessableIngestCommand(
-            f"ingest command payload is invalid (kind={command.get('kind')}): {exc}"
+            f"ingest command payload is invalid (kind={command.get('kind')}): {exc!r}"
         ) from exc
 
 
