@@ -462,7 +462,16 @@ export function SourcePreviewPanel({
         )}
         {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
-        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && editableNote && documentId && (
+        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && selectedBlockHighlights.length > 0 && (
+          <MarkdownViewer
+            markdown={rawMarkdown}
+            highlightedBlocks={selectedBlockHighlights}
+            onBlockRef={(blockId, node) => {
+              blockRefs.current[blockId] = node;
+            }}
+          />
+        )}
+        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && selectedBlockHighlights.length === 0 && editableNote && documentId && (
           <DynamicNoteEditor
             key={`${documentId}:${documentReloadCount}`}
             documentId={documentId}

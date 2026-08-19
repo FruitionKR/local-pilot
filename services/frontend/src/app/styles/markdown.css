@@ -113,8 +113,29 @@
   border: 0;
 }
 
+.markdown-viewer table {
+  width: 100%;
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  border-collapse: collapse;
+}
+
+.markdown-viewer th,
+.markdown-viewer td {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.markdown-viewer th {
+  color: #f0f0f0;
+  background: #242424;
+  font-weight: 600;
+}
+
+.markdown-viewer a,
 .markdown-wikilink {
-  color: #58a6ff;
+  color: #8ab4e8;
 }
 
 .markdown-source-block.is-highlighted {
