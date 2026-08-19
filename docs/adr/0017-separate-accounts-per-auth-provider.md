@@ -32,8 +32,10 @@ OAuth 링크를 붙였다. 따라서 같은 이메일로 일반 회원가입한 
 
 로그인·회원가입·이메일 중복 검사·가입용 인증번호 발송·비밀번호 재설정은 모두
 `provider = 'local'` 계정만 대상으로 한다. 결과로 이메일 중복 검사는 OAuth 전용 이메일에
-`available: true`를 반환한다. `local` 계정은 항상 비밀번호를 가지므로 로그인 경로의
-`passwordHash == null` 차단은 도달 불가가 되어 삭제한다.
+`available: true`를 반환한다. 회원가입으로 만든 `local` 계정은 항상 비밀번호를 가지므로 로그인
+경로의 `passwordHash == null` 차단을 삭제한다. V11 백필의 `COALESCE(..., 'local')` 폴백은
+비밀번호도 OAuth 링크도 없는 계정에 `local`을 넣으므로 이 불변식의 예외가 남지만, 그런 계정은
+비밀번호 검증이 실패해 동일하게 인증 오류로 수렴한다.
 
 비밀번호 재설정은 인증번호를 소비한 뒤 세 갈래로 나눈다. `local` 계정이 있으면 변경하고,
 `local`이 없고 같은 이메일의 OAuth 계정이 있으면 `PASSWORD_LOGIN_UNAVAILABLE`로 가입 provider를
