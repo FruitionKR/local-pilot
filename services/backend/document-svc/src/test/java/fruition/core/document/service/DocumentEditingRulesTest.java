@@ -110,6 +110,18 @@ class DocumentEditingRulesTest {
     }
 
     @Test
+    @DisplayName("긴 파일명은 Unicode code point 경계를 보존해 자른다")
+    void uniqueFilename_truncatesAtCodePointBoundary() {
+        String displayName = "a".repeat(251) + "😀" + "tail";
+
+        DocumentEditingRules.Filename result =
+                DocumentEditingRules.uniqueFilename(displayName, java.util.Set.of());
+
+        assertThat(result.filename()).isEqualTo("a".repeat(251) + "😀.md");
+        assertThat(result.filename().codePointCount(0, result.filename().length())).isEqualTo(255);
+    }
+
+    @Test
     @DisplayName("파일명에 못 쓰는 문자를 걷어낸다")
     void sanitizeDisplayName_stripsUnusableCharacters() {
         assertThat(DocumentEditingRules.sanitizeDisplayName("CI/CD 파이프라인")).isEqualTo("CI CD 파이프라인");

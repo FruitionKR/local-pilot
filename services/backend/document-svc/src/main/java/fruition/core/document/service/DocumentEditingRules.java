@@ -85,7 +85,11 @@ final class DocumentEditingRules {
         for (int number = 1; ; number++) {
             String suffix = number == 1 ? "" : " (" + number + ")";
             int maxBaseLength = MAX_FILENAME_LENGTH - suffix.length() - MARKDOWN_EXTENSION.length();
-            String truncatedBase = baseName.substring(0, Math.min(baseName.length(), maxBaseLength)).stripTrailing();
+            int baseCodePointCount = baseName.codePointCount(0, baseName.length());
+            int endIndex = baseCodePointCount > maxBaseLength
+                    ? baseName.offsetByCodePoints(0, maxBaseLength)
+                    : baseName.length();
+            String truncatedBase = baseName.substring(0, endIndex).stripTrailing();
             String candidate = truncatedBase + suffix;
             String filename = candidate + MARKDOWN_EXTENSION;
             String normalizedFilename = filename.toLowerCase(Locale.ROOT);
