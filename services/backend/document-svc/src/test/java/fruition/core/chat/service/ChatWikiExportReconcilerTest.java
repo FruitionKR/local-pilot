@@ -36,8 +36,17 @@ class ChatWikiExportReconcilerTest {
 
     @BeforeEach
     void setUp() {
+        // 트랜잭션 경계는 테스트 범위 밖이라 콜백을 그대로 실행한다.
+        org.springframework.transaction.support.TransactionTemplate transactionTemplate =
+                new org.springframework.transaction.support.TransactionTemplate() {
+                    @Override
+                    public <T> T execute(org.springframework.transaction.support.TransactionCallback<T> action) {
+                        return action.doInTransaction(new org.springframework.transaction.support.SimpleTransactionStatus());
+                    }
+                };
         reconciler = new ChatWikiExportReconciler(
-                documentRepository, wikiStateRequester, chatPartialWikiRepository, documentService);
+                documentRepository, wikiStateRequester, chatPartialWikiRepository, documentService,
+                transactionTemplate);
     }
 
     private Document chatExportDoc() {
@@ -45,6 +54,30 @@ class ChatWikiExportReconcilerTest {
                 "sources/documents/chatdoc_1/original", "h", "chat_export");
         d.assignSelectionMode("partial");
         return d;
+    }
+
+    @Test
+    @DisplayName("한 문서가 실패해도 나머지 문서는 확정된다")
+    void reconciled_isolatesFailurePerDocument() {
+        Document broken = new Document("chatdoc_broken", "ws_1", "user_1", "b.md", "text/markdown", 10L,
+                "sources/documents/chatdoc_broken/original", "h", "chat_export");
+        Document healthy = chatExportDoc();
+        when(documentRepository.findAllByOriginAndStatusAndReconciledAtIsNull("chat_export", DocumentStatus.completed))
+                .thenReturn(List.of(broken, healthy));
+        // 앞 문서에서 pipeline 조회가 터진다. 예전에는 이 하나가 tick 전체를 되돌렸다.
+        when(wikiStateRequester.documentContext("ws_1", "chatdoc_broken"))
+                .thenThrow(new IllegalStateException("pipeline 응답 없음"));
+        when(wikiStateRequester.documentContext("ws_1", "chatdoc_1")).thenReturn(
+                new PipelineWikiStateRequester.DocumentWikiContext(
+                        List.of(new PipelineWikiStateRequester.DocumentPage(
+                                "wiki_1", "source", "제목", "title", "source_of", 1.0)),
+                        List.of(new PipelineWikiStateRequester.SourceBlock("session_1:pair_1", "Q : 질문\nA : 답변"))));
+
+        reconciler.reconcile();
+
+        assertThat(broken.getReconciledAt()).isNull();      // 다음 tick에 다시 시도
+        assertThat(healthy.getReconciledAt()).isNotNull();  // 뒤 문서는 확정
+        verify(documentRepository).save(healthy);
     }
 
     @Test
