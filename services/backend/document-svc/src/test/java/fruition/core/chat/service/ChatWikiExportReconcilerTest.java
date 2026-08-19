@@ -30,12 +30,14 @@ class ChatWikiExportReconcilerTest {
     @Mock DocumentRepository documentRepository;
     @Mock PipelineWikiStateRequester wikiStateRequester;
     @Mock ChatPartialWikiRepository chatPartialWikiRepository;
+    @Mock fruition.core.document.service.DocumentService documentService;
 
     ChatWikiExportReconciler reconciler;
 
     @BeforeEach
     void setUp() {
-        reconciler = new ChatWikiExportReconciler(documentRepository, wikiStateRequester, chatPartialWikiRepository);
+        reconciler = new ChatWikiExportReconciler(
+                documentRepository, wikiStateRequester, chatPartialWikiRepository, documentService);
     }
 
     private Document chatExportDoc() {
@@ -70,6 +72,23 @@ class ChatWikiExportReconcilerTest {
         assertThat(membership.getValue().getWikiPageId()).isEqualTo("wiki_1");
         assertThat(doc.getReconciledAt()).isNotNull();
         verify(documentRepository).save(doc);
+    }
+
+    @Test
+    @DisplayName("후처리 시 문서 이름을 Wiki 페이지 제목으로 확정한다")
+    void reconciled_confirmsDocumentNameWithWikiPageTitle() {
+        Document doc = chatExportDoc();
+        when(documentRepository.findAllByOriginAndStatusAndReconciledAtIsNull("chat_export", DocumentStatus.completed))
+                .thenReturn(List.of(doc));
+        when(wikiStateRequester.documentContext("ws_1", "chatdoc_1")).thenReturn(
+                new PipelineWikiStateRequester.DocumentWikiContext(
+                        List.of(new PipelineWikiStateRequester.DocumentPage(
+                                "wiki_1", "source", "검색 인덱싱", "search-indexing", "source_of", 1.0)),
+                        List.of(new PipelineWikiStateRequester.SourceBlock("session_1:pair_1", "Q : 질문\nA : 답변"))));
+
+        reconciler.reconcile();
+
+        verify(documentService).confirmChatExportName(doc, "검색 인덱싱");
     }
 
     @Test

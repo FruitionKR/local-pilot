@@ -40,6 +40,10 @@ public class ChatWikiExportService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatWikiExportService.class);
 
+    /** 처리 중 임시 문서 이름의 최대 길이. 넘치면 끝을 줄임표로 접는다. */
+    private static final int MAX_TITLE_LENGTH = 20;
+    private static final String QUESTION_PREFIX = "Q : ";
+
     private final ChatSessionService chatSessionService;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatWikiMarkdownSerializer serializer;
@@ -80,12 +84,12 @@ public class ChatWikiExportService {
         }
 
         String contentHash = stableContentHash(session, selected);
-        String filename = titleOf(session) + ".md";
 
         log.info("[chat-wiki][export] session={} 전송 메시지={}건", sessionId, selected.size());
 
         DocumentService.ExportDocumentResult result = documentService.createChatExportDocument(
-                workspaceId, userId, filename, source.markdown(), contentHash, pipelineBlocks(source));
+                workspaceId, userId, titleOf(source, session), source.markdown(), contentHash,
+                pipelineBlocks(source));
 
         String status = result.skipped() ? "skipped" : "processing";
         log.info("[chat-wiki][export] 등록 session={} document={} status={}", sessionId, result.documentId(), status);
@@ -135,13 +139,35 @@ public class ChatWikiExportService {
     }
 
     /**
-     * 문서 이름은 세션 제목을 쓴다. 신규 세션은 {@link ChatSession}이 기본 제목을 채우므로 비지 않고,
-     * 제목 없이 저장된 예전 세션만 이 기본값으로 떨어진다. 세션 ID는 사용자에게 보이는 이름에 넣지 않는다.
+     * 처리 중에 쓸 임시 이름. 발췌한 첫 질문을 줄여 쓴다. 한 세션에서 여러 번 내보내도 발췌마다 달라진다.
+     * 파이프라인이 끝나면 {@link ChatWikiExportReconciler}가 Wiki 페이지 제목으로 확정한다.
+     * 질문을 못 쓰는 경우에만 세션 제목으로 떨어진다. 세션 ID는 사용자에게 보이는 이름에 넣지 않는다.
      */
-    private String titleOf(ChatSession session) {
+    private String titleOf(ChatWikiSource source, ChatSession session) {
+        String question = firstQuestion(source);
+        if (!question.isBlank()) {
+            return question;
+        }
         return (session.getTitle() != null && !session.getTitle().isBlank())
                 ? session.getTitle()
                 : ChatSession.DEFAULT_TITLE;
+    }
+
+    /** 첫 블록 text는 "Q : 질문\nA : 답변" 형식이다. 그 질문을 파일명에 쓸 수 있게 다듬는다. */
+    private String firstQuestion(ChatWikiSource source) {
+        String firstLine = source.blocks().get(0).text().lines().findFirst().orElse("");
+        String question = firstLine.startsWith(QUESTION_PREFIX)
+                ? firstLine.substring(QUESTION_PREFIX.length())
+                : firstLine;
+        // 파일명에 쓸 수 없는 문자를 걷어내고 공백을 한 칸으로 모은다.
+        String cleaned = question
+                .replaceAll("[/\\\\]", " ")
+                .replaceAll("\\p{Cntrl}", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return cleaned.length() > MAX_TITLE_LENGTH
+                ? cleaned.substring(0, MAX_TITLE_LENGTH - 1).stripTrailing() + "…"
+                : cleaned;
     }
 
     private String sha256(String text) {

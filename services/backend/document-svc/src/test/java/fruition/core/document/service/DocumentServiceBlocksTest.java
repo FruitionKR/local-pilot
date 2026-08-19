@@ -1180,6 +1180,35 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
+    @DisplayName("채팅 export 문서 이름에는 채팅에서 왔음을 알리는 접두사가 붙는다")
+    void createChatExportDocument_prefixesName() {
+        when(documentRepository.findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
+                any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, null)).thenReturn(List.of());
+        when(documentRepository.reserveChatExport(
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyLong(), anyString(), anyString(), anyString(), anyString(),
+                anyLong(), anyString(), anyLong(), any(), any(), anyString())).thenReturn(0);
+        Document canonical = new Document(
+                "chatdoc_x", WORKSPACE_ID, USER_ID, "[채팅] 검색 인덱싱.md", "text/markdown", 10L,
+                "sources/documents/chatdoc_x/original", "h", "chat_export");
+        when(documentRepository.findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
+                eq(WORKSPACE_ID), eq("chat_export"), eq("hash-1"), any()))
+                .thenReturn(Optional.empty(), Optional.of(canonical));
+
+        documentService.createChatExportDocument(
+                WORKSPACE_ID, USER_ID, "검색 인덱싱", "# Chat Export\n\nQ : 질문\nA : 답변\n", "hash-1",
+                List.of(new DocumentService.PipelineSourceBlock("session_1:pair_1", "Q : 질문\nA : 답변")));
+
+        ArgumentCaptor<String> filename = ArgumentCaptor.forClass(String.class);
+        verify(documentRepository).reserveChatExport(
+                anyString(), anyString(), anyString(), filename.capture(), anyString(), anyString(),
+                anyString(), anyLong(), anyString(), anyString(), anyString(), anyString(),
+                anyLong(), anyString(), anyLong(), any(), any(), anyString());
+        assertThat(filename.getValue()).isEqualTo("[채팅] 검색 인덱싱.md");
+    }
+
+    @Test
     @DisplayName("채팅 export 문서는 본문 저장을 거절한다(문답 provenance 보호)")
     void saveContent_chatExport_isRejected() {
         stubOwnedWorkspace();

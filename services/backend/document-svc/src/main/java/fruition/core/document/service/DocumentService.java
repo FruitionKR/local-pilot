@@ -668,8 +668,48 @@ public class DocumentService {
     /** 채팅 Wiki page화 export 결과. skipped=true면 동일 content가 이미 존재해 새로 만들지 않았다. */
     public record ExportDocumentResult(String documentId, boolean skipped) {}
 
+    /** LLM polish가 실패했을 때 Wiki 페이지 제목이 떨어지는 폴백값(본문 첫 헤딩). 문서 이름으로 쓰지 않는다. */
+    private static final String CHAT_EXPORT_FALLBACK_TITLE = "Chat Export";
+
+    /** 목록에서 채팅에서 온 문서임을 알리는 이름 접두사. */
+    private static final String CHAT_EXPORT_NAME_PREFIX = "[채팅] ";
+
     /** 파이프라인에 넘길 source block 1개. blockId가 {@code session_id:pair_id} provenance다. */
     public record PipelineSourceBlock(String blockId, String text) {}
+
+    /**
+     * 파이프라인이 만든 Wiki 페이지 제목으로 채팅 export 문서 이름을 확정한다. export 시점 이름은 첫 질문을
+     * 줄인 임시값이라, 내용을 요약한 페이지 제목이 나오면 그걸로 바꾼다.
+     *
+     * <p>페이지 제목이 비었거나 폴백값({@code Chat Export})이면 임시 이름을 그대로 둔다. 폴백은 LLM polish가
+     * 실패했을 때 본문 첫 헤딩에서 나오는 상수라, 그대로 쓰면 모든 문서가 같은 이름이 된다.
+     * 이미 그 이름이면 아무것도 하지 않는다(멱등).
+     */
+    @Transactional
+    public void confirmChatExportName(Document document, String wikiPageTitle) {
+        if (wikiPageTitle == null || wikiPageTitle.isBlank()
+                || CHAT_EXPORT_FALLBACK_TITLE.equals(wikiPageTitle.trim())) {
+            return;
+        }
+        String filename = uniqueChatExportFilename(document.getWorkspaceId(), wikiPageTitle.trim());
+        if (filename.equals(document.getFilename())) {
+            return;
+        }
+        document.rename(filename);
+        documentRepository.save(document);
+        log.info("[채팅 export 문서 이름 확정] documentId={} filename={}", document.getId(), filename);
+    }
+
+    /**
+     * 채팅 export 문서 이름을 만든다. 채팅에서 온 문서임을 알리는 접두사를 붙이고, root의 기존 문서와
+     * 겹치면 {@code (2)}를 더한다. export 시점과 이름 확정 시점이 모두 이 경로를 지나 접두사가 유지된다.
+     */
+    private String uniqueChatExportFilename(String workspaceId, String displayName) {
+        Set<String> existingNames = documentRepository.findSiblingPagesForUpdate(workspaceId, null).stream()
+                .map(Document::getNormalizedFilename)
+                .collect(Collectors.toSet());
+        return DocumentEditingRules.uniqueFilename(CHAT_EXPORT_NAME_PREFIX + displayName, existingNames).filename();
+    }
 
     /**
      * 채팅 export 문서는 읽기 전용이다. 본문을 사람이 고치면 문답 경계를 다시 알아낼 수 없어
@@ -705,7 +745,7 @@ public class DocumentService {
      */
     @Transactional
     public ExportDocumentResult createChatExportDocument(String workspaceId, String userId,
-                                                         String filename, String markdown, String contentHash,
+                                                         String displayName, String markdown, String contentHash,
                                                          List<PipelineSourceBlock> blocks) {
         if (blocks == null || blocks.isEmpty()) {
             throw new IllegalArgumentException("채팅 export 문서는 source block이 필요합니다.");
@@ -721,8 +761,8 @@ public class DocumentService {
         byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
 
         Document candidate = new Document(
-                documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
-                objectPath, contentHash, "chat_export");
+                documentId, workspaceId, userId, uniqueChatExportFilename(workspaceId, displayName),
+                "text/markdown", bytes.length, objectPath, contentHash, "chat_export");
         candidate.assignSelectionMode(CHAT_EXPORT_SELECTION_MODE);
         if (documentRepository.reserveChatExport(
                 candidate.getId(), candidate.getWorkspaceId(), candidate.getUserId(),

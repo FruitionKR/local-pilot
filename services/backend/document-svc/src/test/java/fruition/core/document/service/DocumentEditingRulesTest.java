@@ -88,4 +88,24 @@ class DocumentEditingRulesTest {
         assertThat(content.hasSameContent(content.contentHash())).isTrue();
         assertThat(content.hasSameContent("different")).isFalse();
     }
+
+    @Test
+    @DisplayName("이름이 비어 있으면 번호를 붙이지 않는다")
+    void uniqueFilename_whenFree_keepsName() {
+        DocumentEditingRules.Filename result =
+                DocumentEditingRules.uniqueFilename("검색 인덱싱", java.util.Set.of());
+
+        assertThat(result.displayName()).isEqualTo("검색 인덱싱");
+        assertThat(result.filename()).isEqualTo("검색 인덱싱.md");
+    }
+
+    @Test
+    @DisplayName("이름이 겹치면 비어 있는 번호를 찾아 붙인다")
+    void uniqueFilename_whenTaken_appendsNumber() {
+        DocumentEditingRules.Filename result = DocumentEditingRules.uniqueFilename(
+                "검색 인덱싱", java.util.Set.of("검색 인덱싱.md", "검색 인덱싱 (2).md"));
+
+        assertThat(result.displayName()).isEqualTo("검색 인덱싱 (3)");
+        assertThat(result.filename()).isEqualTo("검색 인덱싱 (3).md");
+    }
 }

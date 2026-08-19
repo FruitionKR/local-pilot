@@ -113,21 +113,78 @@ class ChatWikiExportServiceTest {
     }
 
     @Test
-    @DisplayName("제목 없이 저장된 예전 세션도 문서명에 세션 ID를 넣지 않는다")
-    void legacyUntitledSessionDoesNotLeakSessionIdIntoFilename() {
-        // 기본 제목이 생기기 전에 저장된 세션 상태를 재현한다(생성자는 이제 빈 제목을 채운다).
-        ChatSession s = new ChatSession(SESSION, WS, USER, "제목");
-        org.springframework.test.util.ReflectionTestUtils.setField(s, "title", null);
+    @DisplayName("임시 문서 이름은 발췌한 첫 질문을 20자로 줄여 쓴다")
+    void interimNameComesFromFirstQuestion() {
+        ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
-        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
-        ArgumentCaptor<String> filename = ArgumentCaptor.forClass(String.class);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(List.of(
+                msg(s, "u1", "p1", "user", "검색 인덱싱은 어떻게 동작하나요?", "completed"),
+                msg(s, "a1", "p1", "assistant", "역색인을 씁니다.", "completed")));
+        ArgumentCaptor<String> displayName = ArgumentCaptor.forClass(String.class);
         when(documentService.createChatExportDocument(
-                eq(WS), eq(USER), filename.capture(), anyString(), anyString(), any()))
+                eq(WS), eq(USER), displayName.capture(), anyString(), anyString(), any()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_1", false));
 
         service.export(WS, USER, SESSION, new ChatWikiExportRequest(List.of("p1")));
 
-        assertThat(filename.getValue()).isEqualTo("새 채팅.md").doesNotContain(SESSION);
+        // 18자라 그대로, 세션 제목("제목")이 아니라 질문에서 온다.
+        assertThat(displayName.getValue()).isEqualTo("검색 인덱싱은 어떻게 동작하나요?");
+    }
+
+    @Test
+    @DisplayName("긴 질문은 20자에서 줄임표로 접는다")
+    void interimNameIsTruncated() {
+        ChatSession s = session();
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(List.of(
+                msg(s, "u1", "p1", "user", "검색 인덱싱 파이프라인에서 청크 크기를 바꾸려면 어디를 봐야 하나요?", "completed"),
+                msg(s, "a1", "p1", "assistant", "설정 파일을 봅니다.", "completed")));
+        ArgumentCaptor<String> displayName = ArgumentCaptor.forClass(String.class);
+        when(documentService.createChatExportDocument(
+                eq(WS), eq(USER), displayName.capture(), anyString(), anyString(), any()))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_1", false));
+
+        service.export(WS, USER, SESSION, new ChatWikiExportRequest(List.of("p1")));
+
+        assertThat(displayName.getValue()).hasSize(20).endsWith("…");
+    }
+
+    @Test
+    @DisplayName("질문의 경로 문자는 파일명에 쓸 수 있게 걷어낸다")
+    void interimNameStripsPathCharacters() {
+        ChatSession s = session();
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(List.of(
+                msg(s, "u1", "p1", "user", "src/main 경로는?", "completed"),
+                msg(s, "a1", "p1", "assistant", "거기 있습니다.", "completed")));
+        ArgumentCaptor<String> displayName = ArgumentCaptor.forClass(String.class);
+        when(documentService.createChatExportDocument(
+                eq(WS), eq(USER), displayName.capture(), anyString(), anyString(), any()))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_1", false));
+
+        service.export(WS, USER, SESSION, new ChatWikiExportRequest(List.of("p1")));
+
+        assertThat(displayName.getValue()).isEqualTo("src main 경로는?").doesNotContain("/");
+    }
+
+    @Test
+    @DisplayName("질문을 쓸 수 없으면 세션 제목으로 떨어지고, 제목도 없으면 세션 ID 대신 기본 제목을 쓴다")
+    void interimNameFallsBackWithoutLeakingSessionId() {
+        // 기본 제목이 생기기 전에 저장된 세션 상태를 재현한다(생성자는 이제 빈 제목을 채운다).
+        ChatSession s = new ChatSession(SESSION, WS, USER, "제목");
+        org.springframework.test.util.ReflectionTestUtils.setField(s, "title", null);
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(List.of(
+                msg(s, "u1", "p1", "user", "", "completed"),   // 질문이 비어 이름 재료가 없다
+                msg(s, "a1", "p1", "assistant", "답변1", "completed")));
+        ArgumentCaptor<String> displayName = ArgumentCaptor.forClass(String.class);
+        when(documentService.createChatExportDocument(
+                eq(WS), eq(USER), displayName.capture(), anyString(), anyString(), any()))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_1", false));
+
+        service.export(WS, USER, SESSION, new ChatWikiExportRequest(List.of("p1")));
+
+        assertThat(displayName.getValue()).isEqualTo("새 채팅").doesNotContain(SESSION);
     }
 
     @Test

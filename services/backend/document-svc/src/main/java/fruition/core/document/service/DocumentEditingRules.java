@@ -76,6 +76,25 @@ final class DocumentEditingRules {
         }
     }
 
+    /**
+     * 같은 이름이 이미 있으면 {@code (2)}, {@code (3)} 순으로 번호를 붙여 비어 있는 이름을 고른다.
+     * 복제의 {@code 복사본 (N)}과 달리 원래 이름을 그대로 두고 구분만 더한다.
+     */
+    static Filename uniqueFilename(String displayName, Set<String> existingNormalizedFilenames) {
+        String baseName = normalizeDisplayName(displayName);
+        for (int number = 1; ; number++) {
+            String suffix = number == 1 ? "" : " (" + number + ")";
+            int maxBaseLength = MAX_FILENAME_LENGTH - suffix.length() - MARKDOWN_EXTENSION.length();
+            String truncatedBase = baseName.substring(0, Math.min(baseName.length(), maxBaseLength)).stripTrailing();
+            String candidate = truncatedBase + suffix;
+            String filename = candidate + MARKDOWN_EXTENSION;
+            String normalizedFilename = filename.toLowerCase(Locale.ROOT);
+            if (!existingNormalizedFilenames.contains(normalizedFilename)) {
+                return new Filename(candidate, filename, normalizedFilename);
+            }
+        }
+    }
+
     private static MarkdownContent markdown(String markdown, byte[] bytes) {
         if (bytes.length > MAX_MARKDOWN_BYTES) {
             throw new MarkdownContentTooLargeException("Markdown 본문은 UTF-8 기준 5MB 이하여야 합니다.");

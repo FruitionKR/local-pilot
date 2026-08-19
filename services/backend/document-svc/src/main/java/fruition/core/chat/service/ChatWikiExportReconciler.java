@@ -4,6 +4,7 @@ import fruition.core.chat.domain.ChatPartialWiki;
 import fruition.core.chat.repository.ChatPartialWikiRepository;
 import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentStatus;
+import fruition.core.document.service.DocumentService;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import org.slf4j.Logger;
@@ -40,13 +41,16 @@ public class ChatWikiExportReconciler {
     private final DocumentRepository documentRepository;
     private final PipelineWikiStateRequester pipelineWikiStateRequester;
     private final ChatPartialWikiRepository chatPartialWikiRepository;
+    private final DocumentService documentService;
 
     public ChatWikiExportReconciler(DocumentRepository documentRepository,
                                     PipelineWikiStateRequester pipelineWikiStateRequester,
-                                    ChatPartialWikiRepository chatPartialWikiRepository) {
+                                    ChatPartialWikiRepository chatPartialWikiRepository,
+                                    DocumentService documentService) {
         this.documentRepository = documentRepository;
         this.pipelineWikiStateRequester = pipelineWikiStateRequester;
         this.chatPartialWikiRepository = chatPartialWikiRepository;
+        this.documentService = documentService;
     }
 
     @Scheduled(fixedDelay = 3000)
@@ -74,14 +78,16 @@ public class ChatWikiExportReconciler {
             }
             String sessionId = sessionIds.iterator().next();
 
-            String wikiPageId = wikiContext.pages().stream()
+            PipelineWikiStateRequester.DocumentPage sourcePage = wikiContext.pages().stream()
                     .filter(page -> "source_of".equals(page.relationType()))
-                    .map(PipelineWikiStateRequester.DocumentPage::id)
                     .findFirst()
                     .orElse(null);
-            if (wikiPageId == null) {
+            if (sourcePage == null) {
                 continue;
             }
+            String wikiPageId = sourcePage.id();
+            // export 시점 이름은 첫 질문을 줄인 임시값이다. 내용을 요약한 페이지 제목이 나왔으면 그걸로 확정한다.
+            documentService.confirmChatExportName(document, sourcePage.title());
 
             if (!recordPairs(document.getWorkspaceId(), sessionId, pairIds, wikiPageId, document.getId())) {
                 continue; // 모든 pair 멤버십이 준비될 때까지 재시도
