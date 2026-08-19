@@ -17,7 +17,6 @@ import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
-import fruition.access.user.dto.RefreshRequest;
 import fruition.access.user.dto.SignupRequest;
 import fruition.access.user.dto.SignupResponse;
 import fruition.access.user.dto.VerificationConfirmRequest;
@@ -40,6 +39,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import jakarta.servlet.http.Cookie;
 
 import java.time.Instant;
 
@@ -49,6 +49,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AuthController.class)
@@ -225,7 +226,11 @@ class AuthControllerTest {
                                 new LoginRequest("test@example.com", "password123"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token").value("access-token"))
-                .andExpect(jsonPath("$.refresh_token").value("refresh-token"));
+                .andExpect(jsonPath("$.refresh_token").doesNotExist())
+                .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("fruition_refresh_token=refresh-token"),
+                        org.hamcrest.Matchers.containsString("HttpOnly"),
+                        org.hamcrest.Matchers.containsString("SameSite=Strict"))));
     }
 
     @Test
@@ -246,10 +251,10 @@ class AuthControllerTest {
                 new LoginResponse("new-access-token", "new-refresh-token", "Bearer", 900));
 
         mockMvc.perform(post("/api/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RefreshRequest("old-refresh-token"))))
+                        .cookie(new Cookie("fruition_refresh_token", "old-refresh-token")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.access_token").value("new-access-token"));
+                .andExpect(jsonPath("$.access_token").value("new-access-token"))
+                .andExpect(jsonPath("$.refresh_token").doesNotExist());
     }
 
     @Test
@@ -257,8 +262,14 @@ class AuthControllerTest {
         when(authService.refresh(any())).thenThrow(new InvalidRefreshTokenException());
 
         mockMvc.perform(post("/api/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RefreshRequest("bad-token"))))
+                        .cookie(new Cookie("fruition_refresh_token", "bad-token")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REFRESH_TOKEN"));
+    }
+
+    @Test
+    void refresh_withoutCookie_returns401() throws Exception {
+        mockMvc.perform(post("/api/auth/refresh"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("INVALID_REFRESH_TOKEN"));
     }
@@ -266,20 +277,16 @@ class AuthControllerTest {
     @Test
     void logout_validToken_returns204() throws Exception {
         mockMvc.perform(post("/api/auth/logout")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RefreshRequest("refresh-token"))))
-                .andExpect(status().isNoContent());
+                        .cookie(new Cookie("fruition_refresh_token", "refresh-token")))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
     }
 
     @Test
-    void logout_invalidToken_returns401() throws Exception {
-        org.mockito.Mockito.doThrow(new InvalidRefreshTokenException()).when(authService).logout(any());
-
-        mockMvc.perform(post("/api/auth/logout")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RefreshRequest("bad-token"))))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error.code").value("INVALID_REFRESH_TOKEN"));
+    void logout_withoutCookie_isIdempotent() throws Exception {
+        mockMvc.perform(post("/api/auth/logout"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
     }
 
     @Test

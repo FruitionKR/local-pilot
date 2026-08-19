@@ -1,4 +1,4 @@
-import { getAccessToken, getRefreshToken, getSelectedWorkspaceId, saveTokens } from "@/shared/lib/auth";
+import { getAccessToken, getSelectedWorkspaceId, saveAccessToken } from "@/shared/lib/auth";
 
 // 공통 에러 메시지 상수
 export const ERROR_MESSAGES = {
@@ -46,20 +46,16 @@ export async function parseErrorResponse(response: Response, fallback: string): 
 let refreshPromise: Promise<boolean> | null = null;
 
 async function tryRefreshTokens(): Promise<boolean> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
         const response = await fetch("/api/auth/refresh", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken })
+          method: "POST"
         });
         if (!response.ok) return false;
-        const body = await response.json() as { access_token?: string; refresh_token?: string };
-        if (!body.access_token || !body.refresh_token) return false;
-        saveTokens(body.access_token, body.refresh_token);
+        const body = await response.json() as { access_token?: string };
+        if (!body.access_token) return false;
+        saveAccessToken(body.access_token);
         return true;
       } catch {
         return false;
@@ -86,8 +82,9 @@ function fetchWithToken(path: string, init?: RequestInit): Promise<Response> {
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetchWithToken(path, init);
   if (response.status !== 401) return response;
-  // 인증 엔드포인트 자체의 401(비밀번호 오류 등)은 재발급 대상이 아니다.
-  if (!path.startsWith("/api/auth/") && await tryRefreshTokens()) {
+  // 로그인·회원가입 등 인증 요청 자체의 401은 재발급 대상이 아니지만, /me는 보호된 요청이다.
+  const canRefresh = path === "/api/auth/me" || !path.startsWith("/api/auth/");
+  if (canRefresh && await tryRefreshTokens()) {
     const retried = await fetchWithToken(path, init);
     if (retried.status !== 401) return retried;
   }

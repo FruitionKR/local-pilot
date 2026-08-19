@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { exchangeOAuthCode, loginWithEmail } from "@/entities/user";
-import { saveTokens } from "@/shared/lib/auth";
+import { saveAccessToken } from "@/shared/lib/auth";
 import { AuthError, AuthField, AuthSubmitButton, SocialLoginButtons } from "@/shared/ui/AuthControls";
 
 const INVALID_CREDENTIALS_MESSAGE = "가입하지 않은 아이디거나, 잘못된 비밀번호입니다.";
@@ -57,7 +57,7 @@ function LoginPageContent() {
     setIsSubmitting(true);
     exchangeOAuthCode(code as string)
       .then((tokens) => {
-        saveTokens(tokens.access_token, tokens.refresh_token);
+        saveAccessToken(tokens.access_token);
         router.replace("/workspaces");
       })
       .catch(() => {
@@ -76,7 +76,7 @@ function LoginPageContent() {
 
     try {
       const tokens = await loginWithEmail(email, password);
-      saveTokens(tokens.access_token, tokens.refresh_token);
+      saveAccessToken(tokens.access_token);
       router.replace("/workspaces");
     } catch {
       isLoginRequestInFlight.current = false;

@@ -51,6 +51,7 @@ data:
   DOCUMENT_INTERNAL_BASE_URL: "http://document-svc:8080"
   CORS_ALLOWED_ORIGINS: "http://localhost:3000"
   OAUTH_FRONTEND_REDIRECT_URI: "http://localhost:3000/oauth/callback"
+  AUTH_REFRESH_COOKIE_SECURE: "false"
   # --- pipeline-api / ingest-worker ---
   LANGSMITH_TRACING: "false"
   LANGSMITH_PROJECT: "local-pilot-dev"

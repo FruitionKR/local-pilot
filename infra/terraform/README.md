@@ -14,7 +14,7 @@ Kafka는 MSK가 아니라 EKS 안 Strimzi(§8.3)를 그대로 쓴다 — `k8s/ba
 | `s3.tf` | 저장 버킷(versioning + tmp/ lifecycle) + 앱용 IAM user 정적 키 |
 | `ecr.tf` | document-svc·access-svc·pipeline·converter 레포 |
 | `github-oidc.tf` | GitHub Actions OIDC deploy role (ECR push + EKS 배포) |
-| `secrets.tf` | Secrets Manager `fruition/app` (DB URL·S3 키 자동, 나머지 CHANGE_ME) |
+| `secrets.tf` | Secrets Manager `fruition/app` (DB URL·S3 키·JWT/내부 토큰 자동 생성) |
 | `budgets.tf` | 월 USD 500·700 알림 (`budget_email` 설정 시) |
 
 ## 적용 절차
@@ -33,8 +33,11 @@ apply 후 수동 단계:
    runtime/migration 계정을 만든다. 비밀번호는 Secrets Manager `fruition/app`의
    `*_DB_*_PASSWORD` 값과 동일하게 넣을 것 (access 인스턴스는 access_db만,
    core 인스턴스는 core_db·ai_db만 실제 사용 — 나머지는 무해).
-1. **Secrets Manager 값 채우기** — `fruition/app`의 `JWT_SECRET`, `INTERNAL_CALLBACK_TOKEN`,
-   `AGENT_INTERNAL_TOKEN`, 선택 provider의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY` (live 호출 시 필요).
+1. **Provider 키 채우기** — `fruition/app`의 선택 provider `OPENAI_API_KEY`·`GEMINI_API_KEY`·
+   `ANTHROPIC_API_KEY`를 live 호출이 필요할 때만 설정한다. `JWT_SECRET`,
+   `INTERNAL_CALLBACK_TOKEN`, `AGENT_INTERNAL_TOKEN`은 Terraform이 안전한 난수로 생성한다.
+   기존 stack이 과거 `CHANGE_ME` 초기값으로 생성됐다면 Terraform state를 확인한 뒤 세 값을
+   회전해야 한다. 이 resource는 운영자가 채운 provider 키를 덮어쓰지 않도록 `ignore_changes`를 유지한다.
 2. **ACM 인증서** — `api.<도메인>`, `access.<도메인>` 포함 인증서 발급, ARN을 overlay ingress에 기입.
 3. **Route 53** — ALB 생성 후 두 호스트 A(alias) 레코드 연결.
 4. **GitHub repo Variables** — `AWS_DEPLOY_ROLE_ARN` = `terraform output github_deploy_role_arn`.

@@ -1,7 +1,6 @@
 openapi: 3.1.0
 info:
   contact:
-    email: wonbb3313@gmail.com
     name: Fruition
   description: Fruition PoC 백엔드 API
   title: Fruition API
@@ -124,7 +123,7 @@ paths:
       - Auth
   /api/auth/login:
     post:
-      description: 이메일/비밀번호를 검증하고 access/refresh token을 발급합니다.
+      description: 이메일/비밀번호를 검증하고 access token과 HttpOnly refresh 쿠키를 발급합니다.
       operationId: login
       requestBody:
         content:
@@ -150,23 +149,17 @@ paths:
       - Auth
   /api/auth/logout:
     post:
-      description: refresh token을 폐기합니다.
+      description: HttpOnly refresh 쿠키를 폐기하고 제거합니다.
       operationId: logout
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RefreshRequest"
-        required: true
+      parameters:
+      - in: cookie
+        name: fruition_refresh_token
+        required: false
+        schema:
+          type: string
       responses:
         "204":
           description: 로그아웃 성공
-        "401":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-          description: 유효하지 않거나 만료된 refresh token
       summary: 로그아웃
       tags:
       - Auth
@@ -192,7 +185,7 @@ paths:
       - Auth
   /api/auth/oauth/exchange:
     post:
-      description: OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 교환합니다.
+      description: OAuth 로그인 성공 후 발급된 1회용 code를 access token과 HttpOnly refresh 쿠키로 교환합니다.
       operationId: exchangeOAuthCode
       requestBody:
         content:
@@ -240,14 +233,15 @@ paths:
       - Auth
   /api/auth/refresh:
     post:
-      description: refresh token을 검증하고 access/refresh token을 새로 발급합니다. 기존 refresh token은 폐기됩니다.
+      description: HttpOnly refresh 쿠키를 검증하고 access token과 refresh 쿠키를 회전합니다.
       operationId: refresh
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RefreshRequest"
+      parameters:
+      - description: HttpOnly refresh token 쿠키
+        in: cookie
+        name: fruition_refresh_token
         required: true
+        schema:
+          type: string
       responses:
         "200":
           content:
@@ -726,10 +720,6 @@ components:
           format: int64
           description: access_token 유효 시간(초)
           example: 900
-        refresh_token:
-          type: string
-          description: 재발급용 opaque 토큰. refresh 호출마다 rotation되어 이전 토큰은 폐기된다.
-          example: EXAMPLE-refresh-token-not-a-real-value-0000
         token_type:
           type: string
           description: 인증 스킴. 항상 Bearer다.
@@ -787,16 +777,6 @@ components:
       - email
       - new_password
       - verification_token
-    RefreshRequest:
-      type: object
-      properties:
-        refresh_token:
-          type: string
-          description: 로그인 때 받은 refresh token. 재발급에 성공하면 폐기되고 새 토큰으로 교체된다.
-          example: EXAMPLE-refresh-token-not-a-real-value-0000
-          minLength: 1
-      required:
-      - refresh_token
     SignupRequest:
       type: object
       properties:

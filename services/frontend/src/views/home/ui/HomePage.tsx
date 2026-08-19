@@ -4,20 +4,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HomeWorkspace } from "@/widgets/workspace";
 import { fetchMe } from "@/entities/user";
-import { clearAuth, getAccessToken, getSelectedWorkspaceId } from "@/shared/lib/auth";
+import { clearAuth, getSelectedWorkspaceId } from "@/shared/lib/auth";
 import { LoadingOverlay } from "@/shared/ui/LoadingOverlay";
 
 export default function HomePage() {
   const router = useRouter();
   const [isReady, setIsReady] = useState(false);
 
-  // 임시 가드: 토큰 없으면 로그인, 워크스페이스 미선택이면 선택 화면으로 보낸다.
-  // 토큰이 있어도 서버 검증(fetchMe) 실패 시(만료·DB 초기화 등) 세션을 지우고 로그인으로 보낸다.
+  // access token은 메모리에만 있으므로 서버 검증 과정에서 HttpOnly refresh 쿠키로 복구한다.
   useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
-    }
     if (!getSelectedWorkspaceId()) {
       router.replace("/workspaces");
       return;
