@@ -400,13 +400,13 @@ class LangGraphWikiGenerationEvaluatorTest(unittest.TestCase):
                     "semantic_notes": [
                         {
                             "chunk_id": "chunk_0002",
-                            "key_points": [
-                                {"anchor_reference_ids": ["B0002"]},
-                            ],
+                            "semantic_summary": "근거가 누락된 패킷 의미",
                         }
                     ]
                 },
                 {"issues": [{"type": "semantic_coverage_gap", "target": ["chunk_0002"]}]},
+                ["B0001", "B0002"],
+                {"chunk_0002": ["B0002"]},
             ),
             ["B0002"],
         )

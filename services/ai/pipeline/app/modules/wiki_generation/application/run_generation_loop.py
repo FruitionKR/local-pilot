@@ -51,6 +51,7 @@ def generation_retry_block_ids(
     normalized: JsonDict,
     evaluation: GenerationEvaluation,
     source_block_ids: list[str] | None = None,
+    packet_block_ids: dict[str, list[str]] | None = None,
 ) -> list[str] | None:
     """모든 evaluator target을 source block으로 해석하며, None은 전체 재생성을 뜻합니다."""
     issues = evaluation.get("issues") or []
@@ -92,6 +93,8 @@ def generation_retry_block_ids(
                 and (valid_source_block_ids is None or target in valid_source_block_ids)
             ):
                 target_block_ids.append(target)
+            if issue.get("type") == "semantic_coverage_gap" and packet_block_ids:
+                target_block_ids.extend(packet_block_ids.get(target, []))
             for record in records:
                 if target not in _record_identifiers(record):
                     continue

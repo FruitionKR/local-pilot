@@ -109,6 +109,7 @@ class LangGraphWikiGenerationEvaluator:
         events: PipelineEventPort,
         evaluation_artifacts: EvaluationArtifactPort,
         source_block_ids: list[str] | None = None,
+        packet_block_ids: dict[str, list[str]] | None = None,
     ) -> None:
         self.semantic_generation = semantic_generation
         self.normalizer = normalizer
@@ -117,6 +118,7 @@ class LangGraphWikiGenerationEvaluator:
         self.events = events
         self.evaluation_artifacts = evaluation_artifacts
         self.source_block_ids = source_block_ids
+        self.packet_block_ids = packet_block_ids
         self.graph = self._build_graph().compile()
 
     def run(
@@ -257,6 +259,7 @@ class LangGraphWikiGenerationEvaluator:
             state["normalized"],
             state["evaluation"],
             self.source_block_ids,
+            self.packet_block_ids,
         )
         result: WikiGenerationEvaluatorState = {
             "attempt": state["attempt"] + 1,
