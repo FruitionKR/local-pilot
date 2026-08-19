@@ -1,7 +1,6 @@
 openapi: 3.1.0
 info:
   contact:
-    email: wonbb3313@gmail.com
     name: Fruition
   description: Fruition PoC 백엔드 API
   title: Fruition API
