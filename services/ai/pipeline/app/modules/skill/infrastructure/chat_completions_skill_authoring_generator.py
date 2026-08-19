@@ -128,7 +128,7 @@ def build_skill_authoring_generator(
             ChatClientConfig(
                 api_key=api_key,
                 model=resolved_model,
-                temperature=None,
+                temperature=None if resolved_provider == "claude" else 0.0,
                 timeout_seconds=int_env("SKILL_AUTHORING_LLM_TIMEOUT_SECONDS", 180),
                 max_tokens=None,
                 json_mode=True,
