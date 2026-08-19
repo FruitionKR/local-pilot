@@ -44,22 +44,14 @@ class UserServiceTest {
     }
 
     @Test
-    void checkEmailAvailability_oauthOnlyEmail_returnsTrue() {
-        // OAuth 계정만 있는 이메일은 local 계정이 없으므로 일반 회원가입이 가능하다.
-        // 조회가 local로 한정되는 것이 이 동작의 근거이므로 provider 인자까지 검증한다.
+    void checkEmailAvailability_noLocalAccount_returnsTrue() {
+        // local 계정이 없으면 가입 가능하다. OAuth 계정만 있는 이메일도 여기에 해당한다.
+        // 조회가 local로 한정되는 것이 그 동작의 근거이므로 provider 인자까지 검증한다.
         when(userRepository.existsByEmailAndProvider("oauth@example.com", User.PROVIDER_LOCAL)).thenReturn(false);
 
         assertThat(userService.checkEmailAvailability(new EmailAvailabilityRequest("oauth@example.com")).available())
                 .isTrue();
         verify(userRepository).existsByEmailAndProvider("oauth@example.com", User.PROVIDER_LOCAL);
-    }
-
-    @Test
-    void checkEmailAvailability_newEmail_returnsTrue() {
-        when(userRepository.existsByEmailAndProvider("new@example.com", User.PROVIDER_LOCAL)).thenReturn(false);
-
-        assertThat(userService.checkEmailAvailability(new EmailAvailabilityRequest("new@example.com")).available())
-                .isTrue();
     }
 
     @Test
