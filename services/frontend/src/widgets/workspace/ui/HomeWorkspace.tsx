@@ -13,6 +13,10 @@ import {
   publishNotice,
   requestWikiLint
 } from "@/features/document-notifications";
+import {
+  shouldRequestWikiLint,
+  WIKI_UP_TO_DATE_NOTICE
+} from "@/features/document-notifications/model/wikiLintStatus";
 import { railItems, type RailView } from "@/widgets/rail-navigation/ui/RailNavigation";
 import { UploadErrorModal } from "@/features/document-upload/ui/UploadErrorModal";
 import { DeleteConfirmModal } from "@/shared/ui/DeleteConfirmModal";
@@ -243,8 +247,8 @@ export function HomeWorkspace() {
     try {
       // 마지막 다듬기 이후 위키 변경이 있을 때만 실제 lint를 보낸다.
       const { needs_lint } = await fetchWikiMaintenanceStatus();
-      if (!needs_lint) {
-        publishNotice({ kind: "info", title: "Lint 요청", message: "수정 된 Wiki의 구성요소가 없습니다." });
+      if (!shouldRequestWikiLint(needs_lint)) {
+        publishNotice({ kind: "info", ...WIKI_UP_TO_DATE_NOTICE });
         return;
       }
       const { changedPageCount } = await requestWikiLint(false);
@@ -421,6 +425,10 @@ export function HomeWorkspace() {
             operationId={operationLogFeed.selectedOperationId}
             restoredOperationIds={operationLogFeed.restoredOperationIds}
             documentTitles={documentTitles}
+            onOpenTargetDocument={(documentId, title) => {
+              selection.openSourceBlockPreview(documentId, title, []);
+              setActiveView("home");
+            }}
             onRestoreComplete={operationLogFeed.refresh}
           />
         ) : activeView === "settings" ? (

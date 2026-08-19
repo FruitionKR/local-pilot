@@ -41,6 +41,10 @@ public record OperationLogDetailResponse(
                 example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")
         String targetDocumentId,
 
+        @JsonProperty("target_display_name")
+        @Schema(description = "작업 시작 시점의 대상 표시 이름")
+        String targetDisplayName,
+
         @Schema(description = "작업 요약")
         String summary,
 
@@ -74,7 +78,7 @@ public record OperationLogDetailResponse(
                                       int changedResourceCount, String restoredFrom,
                                       Instant createdAt, Instant completedAt,
                                       List<Change> changes) {
-        this(operationId, operationType, status, targetDocumentId, summary,
+        this(operationId, operationType, status, targetDocumentId, null, summary,
                 changedResourceCount, restoredFrom, createdAt, completedAt, changes, null);
     }
 
@@ -97,6 +101,10 @@ public record OperationLogDetailResponse(
             @JsonProperty("resource_id")
             @Schema(description = "바뀐 리소스 ID")
             String resourceId,
+
+            @JsonProperty("resource_display_name")
+            @Schema(description = "변경 시점의 리소스 표시 이름")
+            String resourceDisplayName,
 
             @JsonProperty("before_revision")
             @Schema(description = "손대기 직전 revision. 새로 만든 것이면 null이다.", example = "2")
@@ -133,6 +141,7 @@ public record OperationLogDetailResponse(
                     change.getId(),
                     change.getResourceType().name(),
                     change.getResourceId(),
+                    change.getResourceDisplayName(),
                     change.getBeforeRevision(),
                     change.getAfterRevision(),
                     change.getChangeType().name(),
@@ -311,6 +320,7 @@ public record OperationLogDetailResponse(
                 log.getOperationType().name(),
                 log.getStatus().name(),
                 log.getTargetDocumentId(),
+                log.getTargetDisplayName(),
                 log.getSummary(),
                 log.getChangedResourceCount(),
                 log.getRestoredFrom(),

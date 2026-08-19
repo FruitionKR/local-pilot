@@ -94,7 +94,7 @@ public class LintOperationApplier {
                 previous.map(WikiPageVersion::getMarkdown).orElse(null), revision, page.markdown());
         operationChangeRepository.save(new OperationChange(
                 operation.getOperationId(), ResourceType.wiki_page, pageId,
-                beforeRevision, revision,
+                wikiPage.title(), beforeRevision, revision,
                 beforeRevision == null ? ChangeType.created : ChangeType.updated,
                 null, lines.additions(), lines.deletions()));
     }

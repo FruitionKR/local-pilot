@@ -981,8 +981,11 @@ public class DocumentService {
     String enqueueIngest(Document document) {
         String runId = UUID.randomUUID().toString();
         String documentId = document.getId();
+        Instant startedAt = Instant.now();
+        document.markPipelineStarted(runId, startedAt);
         String operationId = ingestOperationStarter.start(
-                document.getWorkspaceId(), document.getUserId(), documentId);
+                document.getWorkspaceId(), document.getUserId(), documentId,
+                document.getDisplayName(), startedAt);
         ingestCommandOutbox.enqueue(
                 runId,
                 documentId,
@@ -991,12 +994,11 @@ public class DocumentService {
                 document.getSelectionMode(),
                 document.getPipelineInputMarkdown(),
                 document.getPipelineInputBlocks(),
-                "chat_export".equals(document.getOrigin()),
+                false,
                 operationId,
                 document.getCurrentVersion(),
                 document.getCurrentContentHash()
         );
-        document.markPipelineStarted(runId, Instant.now());
         log.info("[문서 처리 command 등록 완료] documentId={} runId={} operationId={}",
                 documentId, runId, operationId);
         return runId;

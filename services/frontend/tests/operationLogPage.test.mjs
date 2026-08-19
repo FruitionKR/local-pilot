@@ -7,7 +7,11 @@ import {
   groupOperationLogsByDate,
   pickSelectedOperationId
 } from "../src/entities/operation-log/model/operationLogPage.ts";
-import { OPERATION_TYPE_LABELS } from "../src/entities/operation-log/model/operationType.ts";
+import {
+  formatOperationLogTitle,
+  OPERATION_TYPE_LABELS
+} from "../src/entities/operation-log/model/operationType.ts";
+import { formatElapsedMinutes } from "../src/features/wiki-ingest/model/activeLintOperation.ts";
 
 function log(operationId, operationType = "document_edit") {
   return { operation_id: operationId, operation_type: operationType };
@@ -102,4 +106,23 @@ test("문서명과 작업 요약을 Figma 보조 문구로 조합한다", () => 
   );
   assert.equal(formatOperationLogDescription({ summary: "문서 편집" }), "문서 편집");
   assert.equal(formatOperationLogDescription({ summary: null }), "상세 정보 없음");
+});
+
+test("Ingest 로그 제목은 시작 시점의 문서 이름을 쓴다", () => {
+  assert.equal(
+    formatOperationLogTitle({ operation_type: "ingest", target_display_name: "회의록" }),
+    "회의록"
+  );
+  assert.equal(formatOperationLogTitle(log("op-lint", "lint")), "위키 다듬기");
+});
+
+test("실행 시작 시각으로 경과 분을 표시한다", () => {
+  assert.equal(
+    formatElapsedMinutes("2026-08-19T00:00:00Z", Date.parse("2026-08-19T00:00:59Z")),
+    "0분째 실행 중"
+  );
+  assert.equal(
+    formatElapsedMinutes("2026-08-19T00:00:00Z", Date.parse("2026-08-19T00:05:30Z")),
+    "5분째 실행 중"
+  );
 });

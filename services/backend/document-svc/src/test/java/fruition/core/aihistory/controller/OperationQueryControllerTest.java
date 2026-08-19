@@ -66,7 +66,7 @@ class OperationQueryControllerTest {
                 eq("2026-08-01T00:00:00Z"), eq(50)))
                 .thenReturn(new OperationLogListResponse(List.of(
                         new OperationLogListResponse.Item(OPERATION_ID, "ingest", "succeeded",
-                                "doc_A", "요약", 3, null, NOW, NOW)),
+                                "doc_A", "설계 문서", "요약", 3, null, NOW, NOW)),
                         "2026-07-31T00:00:00Z"));
 
         mockMvc.perform(get(BASE)
@@ -77,6 +77,7 @@ class OperationQueryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.logs[0].operation_id").value(OPERATION_ID))
                 .andExpect(jsonPath("$.logs[0].operation_type").value("ingest"))
+                .andExpect(jsonPath("$.logs[0].target_display_name").value("설계 문서"))
                 .andExpect(jsonPath("$.logs[0].changed_resource_count").value(3))
                 .andExpect(jsonPath("$.next_cursor").value("2026-07-31T00:00:00Z"));
     }
@@ -88,7 +89,7 @@ class OperationQueryControllerTest {
                 isNull(), eq(20)))
                 .thenReturn(new OperationLogListResponse(List.of(
                         new OperationLogListResponse.Item(OPERATION_ID, "lint", "succeeded",
-                                null, "Wiki lint로 페이지 2개를 변경했습니다.",
+                                null, "위키 다듬기", "Wiki lint로 페이지 2개를 변경했습니다.",
                                 2, null, NOW, NOW)), null));
 
         mockMvc.perform(get(BASE)
@@ -121,11 +122,12 @@ class OperationQueryControllerTest {
                 .thenReturn(new OperationLogDetailResponse(OPERATION_ID, "ingest", "succeeded",
                         "doc_A", "요약", 1, null, NOW, NOW,
                         List.of(new OperationLogDetailResponse.Change(1L, "wiki_page", "wp_C3",
-                                3L, 4L, "updated", null, 8, 1, List.of(), null))));
+                                "개념 C3", 3L, 4L, "updated", null, 8, 1, List.of(), null))));
 
         mockMvc.perform(get(BASE + "/" + OPERATION_ID).header("Authorization", bearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.changes[0].resource_id").value("wp_C3"))
+                .andExpect(jsonPath("$.changes[0].resource_display_name").value("개념 C3"))
                 .andExpect(jsonPath("$.changes[0].before_revision").value(3))
                 .andExpect(jsonPath("$.changes[0].change_type").value("updated"))
                 .andExpect(jsonPath("$.changes[0].hunks").isArray())
@@ -146,9 +148,9 @@ class OperationQueryControllerTest {
                         new OperationLogDetailResponse.RestoreResult(1, 0, 0, 0, 1, 0));
         when(queryService.detail(WORKSPACE_ID, USER_ID, OPERATION_ID))
                 .thenReturn(new OperationLogDetailResponse(OPERATION_ID, "restore", "rebuilding",
-                        "doc_A", "복구 중", 2, "op_a1", NOW, null,
+                        "doc_A", null, "복구 중", 2, "op_a1", NOW, null,
                         List.of(new OperationLogDetailResponse.Change(1L, "wiki_page", "wp_delete",
-                                3L, null, "deleted", null, null, null, null, null)), restore));
+                                null, 3L, null, "deleted", null, null, null, null, null)), restore));
 
         mockMvc.perform(get(BASE + "/" + OPERATION_ID).header("Authorization", bearer()))
                 .andExpect(status().isOk())

@@ -88,6 +88,7 @@ class LintOperationApplierTest {
         assertThat(changeCaptor.getValue().getBeforeRevision()).isEqualTo(3L);
         assertThat(changeCaptor.getValue().getAfterRevision()).isEqualTo(4L);
         assertThat(changeCaptor.getValue().getChangeType()).isEqualTo(ChangeType.updated);
+        assertThat(changeCaptor.getValue().getResourceDisplayName()).isEqualTo("제목");
         verify(contributionRepository, never()).save(any());
         assertThat(operation.getStatus().name()).isEqualTo("succeeded");
         assertThat(operation.getChangedResourceCount()).isEqualTo(1);

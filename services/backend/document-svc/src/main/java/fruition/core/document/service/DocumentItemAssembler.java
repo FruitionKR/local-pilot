@@ -55,6 +55,7 @@ public class DocumentItemAssembler {
                 doc.getExtractedTextUri(),
                 doc.getUploadedAt(),
                 doc.getProcessedAt(),
+                doc.getProcessingStartedAt(),
                 doc.getErrorMessage(),
                 doc.getPipelineRunId(),
                 resolveProcessingState(doc),

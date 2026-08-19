@@ -12,6 +12,7 @@ import { getErrorMessage } from "@/shared/lib/errors";
 
 /** 사이드바 목록 한 페이지 크기. 백엔드 기본은 20, 최대는 100이다. */
 const PAGE_SIZE = 30;
+const LOG_POLL_INTERVAL_MS = 5_000;
 
 /**
  * 로그 뷰의 작업 목록. 유형 조건 없이 최신순 한 페이지를 받고 가장 최근 작업을 자동으로 고른다.
@@ -28,10 +29,13 @@ export function useOperationLogFeed(isActive: boolean) {
   // 로그 뷰를 다시 열면 이전 요청의 응답을 버린다.
   const requestIdRef = useRef(0);
 
-  const refresh = useCallback(async (preferredOperationId?: string) => {
+  const refresh = useCallback(async (
+    preferredOperationId?: string,
+    options?: { silent?: boolean }
+  ) => {
     if (!isActive) return;
     const requestId = ++requestIdRef.current;
-    setIsLoading(true);
+    if (!options?.silent) setIsLoading(true);
     setErrorMessage(null);
     setLoadMoreErrorMessage(null);
     try {
@@ -48,7 +52,7 @@ export function useOperationLogFeed(isActive: boolean) {
         setErrorMessage(getErrorMessage(error, "로그를 불러오지 못했습니다."));
       }
     } finally {
-      if (requestIdRef.current === requestId) setIsLoading(false);
+      if (requestIdRef.current === requestId && !options?.silent) setIsLoading(false);
     }
   }, [isActive]);
 
@@ -61,6 +65,15 @@ export function useOperationLogFeed(isActive: boolean) {
       return;
     }
     void refresh();
+  }, [isActive, refresh]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    const intervalId = window.setInterval(
+      () => void refresh(undefined, { silent: true }),
+      LOG_POLL_INTERVAL_MS
+    );
+    return () => window.clearInterval(intervalId);
   }, [isActive, refresh]);
 
   const selectOperation = useCallback((operationId: string) => {

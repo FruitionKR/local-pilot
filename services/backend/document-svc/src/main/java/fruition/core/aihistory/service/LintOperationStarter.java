@@ -26,7 +26,8 @@ public class LintOperationStarter {
     public String start(String workspaceId, String userId) {
         String operationId = "op_" + randomSuffix();
         operationLogRepository.save(OperationLog.processing(
-                operationId, workspaceId, userId, OperationType.lint, null, Instant.now()));
+                operationId, workspaceId, userId, OperationType.lint, null,
+                "위키 다듬기", Instant.now()));
         return operationId;
     }
 
