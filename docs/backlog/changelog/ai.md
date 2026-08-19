@@ -835,8 +835,8 @@ LLM system prompt의 지시문은 영어로 유지하되, 모델이 생성해야
 
 **검증**
 
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_json_output_parser.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/chat_completions_llm.py app/modules/wiki_generation/infrastructure/json_output_parser.py tests/modules/wiki_generation/test_json_output_parser.py run_lab.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_json_output_parser.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/chat_completions_llm.py app/modules/wiki_generation/infrastructure/json_output_parser.py tests/modules/wiki_generation/test_json_output_parser.py run_lab.py` 통과.
 
 ### refactor: Query graph path helper 분리
 
@@ -852,8 +852,8 @@ LLM system prompt의 지시문은 영어로 유지하되, 모델이 생성해야
 
 **검증**
 
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/query/test_query_graph_paths.py tests/modules/query/test_answer_query.py` 통과.
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/query/application/answer_query.py app/modules/query/application/query_graph_paths.py tests/modules/query/test_query_graph_paths.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m pytest tests/modules/query/test_query_graph_paths.py tests/modules/query/test_answer_query.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m py_compile app/modules/query/application/answer_query.py app/modules/query/application/query_graph_paths.py tests/modules/query/test_query_graph_paths.py` 통과.
 
 ### refactor: Generated concept page assembler 분리
 
@@ -869,8 +869,8 @@ LLM system prompt의 지시문은 영어로 유지하되, 모델이 생성해야
 
 **검증**
 
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_source_extraction_artifact.py tests/modules/wiki_generation/test_ref_format.py` 통과.
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/assemble.py app/modules/wiki_generation/infrastructure/generated_concept_page_assembler.py tests/modules/wiki_generation/test_source_extraction_artifact.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_source_extraction_artifact.py tests/modules/wiki_generation/test_ref_format.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/assemble.py app/modules/wiki_generation/infrastructure/generated_concept_page_assembler.py tests/modules/wiki_generation/test_source_extraction_artifact.py` 통과.
 
 ### refactor: Concept section polish stage 분리
 
@@ -886,8 +886,8 @@ LLM system prompt의 지시문은 영어로 유지하되, 모델이 생성해야
 
 **검증**
 
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_wiki_generation_graph.py tests/modules/wiki_generation/test_section_polish_mapping.py` 통과.
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile run_lab.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_wiki_generation_graph.py tests/modules/wiki_generation/test_section_polish_mapping.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m py_compile run_lab.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
 
 ### refactor: Source page polish stage 분리
 
@@ -903,8 +903,8 @@ LLM system prompt의 지시문은 영어로 유지하되, 모델이 생성해야
 
 **검증**
 
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_wiki_generation_graph.py tests/modules/wiki_generation/test_section_polish_mapping.py` 통과.
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile run_lab.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_wiki_generation_graph.py tests/modules/wiki_generation/test_section_polish_mapping.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m py_compile run_lab.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
 
 ### refactor: Wiki persistence payload helper 분리
 
@@ -920,8 +920,8 @@ LLM system prompt의 지시문은 영어로 유지하되, 모델이 생성해야
 
 **검증**
 
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_ingestion/test_wiki_persistence_payload.py tests/modules/wiki_ingestion/test_concept_index.py tests/modules/wiki_ingestion/test_markdown_sections.py tests/modules/wiki_ingestion/test_promotion_concept_page.py` 통과.
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_ingestion/infrastructure/postgres_wiki_ingestion_repository.py app/modules/wiki_ingestion/infrastructure/wiki_persistence_payload.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m pytest tests/modules/wiki_ingestion/test_wiki_persistence_payload.py tests/modules/wiki_ingestion/test_concept_index.py tests/modules/wiki_ingestion/test_markdown_sections.py tests/modules/wiki_ingestion/test_promotion_concept_page.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m py_compile app/modules/wiki_ingestion/infrastructure/postgres_wiki_ingestion_repository.py app/modules/wiki_ingestion/infrastructure/wiki_persistence_payload.py` 통과.
 
 ### refactor: Query evidence text helper 분리
 
@@ -937,8 +937,8 @@ LLM system prompt의 지시문은 영어로 유지하되, 모델이 생성해야
 
 **검증**
 
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/query/test_evidence_text.py tests/modules/query/test_evidence_selector.py tests/modules/query/test_answer_query.py` 통과.
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/query/application/evidence_selector.py app/modules/query/application/evidence_text.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m pytest tests/modules/query/test_evidence_text.py tests/modules/query/test_evidence_selector.py tests/modules/query/test_answer_query.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m py_compile app/modules/query/application/evidence_selector.py app/modules/query/application/evidence_text.py` 통과.
 
 ### refactor: Meaning cluster artifact assembler 분리
 
@@ -953,8 +953,8 @@ LLM system prompt의 지시문은 영어로 유지하되, 모델이 생성해야
 
 **검증**
 
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_source_extraction_artifact.py tests/modules/wiki_generation/test_ref_format.py` 통과.
-- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/assemble.py app/modules/wiki_generation/infrastructure/meaning_cluster_artifact.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_source_extraction_artifact.py tests/modules/wiki_generation/test_ref_format.py` 통과.
+- `services/ai/pipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/assemble.py app/modules/wiki_generation/infrastructure/meaning_cluster_artifact.py` 통과.
 
 ### refactor: Wiki generation section polish mapping 분리
 
@@ -1346,7 +1346,7 @@ Query evaluator loop가 `AnswerQueryUseCase` 내부에서 직접 LangGraph를 �
 - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.query.test_answer_query` 통과.
 - `test_source_extraction_artifact` 직접 호출 검증 통과.
 - 관련 `llmPipeline` Python 파일 `py_compile` 통과.
-- 실험 run `/Users/jaehyeong/chat-wiki-source-lab/runs/chat-source-multiturn-context-repair-agent`에서 observation repair 후 evaluator `passed=true`, `overall=0.95` 확인.
+- 실험 run `<chat-wiki-source-lab>/runs/chat-source-multiturn-context-repair-agent`에서 observation repair 후 evaluator `passed=true`, `overall=0.95` 확인.
 
 ### fix: query citation 번호를 실제 사용 근거 기준으로 재정렬
 
