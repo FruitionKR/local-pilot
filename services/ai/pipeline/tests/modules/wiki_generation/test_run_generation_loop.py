@@ -393,6 +393,41 @@ class LangGraphWikiGenerationEvaluatorTest(unittest.TestCase):
             ["B0002", "B0003"],
         )
 
+    def test_resolves_packet_completeness_target_to_packet_anchors(self) -> None:
+        self.assertEqual(
+            generation_retry_block_ids(
+                {
+                    "semantic_notes": [
+                        {
+                            "chunk_id": "chunk_0002",
+                            "key_points": [
+                                {"anchor_reference_ids": ["B0002"]},
+                            ],
+                        }
+                    ]
+                },
+                {"issues": [{"type": "semantic_coverage_gap", "target": ["chunk_0002"]}]},
+            ),
+            ["B0002"],
+        )
+
+    def test_filters_untrusted_refs_from_targeted_retry(self) -> None:
+        self.assertEqual(
+            generation_retry_block_ids(
+                {
+                    "concept_ledger": [
+                        {
+                            "slug": "target-concept",
+                            "anchor_reference_ids": ["B9999", "B0002"],
+                        }
+                    ]
+                },
+                {"issues": [{"target": ["target-concept"]}]},
+                ["B0001", "B0002"],
+            ),
+            ["B0002"],
+        )
+
     def test_falls_back_to_full_regeneration_for_unresolved_target(self) -> None:
         self.assertIsNone(
             generation_retry_block_ids(

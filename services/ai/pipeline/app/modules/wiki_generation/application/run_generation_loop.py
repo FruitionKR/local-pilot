@@ -64,6 +64,7 @@ def generation_retry_block_ids(
         *normalized.get("section_candidates", []),
         *normalized.get("mentions", []),
         *normalized.get("categories", []),
+        *normalized.get("semantic_notes", []),
     ]
     evidence_by_id = {
         str(item.get("evidence_id")): item
@@ -97,6 +98,11 @@ def generation_retry_block_ids(
                 target_block_ids.extend(_record_anchor_ids(record))
                 for evidence_id in record.get("evidence_claim_ids", []) or []:
                     target_block_ids.extend(_record_anchor_ids(evidence_by_id.get(str(evidence_id), {})))
+            target_block_ids = [
+                block_id
+                for block_id in target_block_ids
+                if valid_source_block_ids is None or block_id in valid_source_block_ids
+            ]
             if not target_block_ids:
                 return None
             resolved.extend(target_block_ids)
