@@ -128,7 +128,8 @@ public class AgentTurnService {
                         selectedModel.provider(), selectedModel.model(), request.allowWebSearch(),
                         request.skillMode(), request.skillId(),
                         CommandConversationContext.from(request.conversationContext(),
-                                chatConversationReader.read(request.sessionId(), selectedPairIds(request))),
+                                chatConversationReader.read(request.sessionId(), selectedPairIds(request)),
+                                runIdHint -> canonicalAgentRoute(workspaceId, userId, runIdHint)),
                         skillDraftSources,
                         request.skillDraftUserDirectives(), request.skillDraftExcludedLiterals(),
                         request.skillScopeType(),
@@ -149,6 +150,18 @@ public class AgentTurnService {
             return List.of();
         }
         return request.conversationContext().selectedPairIds();
+    }
+
+    /** 저장된 완료 결과의 route만 이전 턴 힌트로 사용한다. */
+    private JsonNode canonicalAgentRoute(String workspaceId, String userId, String runId) {
+        if (runId == null) return null;
+        return runRepository.find(workspaceId, userId, runId)
+                .filter(run -> "ready".equals(run.status()) || "consumed".equals(run.status()))
+                .map(AgentRunCommandRepository.RunView::result)
+                .filter(result -> result != null && result.isObject())
+                .map(result -> result.get("route"))
+                .filter(route -> route != null && route.isObject())
+                .orElse(null);
     }
 
     /**
@@ -344,19 +357,29 @@ public class AgentTurnService {
     ) {
         /** 대화 내용은 서버가 읽은 것을 쓰고, 참조·Skill 제안은 클라이언트 상태를 그대로 옮긴다. */
         static CommandConversationContext from(AgentTurnRequest.ConversationContext context,
-                                               ChatConversationReader.Conversation conversation) {
+                                               ChatConversationReader.Conversation conversation,
+                                               java.util.function.Function<String, JsonNode> routeResolver) {
             return new CommandConversationContext(
                     conversation.summary(),
                     conversation.recentMessages().stream()
                             .map(message -> new CommandConversationMessage(
-                                    message.role(), message.content(), message.action()))
+                                    message.role(), message.content(), message.action(), message.runId(),
+                                    "assistant".equals(message.role())
+                                            ? routeResolver.apply(message.runId())
+                                            : null))
                             .toList(),
                     context == null ? null : context.referenceContext(),
                     context == null ? null : CommandPendingSkillProposal.from(context.pendingSkillProposal()));
         }
     }
 
-    record CommandConversationMessage(String role, String content, String action) {}
+    record CommandConversationMessage(
+            String role,
+            String content,
+            String action,
+            @com.fasterxml.jackson.annotation.JsonProperty("run_id") String runId,
+            @com.fasterxml.jackson.annotation.JsonProperty("agent_route") JsonNode agentRoute
+    ) {}
 
     record CommandPendingSkillProposal(
             @com.fasterxml.jackson.annotation.JsonProperty("scope_type") String scopeType,
