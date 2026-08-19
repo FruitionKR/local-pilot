@@ -264,7 +264,7 @@ class WikiGenerationPipelineTest(unittest.TestCase):
                         api_client=SimpleNamespace(),
                         semantic_system_prompt="기본 semantic prompt",
                         wiki_evaluator_system_prompt="evaluator prompt",
-                        packets=[SimpleNamespace(chunk_id="chunk-1")],
+                        packets=[SimpleNamespace(chunk_id="chunk-1", block_ids=["B0001"])],
                         raw_dir=None,
                         log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
                         normalizer=FakeNormalizer(),
