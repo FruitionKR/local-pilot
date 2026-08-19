@@ -42,12 +42,19 @@ def route_response(action: str = "markdown_edit") -> dict[str, object]:
         "markdown_create": "create_from_chat",
         "markdown_edit": "cleanup",
     }.get(action)
+    required_capabilities = {
+        "markdown_create": ["document-create"],
+        "markdown_edit": ["document-edit"],
+        "folder_organize": ["folder-organize"],
+        "workspace_workflow": ["folder-organize"],
+    }.get(action, [])
     return {
         "action": action,
         "confidence": 0.9,
         "retrieval_source": retrieval_source,
         "document_operation": document_operation,
         "persist": persist,
+        "required_capabilities": required_capabilities,
         "edit_goal": edit_goal,
         "reason": "Markdown cleanup request",
     }
@@ -108,6 +115,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             retrieval_source="web",
             document_operation="create",
             persist=True,
+            required_capabilities=["document-create"],
             edit_goal="create_from_chat",
         )
         client = SequenceJsonClient([response])
@@ -126,9 +134,34 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertTrue(route.persist)
         self.assertEqual(len(client.calls), 1)
 
+    def test_routes_document_edit_and_folder_move_as_one_composite_workflow(self) -> None:
+        response = route_response("workspace_workflow")
+        response.update(
+            document_operation="edit",
+            required_capabilities=["folder-organize", "document-edit"],
+            edit_goal="shorten",
+        )
+        client = SequenceJsonClient([response])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(message="현재 문서를 요약한 뒤 보관 폴더로 옮겨 저장해줘")
+        )
+
+        self.assertEqual(route.action, "workspace_workflow")
+        self.assertEqual(
+            route.required_capabilities,
+            ("document-edit", "folder-organize"),
+        )
+
     def test_retries_structurally_inconsistent_route_without_changing_its_meaning(self) -> None:
         inconsistent = route_response("workspace_workflow")
-        inconsistent.update(document_operation="create", persist=False, edit_goal="create_from_chat")
+        inconsistent.update(
+            document_operation="create",
+            persist=False,
+            required_capabilities=["document-create"],
+            edit_goal="create_from_chat",
+        )
         corrected = {**inconsistent, "persist": True}
         client = SequenceJsonClient([inconsistent, corrected])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
@@ -144,7 +177,12 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
     def test_rejects_repeated_structural_inconsistency(self) -> None:
         inconsistent = route_response("workspace_workflow")
-        inconsistent.update(document_operation="create", persist=False, edit_goal="create_from_chat")
+        inconsistent.update(
+            document_operation="create",
+            persist=False,
+            required_capabilities=["document-create"],
+            edit_goal="create_from_chat",
+        )
         client = SequenceJsonClient([inconsistent, inconsistent])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
 
@@ -526,6 +564,9 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             "retrieval_source": "retrieval_source must be none, workspace, or web",
             "document_operation": "document_operation must be none, create, or edit",
             "persist": "persist must be a boolean",
+            "required_capabilities": (
+                "required_capabilities must be an array of unique supported capabilities"
+            ),
             "edit_goal": "edit_goal is required",
             "reason": "reason must be a non-empty string",
         }
@@ -589,7 +630,8 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertIn("concrete personal data", prompt)
         self.assertIn("conversation_reply", prompt)
         self.assertIn("previous action is only a hint", prompt)
-        self.assertIn("three independent fields", prompt)
+        self.assertIn("four independent fields", prompt)
+        self.assertIn("covers every required capability", prompt)
         self.assertIn("never rewrites their meaning", prompt)
 
 if __name__ == "__main__":

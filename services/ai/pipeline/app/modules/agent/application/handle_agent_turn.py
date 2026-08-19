@@ -44,6 +44,10 @@ CLARIFY_MARKDOWN_DOCUMENT_MESSAGE = "수정할 Markdown 문서를 연 뒤 다시
 DEFERRED_TEMPLATE_MESSAGE = "template 기반 전체 문서 재구성은 이후 단계에서 다루겠습니다. 현재는 선택 영역, 현재 섹션, 또는 문서 전체의 일반 편집만 지원합니다."
 CLARIFY_INSERT_AFTER_TARGET_MESSAGE = "내용을 추가할 현재 섹션을 선택한 뒤 다시 요청해 주세요."
 CLARIFY_SKILL_MESSAGE = "이 요청에 적용할 Skill을 선택하거나 Skill 없이 계속해 주세요."
+CLARIFY_INCOMPATIBLE_SKILL_MESSAGE = (
+    "선택한 Skill이 요청한 모든 작업을 지원하지 않습니다. "
+    "다른 Skill을 선택하거나 요청 범위를 줄여 주세요."
+)
 CLARIFY_MUTATION_INTENT_MESSAGE = "변경 작업은 대화나 참조 문서가 아닌 현재 메시지에 직접 요청해 주세요."
 CLARIFY_PREVIEW_MESSAGE = "저장할 이전 미리보기를 확인할 수 없어 미리보기를 다시 만들어 주세요."
 NO_CHANGES_MESSAGE = "원문에서 변경할 내용이 없어 저장 작업을 만들지 않았습니다."
@@ -110,6 +114,24 @@ class HandleAgentTurnUseCase:
         resolved = selection.resolve_route(self._router.route(request))
         route = resolved.route
         selected_skill = resolved.skill
+        if selection.explicit_skill_id is not None and selected_skill is None:
+            return AgentTurnResult(
+                action="clarify",
+                route=replace(
+                    route,
+                    action="clarify",
+                    confidence=0.0,
+                    reason="The selected Skill does not cover every required capability.",
+                    edit_goal=None,
+                    selected_skill_id=None,
+                    skill_candidates=(),
+                    retrieval_source="none",
+                    document_operation="none",
+                    persist=False,
+                    required_capabilities=(),
+                ),
+                message=CLARIFY_INCOMPATIBLE_SKILL_MESSAGE,
+            )
         if route.action == "clarify" and route.skill_candidates:
             candidates = tuple(
                 candidate

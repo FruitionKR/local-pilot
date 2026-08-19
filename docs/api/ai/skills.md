@@ -24,6 +24,9 @@ Skill 조회·작성·게시·설정 내부 API다. 공개 Gateway 계약은
 
 실행 결과 기반 초안 API는 `AGENT_SKILLS_ENABLED=true`, 나머지 8개 API는
 `SKILL_API_ENABLED=true`일 때 노출된다. 모두 `X-Agent-Service-Token`으로 보호한다.
+Skill 작성 분류는 완성된 동작에 필요한 capability를 모두 반환하며, 서버가 각 capability의
+canonical Tool 집합을 합쳐 `allowed_tools`를 확정한다. 따라서 문서 편집 후 이동처럼 복합적인
+Skill은 `document-edit`와 `folder-organize`를 함께 가지며 어느 한쪽 권한만으로 축약되지 않는다.
 
 ## 한눈에 보기
 

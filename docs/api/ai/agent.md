@@ -133,8 +133,11 @@ Agent 실행 계획에는 별도의 권한·tool·승인 검사를 계속 적용
 `source_markdown_sha256`까지 일치해야 한다. 일치하는 실행을 확인할 수 없으면 새 승인 작업을 만들지 않고
 미리보기를 다시 요청한다.
 복합 요청은 `retrieval_source`(`none|workspace|web`),
-`document_operation`(`none|create|edit`), `persist`로 분해한 뒤 전체 조합을 대표하는 action을
-선택한다. 서버는 이 의미를 문장 패턴으로 덮어쓰지 않고, action과 필드 조합이 모순될 때만
+`document_operation`(`none|create|edit`), `persist`, `required_capabilities`로 분해한 뒤 전체 조합을
+대표하는 action을 선택한다. `required_capabilities`는 요청의 모든 절에 필요한
+`document-create|document-edit|folder-organize|template`을 담는다. 서버는 일부 capability만 가진
+Skill을 선택하지 않으며, 선택된 Skill의 capability별 확정 Tool 권한을 합쳐 planner에 전달한다.
+서버는 이 의미를 문장 패턴으로 덮어쓰지 않고, action과 필드 조합이 모순될 때만
 LLM에 한 번 재요청한다. 두 번째 응답도 계약을 만족하지 못하면 HTTP 422로 종료한다.
 응답 action은 내부 문서 근거 조회인 `chat_answer`, 대화 맥락만으로 작성·형식을 이어가는
 `conversation_reply`, 열린 Markdown을 변경하는 `markdown_edit`를 구분한다.
@@ -172,7 +175,8 @@ Markdown 편집 미리보기 응답 예시:
     "skill_candidates": [],
     "retrieval_source": "workspace",
     "document_operation": "edit",
-    "persist": false
+    "persist": false,
+    "required_capabilities": ["document-edit"]
   },
   "updated_conversation_summary": null,
   "message": null,
@@ -266,7 +270,8 @@ curl -X POST "$PIPELINE/agent/turn" \
     "skill_candidates": [],
     "retrieval_source": "workspace",
     "document_operation": "edit",
-    "persist": true
+    "persist": true,
+    "required_capabilities": ["document-edit"]
   },
   "updated_conversation_summary": null,
   "message": null,
