@@ -31,6 +31,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 
 @Service
 public class AuthService {
@@ -139,11 +140,17 @@ public class AuthService {
         // 반면 아무 계정도 없는 경우는 계정 존재 여부를 노출하지 않도록 토큰 오류로 유지한다.
         var localAccount = userRepository.findByEmailAndProvider(email, User.PROVIDER_LOCAL);
         if (localAccount.isEmpty()) {
-            var sameEmailAccounts = userRepository.findAllByEmail(email);
-            if (sameEmailAccounts.isEmpty()) {
+            // 같은 이메일에 여러 provider 계정이 있을 수 있다. 하나만 고르면 사용자가 실제로
+            // 쓰는 수단을 못 짚을 수 있으므로 전부 알린다.
+            List<String> providers = userRepository.findAllByEmail(email).stream()
+                    .map(User::getProvider)
+                    .distinct()
+                    .sorted()
+                    .toList();
+            if (providers.isEmpty()) {
                 throw new InvalidVerificationTokenException();
             }
-            throw new PasswordLoginUnavailableException(sameEmailAccounts.get(0).getProvider());
+            throw new PasswordLoginUnavailableException(providers);
         }
         User user = localAccount.get();
 

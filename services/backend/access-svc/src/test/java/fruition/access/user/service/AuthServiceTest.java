@@ -153,6 +153,21 @@ class AuthServiceTest {
     }
 
     @Test
+    void resetPassword_multipleOauthAccounts_listsEveryProvider() {
+        // 하나만 고르면 사용자가 실제로 쓰는 수단을 못 짚을 수 있다.
+        when(userRepository.findByEmailAndProvider("oauth@example.com", User.PROVIDER_LOCAL))
+                .thenReturn(Optional.empty());
+        when(userRepository.findAllByEmail("oauth@example.com")).thenReturn(List.of(
+                new User("user_naver1", "oauth@example.com", "naver", "네이버 사용자", null),
+                new User("user_google1", "oauth@example.com", "google", "구글 사용자", null)));
+
+        assertThatThrownBy(() -> authService.resetPassword(
+                new PasswordResetRequest("oauth@example.com", "new-password123", "vtoken")))
+                .isInstanceOf(PasswordLoginUnavailableException.class)
+                .hasMessageContaining("google, naver");
+    }
+
+    @Test
     void resetPassword_invalidToken_propagatesTokenError() {
         doThrow(new InvalidVerificationTokenException())
                 .when(emailVerificationService).consumeForPasswordReset("test@example.com", "bad-token");
