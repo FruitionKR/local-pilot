@@ -131,8 +131,7 @@ class AuthorSkillUseCase:
                         question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
                     )
                 raise ValueError("Skill request could not be classified.")
-            capability, reference_mode, allowed_tools = intent
-            capabilities: tuple[SkillCapability, ...] = (capability,)
+            capabilities, reference_mode, allowed_tools = intent
         else:
             reference_mode = "none"
             allowed_tools = preserved_allowed_tools or ()
@@ -177,8 +176,7 @@ class AuthorSkillUseCase:
                         question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
                     )
                 raise ValueError("Skill request could not be classified.")
-            capability, reference_mode, allowed_tools = intent
-            capabilities = (capability,)
+            capabilities, reference_mode, allowed_tools = intent
             candidate = self._generator.generate(
                 instruction,
                 references,
@@ -558,7 +556,7 @@ def _classify_intent(
     instruction: str,
     references: tuple[SkillAuthoringReference, ...],
     description: str | None,
-) -> tuple[SkillCapability, str, tuple[SkillTool, ...]] | None:
+) -> tuple[tuple[SkillCapability, ...], str, tuple[SkillTool, ...]] | None:
     classification = _intent_result(
         generator.classify(
             instruction,
@@ -571,30 +569,45 @@ def _classify_intent(
         raise ValueError("Skill request does not map to a supported Agent action.")
     if classification[0] != "supported":
         return None
-    capability = classification[1]
-    assert capability is not None
-    return capability, classification[2], tuple(sorted(CAPABILITY_TOOLS[capability]))
+    capabilities = classification[1]
+    assert capabilities is not None
+    allowed_tools = tuple(
+        sorted(
+            {
+                tool
+                for capability in capabilities
+                for tool in CAPABILITY_TOOLS[capability]
+            }
+        )
+    )
+    return capabilities, classification[2], allowed_tools
 
 
 def _intent_result(
     value: dict[str, object],
     has_references: bool,
-) -> tuple[str, SkillCapability | None, str]:
+) -> tuple[str, tuple[SkillCapability, ...] | None, str]:
     decision = value.get("decision")
     if decision not in {"supported", "unsupported", "ambiguous"}:
         raise ValueError("Skill intent result contains an invalid decision.")
     reference_mode = _reference_mode(value.get("reference_mode"), has_references)
     if decision != "supported":
-        if value.get("skill_kind") is not None:
-            raise ValueError("Unsupported or ambiguous Skill intent must not select a skill kind.")
+        if value.get("skill_kinds") != []:
+            raise ValueError("Unsupported or ambiguous Skill intent must not select skill kinds.")
         return cast(str, decision), None, reference_mode
-    skill_kind = value.get("skill_kind")
-    if not isinstance(skill_kind, str) or skill_kind not in CAPABILITY_TOOLS:
-        raise ValueError("Skill intent result requires a supported skill_kind.")
-    if reference_mode == "fixed-template" and skill_kind != "template":
+    skill_kinds = value.get("skill_kinds")
+    if (
+        not isinstance(skill_kinds, list)
+        or not skill_kinds
+        or not all(isinstance(skill_kind, str) for skill_kind in skill_kinds)
+        or any(skill_kind not in CAPABILITY_TOOLS for skill_kind in cast(list[str], skill_kinds))
+        or len(set(cast(list[str], skill_kinds))) != len(skill_kinds)
+    ):
+        raise ValueError("Skill intent result requires unique supported skill_kinds.")
+    capabilities = tuple(sorted(cast(list[SkillCapability], skill_kinds)))
+    if reference_mode == "fixed-template" and "template" not in capabilities:
         raise ValueError("Fixed reference templates require the template skill kind.")
-    capability = cast(SkillCapability, skill_kind)
-    return "supported", capability, reference_mode
+    return "supported", capabilities, reference_mode
 
 
 def _reference_mode(value: object, has_references: bool) -> str:

@@ -139,6 +139,7 @@ class PlanGeneratorTest(unittest.TestCase):
         )
         self.assertIn("Operation sequence numbers are 1-based", prompt)
         self.assertIn("For create_folder and create_document, target_id and base_version must both be null.", prompt)
+        self.assertIn('"field":"current_version"', prompt)
 
     def test_rejects_more_than_twenty_operations(self) -> None:
         candidate = {
@@ -242,7 +243,7 @@ class PlanGeneratorTest(unittest.TestCase):
             {"plan-1", "folder-1", "document-1", "artifact-1", "sha256:abc"},
         )
 
-        with self.assertRaisesRegex(ValueError, "trusted context"):
+        with self.assertRaisesRegex(ValueError, "trusted mutation scope"):
             generator.generate(
                 run_id="run-2",
                 plan_id="plan-2",
@@ -259,6 +260,99 @@ class PlanGeneratorTest(unittest.TestCase):
                 skill_instructions=None,
                 allowed_tools=("apply_document_edit",),
             )
+
+    def test_selected_composite_skill_can_edit_then_move_the_same_document(self) -> None:
+        client = CapturingClient()
+
+        def complete_json(
+            _system_prompt: str,
+            user_prompt: str,
+            **_kwargs: object,
+        ) -> dict[str, object]:
+            client.payload = json.loads(user_prompt)
+            return {
+                "summary": "문서를 편집한 뒤 보관 폴더로 이동합니다.",
+                "operations": [
+                    {
+                        "tool_name": "apply_document_edit",
+                        "target_type": "document",
+                        "target_id": "document-1",
+                        "base_version": 3,
+                        "source_parent_id": "folder-1",
+                        "destination_parent_id": "folder-1",
+                        "arguments": {
+                            "document_id": "document-1",
+                            "base_version": 3,
+                            "target": {
+                                "type": "whole_document",
+                                "start_line": 1,
+                                "end_line": 10,
+                            },
+                            "content_artifact_id": "artifact-1",
+                            "content_hash": "sha256:abc",
+                        },
+                        "reason": "본문을 요약합니다.",
+                        "depends_on": [],
+                    },
+                    {
+                        "tool_name": "move_document",
+                        "target_type": "document",
+                        "target_id": "document-1",
+                        "base_version": 3,
+                        "source_parent_id": "folder-1",
+                        "destination_parent_id": "folder-2",
+                        "arguments": {
+                            "document_id": "document-1",
+                            "folder_id": "folder-2",
+                            "position": None,
+                            "base_version": {
+                                "$operation_result": "plan-1-op-1",
+                                "field": "current_version",
+                            },
+                        },
+                        "reason": "편집한 문서를 보관 폴더로 옮깁니다.",
+                        "depends_on": [1],
+                    },
+                ],
+            }
+
+        client.complete_json = complete_json  # type: ignore[method-assign]
+        generator = ChatCompletionsPlanGenerator(client, "system")  # type: ignore[arg-type]
+
+        plan = generator.generate(
+            run_id="run-1",
+            plan_id="plan-1",
+            version=1,
+            instruction="현재 문서를 요약한 뒤 보관 폴더로 옮겨줘",
+            hierarchy=[
+                {"id": "folder-1", "type": "folder", "current_version": 1},
+                {"id": "folder-2", "type": "folder", "current_version": 1},
+                {
+                    "id": "document-1",
+                    "type": "document",
+                    "current_version": 3,
+                    "parent_id": "folder-1",
+                },
+            ],
+            skill_instructions="본문을 요약한 뒤 보관 폴더로 이동한다.",
+            allowed_tools=("apply_document_edit", "move_document"),
+            content_artifacts=(
+                ContentArtifactReference(
+                    id="artifact-1",
+                    content_hash="sha256:abc",
+                    purpose="apply_document_edit",
+                    document_id="document-1",
+                    base_version=3,
+                    target={"type": "whole_document", "start_line": 1, "end_line": 10},
+                ),
+            ),
+        )
+
+        self.assertEqual(
+            client.payload["allowed_tools"],
+            ["apply_document_edit", "move_document"],
+        )
+        self.assertEqual(plan.operations[1].depends_on, ("plan-1-op-1",))
 
     def test_accepts_registered_create_artifact_with_strict_plan(self) -> None:
         client = CapturingClient()

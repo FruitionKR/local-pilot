@@ -166,6 +166,46 @@ class SkillSelectionTest(unittest.TestCase):
 
                 self.assertEqual(resolved.skill, template_skill)
 
+    def test_composite_route_requires_every_skill_capability(self) -> None:
+        folder_skill = enabled_skill()
+        assert folder_skill.enabled_version is not None
+        composite_version = SkillVersion(
+            **{
+                **folder_skill.enabled_version.__dict__,
+                "capabilities": ("document-edit", "folder-organize"),
+            }
+        )
+        composite_skill = Skill(
+            **{**folder_skill.__dict__, "enabled_version": composite_version}
+        )
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.9,
+            reason="edit and move",
+            document_operation="edit",
+            persist=True,
+            required_capabilities=("document-edit", "folder-organize"),
+            selected_skill_id="skill-1",
+        )
+
+        partial = SelectSkillUseCase(InMemorySkillRepository([folder_skill])).prepare(
+            AgentTurnRequest(
+                message="문서를 요약한 뒤 옮겨줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            )
+        )
+        complete = SelectSkillUseCase(InMemorySkillRepository([composite_skill])).prepare(
+            AgentTurnRequest(
+                message="문서를 요약한 뒤 옮겨줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            )
+        )
+
+        self.assertIsNone(partial.resolve_route(route).skill)
+        self.assertEqual(complete.resolve_route(route).skill, composite_skill)
+
     def test_off_mode_has_no_candidates(self) -> None:
         use_case = SelectSkillUseCase(InMemorySkillRepository([enabled_skill()]))  # type: ignore[arg-type]
 

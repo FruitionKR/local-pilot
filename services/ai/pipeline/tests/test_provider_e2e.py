@@ -34,6 +34,7 @@ class _Client:
                 "retrieval_source": "workspace",
                 "document_operation": "none",
                 "persist": False,
+                "required_capabilities": [],
                 "reason": "질문 응답",
                 "edit_goal": None,
             }

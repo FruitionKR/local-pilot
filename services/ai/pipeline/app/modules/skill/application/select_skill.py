@@ -28,7 +28,7 @@ class PreparedSkillSelection:
 
         selected_skill_id = self.explicit_skill_id or route.selected_skill_id
         selected = next((skill for skill in self.skills if skill.id == selected_skill_id), None)
-        if selected is None or not _supports_action(selected, route.action):
+        if selected is None or not _supports_route(selected, route):
             return ResolvedSkillRoute(route=replace(route, selected_skill_id=None), skill=None)
         return ResolvedSkillRoute(route=replace(route, selected_skill_id=selected.id), skill=selected)
 
@@ -103,10 +103,16 @@ def _to_candidate(skill: Skill) -> SkillCandidate:
     )
 
 
-def _supports_action(skill: Skill, action: str) -> bool:
+def _supports_route(skill: Skill, route: AgentTurnRoute) -> bool:
     version = skill.enabled_version
     if version is None:
         return False
+    supported_capabilities = set(version.capabilities)
+    if "template" in supported_capabilities:
+        supported_capabilities.update({"document-create", "document-edit"})
+    if not set(route.required_capabilities).issubset(supported_capabilities):
+        return False
+    action = route.action
     if action in {"markdown_create", "markdown_edit"} and "template" in version.capabilities:
         return True
     if action == "workspace_workflow":

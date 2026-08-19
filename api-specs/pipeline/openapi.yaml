@@ -734,6 +734,16 @@ components:
         reason:
           title: Reason
           type: string
+        required_capabilities:
+          items:
+            enum:
+            - document-create
+            - document-edit
+            - folder-organize
+            - template
+            type: string
+          title: Required Capabilities
+          type: array
         retrieval_source:
           enum:
           - none

@@ -200,6 +200,9 @@ class AgentTurnRouteResponse(BaseModel):
     retrieval_source: Literal["none", "workspace", "web"]
     document_operation: Literal["none", "create", "edit"]
     persist: bool
+    required_capabilities: list[
+        Literal["document-create", "document-edit", "folder-organize", "template"]
+    ] = Field(default_factory=list)
 
 
 class SkillCandidateResponse(BaseModel):
