@@ -62,11 +62,15 @@ services/ai/pipeline/.langgraph_api/
 /tmp/
 /paddle_cache/
 
-# Playwright MCP test artifacts (스크린샷/스냅샷)
-.playwright-mcp/
+# Playwright 실행 산출물 (스크린샷/스냅샷/리포트/trace)
+**/.playwright/
 **/.playwright-mcp/
+**/.playwright-cli/
+**/playwright-report/
+**/blob-report/
+**/test-results/
+**/output/playwright/
 /*.png
-output/playwright/
 
 # Terraform 로컬 캐시 (lock 파일은 커밋 대상)
 infra/terraform/.terraform/

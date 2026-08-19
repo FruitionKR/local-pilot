@@ -104,9 +104,8 @@ public class AuthService {
 
     @Transactional
     public void logout(RefreshRequest request) {
-        UserRefreshToken tokenRow = refreshTokenRepository.findByTokenHash(sha256(request.refreshToken()))
-                .orElseThrow(InvalidRefreshTokenException::new);
-        tokenRow.revoke();
+        refreshTokenRepository.findByTokenHash(sha256(request.refreshToken()))
+                .ifPresent(UserRefreshToken::revoke);
     }
 
     @Transactional

@@ -757,22 +757,6 @@
   text-overflow: ellipsis;
 }
 
-.tree-status {
-  flex: 0 0 auto;
-  min-width: 16px;
-  min-height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 5px;
-  color: #a7a7a7;
-  background: #323232;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
 .tree-drop-hint {
   flex: 0 0 auto;
   padding: 2px 6px;
@@ -782,55 +766,6 @@
   font-size: 9px;
   font-weight: 800;
   line-height: 1.2;
-}
-
-/* 처리 진행 뱃지 공통 형태 */
-.tree-status.processing,
-.tree-status.stalled,
-.tree-status.failed {
-  border-radius: 5px;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-/* 커스텀 툴팁: hover 0.2초 후 body로 portal 렌더(사이드바 overflow 클리핑 회피).
-   좌표(left/top)는 뱃지 rect 기준으로 JS에서 inline 지정, 여기서 뱃지 위 중앙으로 올린다. */
-.tree-tooltip {
-  position: fixed;
-  transform: translate(-50%, -100%);
-  z-index: 1000;
-  width: max-content;
-  max-width: 220px;
-  padding: 5px 8px;
-  color: #e6e6e6;
-  background: #1c1c1c;
-  border: 1px solid #333;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.35;
-  white-space: pre-line;
-  text-align: center;
-  pointer-events: none;
-}
-
-/* 처리 중: 노란 톤 */
-.tree-status.processing {
-  color: var(--yellow);
-  background: rgba(255, 193, 23, 0.14);
-}
-
-/* 지연(stalled): 주황 경고 톤 */
-.tree-status.stalled {
-  color: #ffb454;
-  background: rgba(255, 145, 40, 0.16);
-}
-
-/* 실패: 붉은 톤 */
-.tree-status.failed {
-  color: #ff8f87;
-  background: #3a1f1d;
 }
 
 /* 파일 행 우측 타입 배지 (PDF/TXT 등) */

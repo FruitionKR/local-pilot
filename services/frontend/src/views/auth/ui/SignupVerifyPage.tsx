@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { confirmEmailVerification, loginWithEmail, signupWithEmail } from "@/entities/user";
-import { saveTokens } from "@/shared/lib/auth";
+import { saveAccessToken } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useAuthFlow } from "@/views/auth/model/AuthFlowContext";
 import { AuthError, AuthField, AuthSubmitButton } from "@/shared/ui/AuthControls";
@@ -48,7 +48,7 @@ export default function SignupVerificationPage() {
         confirmation.verification_token
       );
       const tokens = await loginWithEmail(draft.email, draft.password);
-      saveTokens(tokens.access_token, tokens.refresh_token);
+      saveAccessToken(tokens.access_token);
       router.replace("/workspaces");
     } catch (error: unknown) {
       setErrorMessage(getErrorMessage(error, "회원가입에 실패했습니다."));
