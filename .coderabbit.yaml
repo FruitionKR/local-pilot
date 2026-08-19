@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: ko-KR
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  changed_files_summary: false
+  review_details: true
+  review_status: true
+  poem: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - dev-msa
+      - dev
+      - main
+    ignore_title_keywords:
+      - WIP
+
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        모든 변경 파일을 검토해요. 변경량이 많다는 이유로 파일을 건너뛰지 않아요.
+        지적은 실제 diff의 변경 라인에만 남기고, 주변 코드는 맥락 확인에만 사용해요.
+
+        확신이 높은 문제만 보고해요.
+        모호한 가능성, 개인 취향, 근거 없는 추측은 지적하지 않아요.
+
+        다음 순서로 문제를 검토해요.
+        1. 버그와 로직 오류
+           - null 참조
+           - 반대로 작성된 조건
+           - 삼켜진 예외
+           - 잘못된 트랜잭션 경계
+           - 무시된 반환값
+        2. PR 설명이나 변경 목적과 다른 동작
+        3. schema, entity, DTO, API 필드와 타입의 불일치 및 계약 drift
+        4. 보안
+           - injection
+           - 누락된 인증 또는 인가
+           - 하드코딩된 secret
+           - 로그를 통한 민감정보 노출
+        5. 빈 값, null, 경계값, 동시성, 외부 호출 실패
+        6. N+1 query, 반복문 내부 DB 호출, 불필요한 전체 데이터 로딩
+        7. 변경된 동작을 검증하는 테스트의 누락 또는 무효한 테스트
+        8. AGENTS.md와 CLAUDE.md 위반
+           - 요청 범위를 벗어난 변경
+           - 투기적 기능
+           - 불필요한 방어 코드와 과도한 추상화
+        9. 동작을 바꾸지 않는 구체적인 리팩터링
+
+        리뷰 댓글은 한국어 `~해요` 문체로 작성해요.
+        인사, 칭찬, 시, 불필요한 서론을 작성하지 않아요.
+        확인한 항목을 전부 나열하지 말고 발견한 문제와 수정 방향에 집중해요.
+
+        각 댓글 앞에 다음 중 하나를 붙여요.
+        - 🚨 Critical: 반드시 수정해야 하는 심각한 정확성 또는 보안 문제
+        - ⚠️ Warning: 실제 장애나 잘못된 동작으로 이어질 가능성이 높은 문제
+        - 💡 Info: 구체적인 품질 또는 테스트 문제
+        - ♻️ Refactoring: 동작을 유지하는 구체적인 리팩터링
+
+        ♻️ Refactoring은 중복 제거, 기존 유틸리티 재사용, dead code 제거,
+        과도한 추상화 제거처럼 변경 방향이 명확한 경우에만 사용해요.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  code_guidelines:
+    filePatterns:
+      - "**/CLAUDE.md"
