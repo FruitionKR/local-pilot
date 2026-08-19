@@ -59,8 +59,9 @@ V34는 `chat_export`에만 `(workspace_id, content_hash, selection_mode)` partia
 이 index가 기존 문서를 재사용하게 한다. 세션 전체를 위키에 누적하던 경로를 걷어내면서
 `chat_sessions.wiki_page_id`·`chat_sessions.wiki_export_document_id`·`chat_messages.wiki_page_id`는 쓰지 않는 잔여 컬럼이 됐다
 (코드 매핑만 제거했고 컬럼은 남아 있다).
-V43은 `documents.pipeline_input_blocks`를 추가한다. 채팅 export의 `session_id:pair_id` provenance는 Markdown 본문이 아니라
-이 문답 단위 블록(JSON 배열)에만 있고, 파이프라인 command에 그대로 실려 `source_blocks.block_id`가 된다.
+V43은 `documents.pipeline_input_blocks`를 추가한다. 채팅 export는 문답 단위 블록(JSON 배열)을 보존하지만, 일반 문서
+Ingest 경로가 이 필드를 사용하지 않으므로 Markdown 본문의 `[session_id:pair_id]` prefix에서도 provenance를 복원한다.
+V44는 AI 작업 로그와 변경 항목에 실행 시점의 문서 표시 이름 스냅샷을 추가한다.
 
 ### ai_db (ai-svc)
 
