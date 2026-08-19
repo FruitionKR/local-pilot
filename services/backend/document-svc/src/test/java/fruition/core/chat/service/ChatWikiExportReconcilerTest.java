@@ -91,7 +91,9 @@ class ChatWikiExportReconcilerTest {
                         List.of(new PipelineWikiStateRequester.DocumentPage(
                                 "wiki_1", "source", "제목", "title", "source_of", 1.0)),
                         List.of(
-                                new PipelineWikiStateRequester.SourceBlock("session_1:pair_1", "Q : 질문\nA : 답변"),
+                                new PipelineWikiStateRequester.SourceBlock("B0001", "# Chat Export"),
+                                new PipelineWikiStateRequester.SourceBlock(
+                                        "B0002", "[session_1:pair_1]Q : 질문\nA : 답변"),
                                 new PipelineWikiStateRequester.SourceBlock("session_1:pair:extra", "extra colon"),
                                 new PipelineWikiStateRequester.SourceBlock("session_1 :pair_whitespace", "whitespace"),
                                 new PipelineWikiStateRequester.SourceBlock("session_1: pair_whitespace", "whitespace"),

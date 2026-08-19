@@ -306,7 +306,7 @@ export function AgentPanel({
         publishNotice({
           kind: "completed",
           title: "채팅 편입 완료",
-          message: getChatExportSuccessMessage(response.status)
+          message: `${getChatExportSuccessMessage(response.status)} 원문 문서를 생성하고 Ingest를 요청했습니다.`
         });
       } catch (error: unknown) {
         const detail = getErrorMessage(error, "워크스페이스 목록 갱신에 실패했습니다.");

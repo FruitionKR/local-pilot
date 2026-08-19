@@ -15,7 +15,7 @@
 | [`POST /api/workspaces/{workspace_id}/chat/sessions`](#summary-post-api-workspaces-workspace-id-chat-sessions) | 워크스페이스당 최대 10개까지 생성할 수 있습니다. |
 | [`DELETE /api/workspaces/{workspace_id}/chat/sessions/{session_id}`](#summary-delete-api-workspaces-workspace-id-chat-sessions-session-id) | 워크스페이스에서 지정한 채팅 세션과 해당 세션의 메시지 기록을 삭제합니다. |
 | [`GET /api/workspaces/{workspace_id}/chat/sessions/{session_id}/messages`](#summary-get-api-workspaces-workspace-id-chat-sessions-session-id-messages) | 세션 내 채팅 메시지를 생성 순서대로 반환합니다. |
-| [`POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki`](#summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki) | 선택한 문답(`pair_ids`)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 호출할 때마다 새 문서와 독립 Wiki 페이지가 만들어집니다. 위키 생성은 파이프라인이 비동기로 수행합니다. |
+| [`POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki`](#summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki) | 세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다. |
 | [`POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki/preview`](#summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki-preview) | 세션을 llmPipeline 입력용 Markdown으로 직렬화해 결과만 반환합니다. 저장/파이프라인 호출은 하지 않습니다. |
 
 ## 한눈에 보기
@@ -530,7 +530,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 선택한 문답(`pair_ids`)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 호출할 때마다 새 문서와 독립 Wiki 페이지가 만들어집니다. 위키 생성은 파이프라인이 비동기로 수행합니다. |
+| 목적 | 세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string`<br>**Body** — `ChatWikiExportRequest` |
 | 출력 | `202` Wiki 생성 작업 등록 — `ChatWikiExportResponse` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
@@ -548,11 +548,10 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 
 #### 2. 목적
 
-선택한 문답(`pair_ids`)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 호출할 때마다 새 문서와 독립 Wiki 페이지가 만들어집니다. 위키 생성은 파이프라인이 비동기로 수행합니다.
+세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다.
 
-저장되는 Markdown 본문에는 `session_id`·`pair_id`가 들어가지 않는다. 원본을 특정하는 provenance는 파이프라인
-command의 문답 단위 source block(`block_id = session_id:pair_id`)으로만 전달한다. 그래서 이 문서는 사용자에게
-그대로 보여줄 수 있다.
+저장되는 Markdown 본문은 문답마다 `[session_id:pair_id]Q :` prefix를 포함한다. 일반 문서 Ingest가 block ID를
+새로 부여해도 후처리가 이 prefix에서 원본 문답 provenance를 복원한다.
 
 문서 이름은 채팅에서 왔음을 알리는 `[채팅] ` 접두사로 시작하고, 뒤쪽이 두 단계로 정해진다. 처리 중에는
 발췌한 첫 질문을 20자로 줄인 임시 이름을 쓰고, 파이프라인이 끝나면 만들어진 Wiki 페이지 제목으로 확정한다. 페이지 제목이 비었거나 폴백값(`Chat Export`)이면 임시 이름을
