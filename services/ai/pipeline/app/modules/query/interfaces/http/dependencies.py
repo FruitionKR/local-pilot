@@ -29,12 +29,16 @@ def build_answer_query_use_case(
     text_search = Bm25Searcher()
     answer_generator = build_query_chat_answer_generator(provider=provider, model=model)
     query_answer_assembler = QueryAnswerAssembler(answer_generator)
-    query_evaluator = build_query_answer_evaluator(provider=provider, model=model)
+    web_search = build_web_search(allow_web_search)
+    query_evaluator = build_query_answer_evaluator(
+        provider=provider,
+        model=model,
+        web_search_available=web_search is not None,
+    )
     conversation_summarizer = build_query_conversation_summarizer(
         provider=provider,
         model=model,
     )
-    web_search = build_web_search(allow_web_search)
     query_evaluator_max_attempts = _int_env("QUERY_EVALUATOR_MAX_ATTEMPTS", 2)
     return AnswerQueryUseCase(
         wiki_repository=PostgresWikiRepository(),
@@ -53,7 +57,7 @@ def build_answer_query_use_case(
             web_search_available=web_search is not None,
             max_attempts=query_evaluator_max_attempts,
         ),
-        min_internal_relevance_score=_float_env("QUERY_MIN_INTERNAL_RELEVANCE_SCORE", 0.0),
+        min_internal_relevance_score=_float_env("QUERY_MIN_INTERNAL_RELEVANCE_SCORE", 0.5),
         query_evaluator_max_attempts=query_evaluator_max_attempts,
         conversation_summarizer=conversation_summarizer,
     )

@@ -36,7 +36,12 @@ def generate_answer(state: QueryEvaluatorStudioState) -> QueryEvaluatorStudioSta
 
 
 def evaluate_answer(state: QueryEvaluatorStudioState) -> QueryEvaluatorStudioState:
-    evaluator = build_query_answer_evaluator(provider="openai", model="gpt-5-nano")
+    web_search_available = bool(state.get("web_search_available", False))
+    evaluator = build_query_answer_evaluator(
+        provider="openai",
+        model="gpt-5-nano",
+        web_search_available=web_search_available,
+    )
     if evaluator is None:
         return {
             **state,
@@ -55,7 +60,7 @@ def evaluate_answer(state: QueryEvaluatorStudioState) -> QueryEvaluatorStudioSta
         _query_context_from_state(state),
         GeneratedAnswer(content=str(state.get("answer") or "")),
         str(state.get("stop_reason") or "answer_context_selected"),
-        web_search_available=bool(state.get("web_search_available", False)),
+        web_search_available=web_search_available,
     )
     return {**state, "evaluation": _evaluation_dict(evaluation), "feedback": evaluation.feedback}
 
