@@ -11,6 +11,7 @@ export {
   collectRestoredOperationIds,
   formatOperationLogDescription,
   groupOperationLogsByDate,
+  mergeRefreshedLogPage,
   pickSelectedOperationId
 } from "./model/operationLogPage";
 export type { OperationLogDateGroup } from "./model/operationLogPage";

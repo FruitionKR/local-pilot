@@ -5,6 +5,7 @@ import {
   collectRestoredOperationIds,
   formatOperationLogDescription,
   groupOperationLogsByDate,
+  mergeRefreshedLogPage,
   pickSelectedOperationId
 } from "../src/entities/operation-log/model/operationLogPage.ts";
 import {
@@ -45,6 +46,16 @@ test("유형이 섞인 목록도 시간순 그대로 이어붙인다", () => {
     [log("op2", "lint"), log("op3", "restore")]
   );
   assert.deepEqual(merged.map((item) => item.operation_type), ["ingest", "lint", "restore"]);
+});
+
+test("첫 페이지 갱신은 최신 항목을 교체하고 이미 불러온 이전 페이지를 보존한다", () => {
+  const merged = mergeRefreshedLogPage(
+    [{ ...log("op1"), summary: "이전" }, log("op2"), log("op3")],
+    [log("op0"), { ...log("op1"), summary: "갱신" }]
+  );
+
+  assert.deepEqual(merged.map((item) => item.operation_id), ["op0", "op1", "op2", "op3"]);
+  assert.equal(merged[1].summary, "갱신");
 });
 
 test("선택이 없으면 가장 최근 작업을 고른다", () => {

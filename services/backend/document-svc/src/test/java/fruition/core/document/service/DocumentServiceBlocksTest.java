@@ -711,6 +711,7 @@ class DocumentServiceBlocksTest {
                 eq(1L), eq("write_1"), eq(USER_ID), isNull());
     }
 
+    @Test
     @DisplayName("이미지를 첨부하지 않는 저장도 본문 기준으로 asset 참조를 동기화한다")
     void saveContent_synchronizesAssetReferencesFromMarkdown() {
         stubOwnedWorkspace();

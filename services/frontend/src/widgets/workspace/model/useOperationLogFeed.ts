@@ -5,6 +5,7 @@ import {
   appendLogPage,
   collectRestoredOperationIds,
   fetchOperationLogs,
+  mergeRefreshedLogPage,
   pickSelectedOperationId,
   type OperationLogItem
 } from "@/entities/operation-log";
@@ -41,12 +42,23 @@ export function useOperationLogFeed(isActive: boolean) {
     try {
       const response = await fetchOperationLogs({ size: PAGE_SIZE });
       if (requestIdRef.current !== requestId) return;
-      setItems(response.logs);
-      setNextCursor(response.next_cursor);
-      setSelectedOperationId((current) => pickSelectedOperationId(
-        response.logs,
-        preferredOperationId ?? current
-      ));
+      if (options?.silent) {
+        setItems((previous) => {
+          const merged = mergeRefreshedLogPage(previous, response.logs);
+          setSelectedOperationId((current) => pickSelectedOperationId(
+            merged,
+            preferredOperationId ?? current
+          ));
+          return merged;
+        });
+      } else {
+        setItems(response.logs);
+        setNextCursor(response.next_cursor);
+        setSelectedOperationId((current) => pickSelectedOperationId(
+          response.logs,
+          preferredOperationId ?? current
+        ));
+      }
     } catch (error: unknown) {
       if (requestIdRef.current === requestId) {
         setErrorMessage(getErrorMessage(error, "로그를 불러오지 못했습니다."));
