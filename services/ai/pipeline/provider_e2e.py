@@ -12,12 +12,15 @@ from app.core.llm_env import (
     resolve_llm_selection,
     resolve_llm_provider_defaults,
 )
-from app.modules.agent.domain.entities import AgentTurnRequest
+from app.modules.agent.domain.entities import ActiveMarkdownContext, AgentTurnRequest
 from app.modules.agent.infrastructure.chat_completions_turn_router import (
     DEFAULT_AGENT_TURN_ROUTER_PROMPT,
     ChatCompletionsTurnRouter,
 )
-from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest
+from app.modules.markdown_edit.domain.entities import (
+    MarkdownCreateRequest,
+    MarkdownEditTarget,
+)
 from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor import (
     DEFAULT_MARKDOWN_CREATE_PROMPT,
     DEFAULT_MARKDOWN_EDIT_PROMPT,
@@ -29,6 +32,10 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
     GenericChatCompletionsExtractor,
+)
+from app.modules.skill.domain.entities import (
+    SkillDraftSourceOperation,
+    SkillDraftSourceRun,
 )
 
 
@@ -92,19 +99,118 @@ def _probe_ingestion(
 
 
 def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
-    route = ChatCompletionsTurnRouter(
+    router = ChatCompletionsTurnRouter(
         client,
         Path(DEFAULT_AGENT_TURN_ROUTER_PROMPT).read_text(encoding="utf-8"),
-    ).route(AgentTurnRequest(message="RAG가 무엇인지 한 문장으로 설명해줘."))
-    if (
-        route.action,
-        route.retrieval_source,
-        route.document_operation,
-        route.persist,
-    ) != ("chat_answer", "workspace", "none", False):
-        raise RuntimeError(
-            "Agent router contract returned an unexpected structured route"
-        )
+    )
+    active_markdown = ActiveMarkdownContext(
+        markdown="# 저장소 결정\n\nMongoDB 사용 여부",
+        target=MarkdownEditTarget(
+            type="whole_document",
+            start_line=1,
+            end_line=3,
+        ),
+    )
+    selected_work = SkillDraftSourceRun(
+        run_id="provider-e2e-run",
+        status="completed",
+        request_summary="워크스페이스 문서를 정리했습니다.",
+        plan_summary="문서를 이동했습니다.",
+        successful_operations=(
+            SkillDraftSourceOperation(
+                tool_name="move_document",
+                reason="문서를 대상 폴더로 이동",
+            ),
+        ),
+    )
+    cases = (
+        (
+            AgentTurnRequest(message="RAG가 무엇인지 한 문장으로 설명해줘."),
+            ("chat_answer", "workspace", "none", False, (), None),
+        ),
+        (
+            AgentTurnRequest(
+                message="Mongo DB를 사용하지 않기로 판단한 이유가 뭐지?",
+                active_markdown_context=active_markdown,
+            ),
+            ("chat_answer", "workspace", "none", False, (), None),
+        ),
+        (
+            AgentTurnRequest(
+                message="Mongo가 이 문서를 저장하지 않는 이유가 뭐지?",
+                active_markdown_context=active_markdown,
+            ),
+            ("chat_answer", "workspace", "none", False, (), None),
+        ),
+        (
+            AgentTurnRequest(
+                message="현재 문서를 요약한 뒤 보관 폴더로 옮겨 저장해줘",
+                active_markdown_context=active_markdown,
+            ),
+            (
+                "workspace_workflow",
+                "none",
+                "edit",
+                True,
+                ("document-edit", "folder-organize"),
+                "shorten",
+            ),
+        ),
+        (
+            AgentTurnRequest(
+                message="현재 문서를 요약해서 저장해줄래?",
+                active_markdown_context=active_markdown,
+            ),
+            (
+                "workspace_workflow",
+                "none",
+                "edit",
+                True,
+                ("document-edit",),
+                "shorten",
+            ),
+        ),
+        (
+            AgentTurnRequest(
+                message="Wiki 근거로 현재 문서를 보완해줘",
+                active_markdown_context=active_markdown,
+            ),
+            (
+                "markdown_edit",
+                "workspace",
+                "edit",
+                False,
+                ("document-edit",),
+                "other",
+            ),
+        ),
+        (
+            AgentTurnRequest(
+                message="선택한 완료 작업을 재사용 가능한 Skill로 만들어줘",
+                skill_draft_sources=(selected_work,),
+            ),
+            ("skill_draft_proposal", "none", "none", False, (), None),
+        ),
+        (
+            AgentTurnRequest(
+                message="방금 완료한 작업 방식을 재사용 가능한 Skill로 만들어줘",
+            ),
+            ("skill_draft_proposal", "none", "none", False, (), None),
+        ),
+    )
+    for request, expected in cases:
+        route = router.route(request)
+        if (
+            route.action,
+            route.retrieval_source,
+            route.document_operation,
+            route.persist,
+            route.required_capabilities,
+            route.edit_goal,
+        ) != expected:
+            raise RuntimeError(
+                "Agent router contract returned an unexpected structured route"
+            )
 
 
 def _probe_markdown_create(client: ChatCompletionsJsonClient) -> None:

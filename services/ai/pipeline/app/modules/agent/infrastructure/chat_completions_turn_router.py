@@ -29,7 +29,7 @@ from app.modules.wiki_generation.infrastructure.json_output_parser import JsonPa
 
 DEFAULT_AGENT_TURN_ROUTER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "agent_turn_router.system.md"
 NEW_SKILL_REQUEST_PATTERN = re.compile(
-    r"(?:스킬|skill)(?:을|를)?\s*(?:(?:하나|새로|새로운|신규로|직접)\s*){0,2}"
+    r"(?:스킬|skill)(?:을|를|로)?\s*(?:(?:하나|새로|새로운|신규로|직접)\s*){0,2}"
     r"(?:만들어|생성해|정의해|작성해)|"
     r"(?:스킬|skill)로\s+[a-z0-9][a-z0-9-]{0,62}(?:을|를)?\s*(?:만들어|생성해|정의해|작성해)|"
     r"(?:create|make|define|write)\s+(?:a\s+)?(?:new\s+)?skill\b",
@@ -145,6 +145,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             "skill_mode": request.skill_mode,
             "skill_scope_type": request.skill_scope_type,
             "skill_authoring_mode": request.skill_authoring_mode,
+            "has_selected_completed_work": bool(request.skill_draft_sources),
             "allow_web_search": request.allow_web_search,
             "available_skills": [
                 {
@@ -325,6 +326,15 @@ def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[st
 
 
 def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:
+    if (
+        route.action in {"skill_authoring", "conversation_reply"}
+        and (
+            request.skill_draft_sources
+            or COMPLETED_WORK_REQUEST_PATTERN.search(request.message)
+        )
+        and _requests_new_skill(request.message)
+    ):
+        return ["completed work must use skill_draft_proposal instead of another action"]
     if route.action != "skill_authoring":
         return []
     summary = (
@@ -351,8 +361,6 @@ def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) 
         f"{request.message}\n{intent_context}"
     ):
         return ["skill_authoring requires an explicit request to create a new Skill"]
-    if COMPLETED_WORK_REQUEST_PATTERN.search(request.message):
-        return ["completed work must use skill_draft_proposal instead of skill_authoring"]
     return []
 
 

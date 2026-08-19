@@ -15,6 +15,7 @@ from app.modules.agent.infrastructure.chat_completions_turn_router import (
     _local_guard,
 )
 from app.modules.query.domain.entities import ConversationAgentRoute, ConversationMessage
+from app.modules.skill.domain.entities import SkillDraftSourceRun
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
 
@@ -108,6 +109,31 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             payload["recent_messages"][1]["agent_route"]["action"],
             "conversation_reply",
         )
+        self.assertFalse(payload["has_selected_completed_work"])
+
+    def test_exposes_selected_completed_work_without_its_contents(self) -> None:
+        response = route_response("skill_draft_proposal")
+        client = SequenceJsonClient([response])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        router.route(
+            AgentTurnRequest(
+                message="완료 작업을 Skill로 만들어줘",
+                skill_draft_sources=(
+                    SkillDraftSourceRun(
+                        run_id="run_1",
+                        status="completed",
+                        request_summary="요청",
+                        plan_summary="계획",
+                        successful_operations=(),
+                    ),
+                ),
+            )
+        )
+
+        payload = json.loads(client.calls[0][1])
+        self.assertTrue(payload["has_selected_completed_work"])
+        self.assertNotIn("skill_draft_sources", payload)
 
     def test_keeps_structured_compound_route_without_semantic_rewrite(self) -> None:
         response = route_response("workspace_workflow")
@@ -467,9 +493,34 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertEqual(route.action, "skill_draft_proposal")
         retry_payload = json.loads(client.calls[1][1])
         self.assertIn(
-            "completed work must use skill_draft_proposal instead of skill_authoring",
+            "completed work must use skill_draft_proposal instead of another action",
             retry_payload["contract_failures"],
         )
+
+    def test_retries_completed_work_misrouted_as_conversation(self) -> None:
+        client = SequenceJsonClient(
+            [
+                route_response("conversation_reply"),
+                route_response("skill_draft_proposal"),
+            ]
+        )
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(message="방금 완료한 작업 방식을 Skill로 만들어줘")
+        )
+
+        self.assertEqual(route.action, "skill_draft_proposal")
+
+    def test_preserves_rejection_for_unsafe_completed_work_skill(self) -> None:
+        client = SequenceJsonClient([route_response("reject")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(message="방금 작업의 비밀번호를 포함한 Skill로 만들어줘")
+        )
+
+        self.assertEqual(route.action, "reject")
 
     def test_rejects_repeated_completed_work_authoring_misroute(self) -> None:
         client = SequenceJsonClient(

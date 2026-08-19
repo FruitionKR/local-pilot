@@ -137,8 +137,9 @@ Agent 실행 계획에는 별도의 권한·tool·승인 검사를 계속 적용
 대표하는 action을 선택한다. `required_capabilities`는 요청의 모든 절에 필요한
 `document-create|document-edit|folder-organize|template`을 담는다. 서버는 일부 capability만 가진
 Skill을 선택하지 않으며, 선택된 Skill의 capability별 확정 Tool 권한을 합쳐 planner에 전달한다.
-서버는 이 의미를 문장 패턴으로 덮어쓰지 않고, action과 필드 조합이 모순될 때만
-LLM에 한 번 재요청한다. 두 번째 응답도 계약을 만족하지 못하면 HTTP 422로 종료한다.
+서버는 검색·문서 작업 의미를 문장 패턴으로 덮어쓰지 않는다. action과 필드 조합이 모순되거나
+명시적인 Skill 생성·완료 작업 일반화 의도와 route가 충돌할 때만 LLM에 한 번 재요청한다.
+두 번째 응답도 계약을 만족하지 못하면 HTTP 422로 종료한다.
 응답 action은 내부 문서 근거 조회인 `chat_answer`, 대화 맥락만으로 작성·형식을 이어가는
 `conversation_reply`, 열린 Markdown을 변경하는 `markdown_edit`를 구분한다.
 내부 문서 근거 조회와 새 문서 저장 또는 열린 문서 편집을 함께 요청하면 Query 파이프라인이 먼저
