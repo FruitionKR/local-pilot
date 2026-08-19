@@ -165,12 +165,20 @@ def test_restore_resolves_unchanged_active_link_target(monkeypatch) -> None:
         normalized = " ".join(str(query).split())
         if normalized.startswith("SELECT id, page_type, slug, user_id"):
             if "status = 'active'" in normalized:
-                cursor.fetchall.return_value = [{
-                    "id": "page-target",
-                    "page_type": "concept",
-                    "slug": "target",
-                    "user_id": "user-1",
-                }]
+                cursor.fetchall.return_value = [
+                    {
+                        "id": "other-user-target",
+                        "page_type": "concept",
+                        "slug": "target",
+                        "user_id": "user-2",
+                    },
+                    {
+                        "id": "page-target",
+                        "page_type": "concept",
+                        "slug": "target",
+                        "user_id": "user-1",
+                    },
+                ]
             else:
                 cursor.fetchall.return_value = [{
                     "id": "page-c3",

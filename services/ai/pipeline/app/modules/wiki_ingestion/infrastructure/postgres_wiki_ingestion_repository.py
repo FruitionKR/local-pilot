@@ -268,7 +268,10 @@ def _apply_restored_wiki_state(
             f'{row["page_type"]}:{row["slug"]}': row
             for row in rows
         }
-        target_by_ref = dict(by_ref)
+        target_by_ref = {
+            (str(row["user_id"]), f'{row["page_type"]}:{row["slug"]}'): row
+            for row in rows
+        }
         source_user_ids = {str(row["user_id"]) for row in rows}
         if source_user_ids and any(link_changes.values()):
             active_rows = conn.execute(
@@ -283,7 +286,7 @@ def _apply_restored_wiki_state(
             ).fetchall()
             for row in active_rows:
                 target_by_ref.setdefault(
-                    f'{row["page_type"]}:{row["slug"]}',
+                    (str(row["user_id"]), f'{row["page_type"]}:{row["slug"]}'),
                     row,
                 )
         for page in changed_pages:
@@ -395,8 +398,8 @@ def _apply_restored_wiki_state(
             )
 
         def resolve(reference: str, user_id: str) -> str | None:
-            known = target_by_ref.get(reference)
-            if known is None or str(known["user_id"]) != user_id:
+            known = target_by_ref.get((user_id, reference))
+            if known is None:
                 return None
             return str(known["id"])
 
