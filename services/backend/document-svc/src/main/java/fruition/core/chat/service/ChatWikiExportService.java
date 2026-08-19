@@ -165,9 +165,12 @@ public class ChatWikiExportService {
                 .replaceAll("\\p{Cntrl}", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
-        return cleaned.length() > MAX_TITLE_LENGTH
-                ? cleaned.substring(0, MAX_TITLE_LENGTH - 1).stripTrailing() + "…"
-                : cleaned;
+        // char가 아니라 code point로 센다. char로 자르면 이모지의 surrogate pair 가운데가 끊긴다.
+        if (cleaned.codePointCount(0, cleaned.length()) <= MAX_TITLE_LENGTH) {
+            return cleaned;
+        }
+        int end = cleaned.offsetByCodePoints(0, MAX_TITLE_LENGTH - 1);
+        return cleaned.substring(0, end).stripTrailing() + "…";
     }
 
     private String sha256(String text) {

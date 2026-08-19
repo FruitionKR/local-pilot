@@ -1,7 +1,6 @@
 package fruition.core.document.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.shared.util.StorageProperties;
 import fruition.core.document.domain.Document;
@@ -691,7 +690,9 @@ public class DocumentService {
                 || CHAT_EXPORT_FALLBACK_TITLE.equals(wikiPageTitle.trim())) {
             return;
         }
-        String filename = uniqueChatExportFilename(document.getWorkspaceId(), wikiPageTitle.trim());
+        // 자기 이름은 후보에서 뺀다. 넣어 두면 두 번째 호출이 자기 자신과 충돌한 것으로 보고 (2)를 붙인다.
+        String filename = uniqueChatExportFilename(
+                document.getWorkspaceId(), wikiPageTitle.trim(), document.getNormalizedFilename());
         if (filename.equals(document.getFilename())) {
             return;
         }
@@ -704,9 +705,10 @@ public class DocumentService {
      * 채팅 export 문서 이름을 만든다. 채팅에서 온 문서임을 알리는 접두사를 붙이고, root의 기존 문서와
      * 겹치면 {@code (2)}를 더한다. export 시점과 이름 확정 시점이 모두 이 경로를 지나 접두사가 유지된다.
      */
-    private String uniqueChatExportFilename(String workspaceId, String displayName) {
-        Set<String> existingNames = documentRepository.findSiblingPagesForUpdate(workspaceId, null).stream()
-                .map(Document::getNormalizedFilename)
+    private String uniqueChatExportFilename(String workspaceId, String displayName,
+                                            String excludedNormalizedFilename) {
+        Set<String> existingNames = documentRepository.findRootPageNormalizedFilenames(workspaceId).stream()
+                .filter(name -> !name.equals(excludedNormalizedFilename))
                 .collect(Collectors.toSet());
         return DocumentEditingRules.uniqueFilename(CHAT_EXPORT_NAME_PREFIX + displayName, existingNames).filename();
     }
@@ -761,7 +763,7 @@ public class DocumentService {
         byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
 
         Document candidate = new Document(
-                documentId, workspaceId, userId, uniqueChatExportFilename(workspaceId, displayName),
+                documentId, workspaceId, userId, uniqueChatExportFilename(workspaceId, displayName, null),
                 "text/markdown", bytes.length, objectPath, contentHash, "chat_export");
         candidate.assignSelectionMode(CHAT_EXPORT_SELECTION_MODE);
         if (documentRepository.reserveChatExport(

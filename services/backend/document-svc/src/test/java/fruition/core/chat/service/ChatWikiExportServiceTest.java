@@ -150,6 +150,30 @@ class ChatWikiExportServiceTest {
     }
 
     @Test
+    @DisplayName("이모지가 섞인 긴 질문도 문자가 깨지지 않게 자른다")
+    void interimNameTruncatesByCodePoint() {
+        ChatSession s = session();
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(List.of(
+                msg(s, "u1", "p1", "user", "🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉 축하", "completed"),
+                msg(s, "a1", "p1", "assistant", "네", "completed")));
+        ArgumentCaptor<String> displayName = ArgumentCaptor.forClass(String.class);
+        when(documentService.createChatExportDocument(
+                eq(WS), eq(USER), displayName.capture(), anyString(), anyString(), any()))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_1", false));
+
+        service.export(WS, USER, SESSION, new ChatWikiExportRequest(List.of("p1")));
+
+        String name = displayName.getValue();
+        // 이모지는 char 2개라 char 기준으로 자르면 짝이 깨진다.
+        assertThat(name.codePointCount(0, name.length())).isEqualTo(20);
+        assertThat(name).endsWith("…");
+        // 짝이 깨진 surrogate가 있으면 UTF-8 왕복에서 대체 문자로 바뀐다.
+        byte[] utf8 = name.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(new String(utf8, java.nio.charset.StandardCharsets.UTF_8)).isEqualTo(name);
+    }
+
+    @Test
     @DisplayName("질문의 경로 문자는 파일명에 쓸 수 있게 걷어낸다")
     void interimNameStripsPathCharacters() {
         ChatSession s = session();

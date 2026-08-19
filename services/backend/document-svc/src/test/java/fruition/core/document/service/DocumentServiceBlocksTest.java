@@ -1180,11 +1180,44 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
+    @DisplayName("이름 확정을 두 번 해도 자기 이름과 충돌해 번호가 붙지 않는다")
+    void confirmChatExportName_isIdempotent() {
+        Document chatDoc = new Document(
+                "chatdoc_name", WORKSPACE_ID, USER_ID, "[채팅] 첫 질문.md", "text/markdown", 10L,
+                "sources/documents/chatdoc_name/original", "h", "chat_export");
+        // 확정 후에는 문서 자신의 이름이 root 목록에 들어 있다.
+        when(documentRepository.findRootPageNormalizedFilenames(WORKSPACE_ID))
+                .thenReturn(List.of("[채팅] 첫 질문.md"), List.of("[채팅] 검색 인덱싱.md"));
+
+        documentService.confirmChatExportName(chatDoc, "검색 인덱싱");
+        assertThat(chatDoc.getFilename()).isEqualTo("[채팅] 검색 인덱싱.md");
+
+        documentService.confirmChatExportName(chatDoc, "검색 인덱싱");
+        assertThat(chatDoc.getFilename()).isEqualTo("[채팅] 검색 인덱싱.md");
+        verify(documentRepository, times(1)).save(chatDoc);
+    }
+
+    @Test
+    @DisplayName("Wiki 페이지 제목이 폴백값이면 임시 이름을 유지한다")
+    void confirmChatExportName_ignoresFallbackTitle() {
+        Document chatDoc = new Document(
+                "chatdoc_fb", WORKSPACE_ID, USER_ID, "[채팅] 첫 질문.md", "text/markdown", 10L,
+                "sources/documents/chatdoc_fb/original", "h", "chat_export");
+
+        documentService.confirmChatExportName(chatDoc, "Chat Export");
+        documentService.confirmChatExportName(chatDoc, "  ");
+        documentService.confirmChatExportName(chatDoc, null);
+
+        assertThat(chatDoc.getFilename()).isEqualTo("[채팅] 첫 질문.md");
+        verify(documentRepository, never()).save(chatDoc);
+    }
+
+    @Test
     @DisplayName("채팅 export 문서 이름에는 채팅에서 왔음을 알리는 접두사가 붙는다")
     void createChatExportDocument_prefixesName() {
         when(documentRepository.findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
                 any(), any(), any(), any())).thenReturn(Optional.empty());
-        when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, null)).thenReturn(List.of());
+        when(documentRepository.findRootPageNormalizedFilenames(WORKSPACE_ID)).thenReturn(List.of());
         when(documentRepository.reserveChatExport(
                 anyString(), anyString(), anyString(), anyString(), anyString(), anyString(),
                 anyString(), anyLong(), anyString(), anyString(), anyString(), anyString(),
