@@ -14,6 +14,7 @@ import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidVerificationTokenException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
 import fruition.access.user.exception.InvalidRefreshTokenException;
+import fruition.access.user.exception.PasswordLoginUnavailableException;
 import fruition.access.user.exception.UserNotFoundException;
 import fruition.access.user.repository.UserRefreshTokenRepository;
 import fruition.access.user.repository.UserRepository;
@@ -65,16 +66,11 @@ public class AuthService {
         String email = request.email().trim().toLowerCase();
         log.info("[로그인 요청] email={}", email);
 
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailAndProvider(email, User.PROVIDER_LOCAL)
                 .orElseThrow(() -> {
                     log.warn("[로그인 실패] reason=unknown_email email={}", email);
                     return new InvalidCredentialsException();
                 });
-
-        if (user.getPasswordHash() == null) {
-            log.warn("[로그인 실패] reason=password_login_unavailable userId={} email={}", user.getId(), email);
-            throw new InvalidCredentialsException();
-        }
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             log.warn("[로그인 실패] reason=password_mismatch userId={} email={}", user.getId(), email);
@@ -138,10 +134,18 @@ public class AuthService {
         String email = request.email().trim().toLowerCase();
         emailVerificationService.consumeForPasswordReset(email, request.verificationToken());
 
-        // 토큰이 유효하려면 실제 발송된 코드가 필요하므로 미가입 이메일은 정상 흐름에서 도달 불가.
-        // 도달 시에도 계정 존재 여부를 노출하지 않도록 동일한 토큰 오류로 처리한다.
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(InvalidVerificationTokenException::new);
+        // 인증코드를 통과했으므로 이 시점의 요청자는 해당 메일함을 통제한다. 따라서 OAuth로만
+        // 가입된 이메일에는 provider를 알려줘도 열거 위험이 없고, 토큰 오류로 뭉개는 편보다 낫다.
+        // 반면 아무 계정도 없는 경우는 계정 존재 여부를 노출하지 않도록 토큰 오류로 유지한다.
+        var localAccount = userRepository.findByEmailAndProvider(email, User.PROVIDER_LOCAL);
+        if (localAccount.isEmpty()) {
+            var sameEmailAccounts = userRepository.findAllByEmail(email);
+            if (sameEmailAccounts.isEmpty()) {
+                throw new InvalidVerificationTokenException();
+            }
+            throw new PasswordLoginUnavailableException(sameEmailAccounts.get(0).getProvider());
+        }
+        User user = localAccount.get();
 
         user.changePassword(passwordEncoder.encode(request.newPassword()));
 

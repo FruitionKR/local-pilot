@@ -38,7 +38,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public EmailAvailabilityResponse checkEmailAvailability(EmailAvailabilityRequest request) {
         String email = request.email().trim().toLowerCase();
-        return new EmailAvailabilityResponse(!userRepository.existsByEmail(email));
+        return new EmailAvailabilityResponse(!userRepository.existsByEmailAndProvider(email, User.PROVIDER_LOCAL));
     }
 
     @Transactional
@@ -47,7 +47,7 @@ public class UserService {
         log.info("[회원가입 요청] email={}", email);
 
         // 유효 토큰 낭비를 막기 위해 중복 검사를 토큰 소비보다 먼저 수행한다.
-        if (userRepository.existsByEmail(email)) {
+        if (userRepository.existsByEmailAndProvider(email, User.PROVIDER_LOCAL)) {
             log.warn("[회원가입 실패] reason=duplicate_email email={}", email);
             throw new DuplicateEmailException(email);
         }
@@ -58,7 +58,7 @@ public class UserService {
         String displayNameSource = DisplayNames.isPresent(request.displayName()) ? "request" : "email_prefix";
 
         String userId = "user_" + UUID.randomUUID().toString().replace("-", "");
-        User user = new User(userId, email, displayName, passwordEncoder.encode(request.password()));
+        User user = new User(userId, email, User.PROVIDER_LOCAL, displayName, passwordEncoder.encode(request.password()));
         userRepository.save(user);
 
         workspaceService.createDefault(user.getId(), user.getDisplayName());

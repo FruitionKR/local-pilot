@@ -51,7 +51,7 @@ class OAuthUserServiceTest {
         when(oauthAccountRepository.findByProviderAndProviderUserId("google", "google-sub-1"))
                 .thenReturn(Optional.of(new UserOAuthAccount("user_1f9a74af", "google", "google-sub-1")));
         when(userRepository.findById("user_1f9a74af"))
-                .thenReturn(Optional.of(new User("user_1f9a74af", "test@example.com", "tes", null)));
+                .thenReturn(Optional.of(new User("user_1f9a74af", "test@example.com", "google", "tes", null)));
 
         User user = oAuthUserService.findOrCreateUser("google", googleUserInfo("google-sub-1", "test@example.com", "Tester"));
 
@@ -60,16 +60,16 @@ class OAuthUserServiceTest {
     }
 
     @Test
-    void findOrCreateUser_existingEmailNoLink_linksAccountWithoutCreatingNewUser() {
+    void findOrCreateUser_existingEmailNoLink_createsSeparateAccount() {
         when(oauthAccountRepository.findByProviderAndProviderUserId("google", "google-sub-1"))
                 .thenReturn(Optional.empty());
-        when(userRepository.findByEmail("test@example.com"))
-                .thenReturn(Optional.of(new User("user_existing1", "test@example.com", "tes", "hash")));
 
         User user = oAuthUserService.findOrCreateUser("google", googleUserInfo("google-sub-1", "test@example.com", "Tester"));
 
-        assertThat(user.getId()).isEqualTo("user_existing1");
-        verify(userRepository, never()).save(any());
+        assertThat(user.getId()).isNotEqualTo("user_existing1");
+        assertThat(user.getEmail()).isEqualTo("test@example.com");
+        assertThat(user.getProvider()).isEqualTo("google");
+        verify(userRepository).save(any());
         verify(oauthAccountRepository).save(any());
     }
 
@@ -77,11 +77,11 @@ class OAuthUserServiceTest {
     void findOrCreateUser_newEmail_createsUserAndDefaultWorkspace() {
         when(oauthAccountRepository.findByProviderAndProviderUserId("google", "google-sub-1"))
                 .thenReturn(Optional.empty());
-        when(userRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
 
         User user = oAuthUserService.findOrCreateUser("google", googleUserInfo("google-sub-1", "new@example.com", "New User"));
 
         assertThat(user.getEmail()).isEqualTo("new@example.com");
+        assertThat(user.getProvider()).isEqualTo("google");
         assertThat(user.getDisplayName()).isEqualTo("New User");
         assertThat(user.getPasswordHash()).isNull();
         verify(userRepository).save(any());

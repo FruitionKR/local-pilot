@@ -53,15 +53,11 @@ public class OAuthUserService {
         }
         String normalizedEmail = email.trim().toLowerCase();
 
-        var existingUser = userRepository.findByEmail(normalizedEmail);
-        User user = existingUser.orElseGet(() -> createUser(provider, normalizedEmail, userInfo.getName()));
+        // 같은 이메일의 다른 provider 계정과는 합치지 않는다. provider별로 독립 계정을 만든다.
+        User user = createUser(provider, normalizedEmail, userInfo.getName());
 
         oauthAccountRepository.save(new UserOAuthAccount(user.getId(), provider, providerUserId));
-        log.info("[OAuth 계정 연결] provider={} userId={} email={} link={}",
-                provider,
-                user.getId(),
-                user.getEmail(),
-                existingUser.isPresent() ? "existing_email" : "new_user");
+        log.info("[OAuth 계정 연결] provider={} userId={}", provider, user.getId());
         return user;
     }
 
@@ -69,7 +65,7 @@ public class OAuthUserService {
         String displayName = DisplayNames.resolve(name, email);
         String displayNameSource = DisplayNames.isPresent(name) ? "provider" : "email_prefix";
         String userId = "user_" + UUID.randomUUID().toString().replace("-", "");
-        User user = new User(userId, email, displayName, null);
+        User user = new User(userId, email, provider, displayName, null);
         userRepository.save(user);
         workspaceService.createDefault(user.getId(), user.getDisplayName());
         log.info("[OAuth 신규 사용자 생성] provider={} userId={} email={} displayNameSource={}",

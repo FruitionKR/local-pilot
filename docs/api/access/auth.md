@@ -10,7 +10,7 @@
 
 | API | 목적 |
 |---|---|
-| [`POST /api/auth/email-availability`](#summary-post-api-auth-email-availability) | 회원가입 전에 이메일로 신규 가입할 수 있는지 빠르게 확인합니다. OAuth 계정을 포함해 이미 등록된 이메일은 `available: false`를 반환합니다. |
+| [`POST /api/auth/email-availability`](#summary-post-api-auth-email-availability) | 회원가입 전에 이메일로 신규 가입할 수 있는지 빠르게 확인합니다. 일반 회원가입 계정만 대상으로 확인하므로, OAuth로만 가입된 이메일은 일반 회원가입이 가능해 `available: true`를 반환합니다. |
 | [`POST /api/auth/email-verifications`](#summary-post-api-auth-email-verifications) | 회원가입/비밀번호 재설정을 위한 인증번호를 발급합니다. |
 | [`POST /api/auth/email-verifications/{verification_id}/confirm`](#summary-post-api-auth-email-verifications-verification-id-confirm) | 인증번호를 검증하고 1회용 verification_token을 발급합니다. |
 | [`POST /api/auth/login`](#summary-post-api-auth-login) | 이메일/비밀번호를 검증하고 access/refresh token을 발급합니다. |
@@ -28,7 +28,7 @@
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 회원가입 전에 이메일로 신규 가입할 수 있는지 빠르게 확인합니다. OAuth 계정을 포함해 이미 등록된 이메일은 `available: false`를 반환합니다. |
+| 목적 | 회원가입 전에 이메일로 신규 가입할 수 있는지 빠르게 확인합니다. 일반 회원가입 계정만 대상으로 확인하므로, OAuth로만 가입된 이메일은 일반 회원가입이 가능해 `available: true`를 반환합니다. |
 | 입력 | **Body** — `EmailAvailabilityRequest` |
 | 출력 | `200` 가입 가능 여부 — `EmailAvailabilityResponse` |
 | 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다.<br>기존 인증번호 요청 API도 가입 이메일 중복을 `409`로 노출하므로 동일한 공개 범위를 유지한다.<br>그 밖의 조건은 상세 권한 규칙 참고 |
@@ -46,7 +46,7 @@
 
 #### 2. 목적
 
-회원가입 전에 이메일로 신규 가입할 수 있는지 빠르게 확인합니다. OAuth 계정을 포함해 이미 등록된 이메일은 `available: false`를 반환합니다.
+회원가입 전에 이메일로 신규 가입할 수 있는지 빠르게 확인합니다. 일반 회원가입 계정만 대상으로 확인하므로, OAuth로만 가입된 이메일은 일반 회원가입이 가능해 `available: true`를 반환합니다.
 
 #### 3. Auth 필요 여부
 
@@ -747,7 +747,7 @@ curl -X POST "$ACCESS/api/auth/oauth/exchange" \
 | 입력 | **Body** — `PasswordResetRequest` |
 | 출력 | `204` 재설정 성공 |
 | 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
-| 주요 오류 | `400` 잘못된 요청 또는 유효하지 않은 토큰 — `ErrorResponse` |
+| 주요 오류 | `400` 잘못된 요청 또는 유효하지 않은 토큰(`INVALID_VERIFICATION_TOKEN`), OAuth로만 가입된 이메일(`PASSWORD_LOGIN_UNAVAILABLE`) — `ErrorResponse` |
 
 <details>
 <summary>상세 계약 보기</summary>
