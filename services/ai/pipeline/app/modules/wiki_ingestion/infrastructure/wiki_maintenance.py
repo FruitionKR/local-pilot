@@ -101,6 +101,7 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
         client = _lint_api_client(command)
 
         def generate(cluster: dict[str, Any]) -> dict[str, Any]:
+            representative = promotion_representative(cluster)
             allowed_refs = {
                 ref
                 for claim in cluster.get("claims", [])
@@ -115,7 +116,7 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
             user_payload = {
                 "cluster": {
                     "id": cluster.get("id"),
-                    "representative": promotion_representative(cluster),
+                    "representative": representative,
                     "promotion_status": cluster.get("promotion_status"),
                     "promotion_source_refs": cluster.get("promotion_source_refs", []),
                     "claims": cluster.get("claims", []),
