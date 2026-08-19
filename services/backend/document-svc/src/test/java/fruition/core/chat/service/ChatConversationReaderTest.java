@@ -68,6 +68,7 @@ class ChatConversationReaderTest {
     @DisplayName("assistant action을 다음 Agent 턴의 참고 정보로 보존한다")
     void keepsAssistantActionAsConversationHint() {
         ChatMessage assistant = message("p1", "assistant", "날씨를 알려주세요.", "completed", 1);
+        assistant.assignAgentRun("agent_1");
         assistant.completeAgentTurn("conversation_reply", "날씨를 알려주세요.");
         given(message("p1", "user", "제목을 써줘", "completed", 0), assistant);
 
@@ -75,6 +76,8 @@ class ChatConversationReaderTest {
 
         assertThat(conversation.recentMessages()).extracting(ChatConversationReader.Message::action)
                 .containsExactly(null, "conversation_reply");
+        assertThat(conversation.recentMessages()).extracting(ChatConversationReader.Message::runId)
+                .containsExactly(null, "agent_1");
     }
 
     /** 요약은 서버가 원문을 이어붙여 만들지 않는다. pipeline이 갱신해 둔 세션의 누적 요약을 쓴다. */
