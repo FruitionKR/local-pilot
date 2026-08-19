@@ -32,13 +32,7 @@ Return `ambiguous` when the supported effect cannot be determined without guessi
 {
   "decision": "supported | unsupported | ambiguous",
   "skill_kind": "document-create | document-edit | folder-organize | template | null",
-  "reference_mode": "none | structure-reference | fixed-template",
-  "allowed_tools": ["exact canonical tools for the selected skill_kind"]
+  "reference_mode": "none | structure-reference | fixed-template"
 }
 
-For `unsupported` or `ambiguous`, use the JSON null value for `skill_kind`, never the string `"null"`, and use an empty `allowed_tools` array. For `supported`, return the complete canonical tool list below exactly as written for the selected `skill_kind`; never choose a task-specific subset and never add another tool. Mutation tools require `list_root_items` and `list_folder_children`.
-
-- document-create: list_root_items, list_folder_children, get_document_metadata, get_document_content, create_document
-- document-edit: list_root_items, list_folder_children, get_document_metadata, get_document_content, apply_document_edit
-- folder-organize: list_root_items, list_folder_children, search_hierarchy, get_breadcrumb, get_document_metadata, get_document_content, create_folder, rename_folder, move_folder, move_document, rename_document
-- template: list_root_items, list_folder_children, get_document_metadata, get_document_content, create_document, apply_document_edit
+For `unsupported` or `ambiguous`, use the JSON null value for `skill_kind`, never the string `"null"`. Tool permissions are assigned by the server from `skill_kind`; do not return tool names.
