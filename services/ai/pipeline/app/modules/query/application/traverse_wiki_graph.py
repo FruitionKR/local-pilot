@@ -1,19 +1,10 @@
 from collections import defaultdict, deque
 
 from app.modules.query.domain.entities import GraphContext, RetrievedPage, TraversalEdge, TraversalPath, WikiPage, WikiPageLink
-from app.modules.query.domain.scoring import edge_role, traversal_score
-
-
-TRAVERSABLE_RELATION_TYPES = frozenset(
-    {
-        "source_mentions_concept",
-        "concept_related_to",
-        "part_of",
-        "child_of",
-        "uses_or_depends_on",
-        "contrasts_with",
-        "supports_or_enables",
-    }
+from app.modules.query.domain.scoring import (
+    TRAVERSABLE_RELATION_TYPES,
+    edge_role,
+    traversal_score,
 )
 
 

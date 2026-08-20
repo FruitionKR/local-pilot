@@ -1,6 +1,6 @@
 from app.modules.query.application.ports import WikiRepositoryPort
-from app.modules.query.application.traverse_wiki_graph import TRAVERSABLE_RELATION_TYPES
 from app.modules.query.domain.entities import SemanticQueryEmbedding, WikiEmbeddingUnit, WikiPage, WikiPageLink
+from app.modules.query.domain.scoring import TRAVERSABLE_RELATION_TYPES
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
 
