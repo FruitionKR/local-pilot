@@ -40,11 +40,26 @@ trap cleanup EXIT
 [[ -n "$PDF_FILE" ]] || fail "사용법: scripts/converter-e2e.sh <PDF> [출력.md]"
 [[ -f "$PDF_FILE" ]] || fail "PDF 파일을 찾을 수 없습니다: $PDF_FILE"
 [[ -f "$CONVERTER_ENV_FILE" ]] || fail "환경변수 파일을 찾을 수 없습니다: $CONVERTER_ENV_FILE"
-grep -q '^GEMINI_API_KEY=' "$CONVERTER_ENV_FILE" \
-  || fail "환경변수 파일에 GEMINI_API_KEY가 필요합니다."
 command -v docker >/dev/null 2>&1 || fail "docker 명령을 찾을 수 없습니다."
 command -v curl >/dev/null 2>&1 || fail "curl 명령을 찾을 수 없습니다."
 command -v python3 >/dev/null 2>&1 || fail "python3 명령을 찾을 수 없습니다."
+if ! docker compose --env-file "$CONVERTER_ENV_FILE" -f "$COMPOSE_FILE" config --quiet >/dev/null 2>&1; then
+  fail "환경변수 파일 또는 Compose 구성 해석에 실패했습니다."
+fi
+if ! docker compose --env-file "$CONVERTER_ENV_FILE" -f "$COMPOSE_FILE" config --format json 2>/dev/null |
+  python3 -c '
+import json
+import sys
+
+try:
+    value = json.load(sys.stdin).get("services", {}).get("markitdown", {}).get("environment", {}).get("GEMINI_API_KEY")
+except (json.JSONDecodeError, AttributeError, TypeError):
+    raise SystemExit(1)
+
+raise SystemExit(0 if isinstance(value, str) and value.strip() else 1)
+'; then
+  fail "markitdown service에 비어 있지 않은 GEMINI_API_KEY가 필요합니다."
+fi
 docker info >/dev/null 2>&1 || fail "Docker daemon에 연결할 수 없습니다."
 cleanup_stale_converter
 

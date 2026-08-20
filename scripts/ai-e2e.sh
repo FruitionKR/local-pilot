@@ -54,6 +54,7 @@ command -v python3 >/dev/null 2>&1 || fail "python3 명령을 찾을 수 없습�
 docker info >/dev/null 2>&1 || fail "Docker daemon에 연결할 수 없습니다."
 
 mkdir -p "$OUTPUT_DIR"
+trap 'set +e; "${COMPOSE[@]}" ps --format json >"$OUTPUT_DIR/compose-ps.json"' EXIT
 
 # 격리된 로컬 E2E에서는 공유 env의 오래된 약한 JWT key를 사용하지 않는다.
 export JWT_SECRET="${AI_E2E_JWT_SECRET:-fruition-ai-e2e-jwt-secret-32-bytes-minimum}"

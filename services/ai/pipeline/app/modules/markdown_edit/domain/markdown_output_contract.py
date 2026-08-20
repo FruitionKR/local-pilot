@@ -371,7 +371,7 @@ def _asks_for_addition_only(request: MarkdownEditRequest) -> bool:
 def _literal_anchors(markdown: str) -> set[str]:
     patterns = (
         r"https?://[^\s)\]>]+",
-        r"(?<![\w.])\d+(?:[.,]\d+)*(?:%|초|분|시간|일|주|개월|년|명|개|건|KB|MB|GB|TB)?",
+        r"(?<![\w.])(?:\d+(?:[.,]\d+)*(?:%|초|분|시간|일|주|개월|년|명|개|건|KB|MB|GB|TB)|\d+(?:[.,]\d+)+|\d{3,})(?![A-Za-z0-9_.])",
         r"\b[A-Z][A-Z0-9_]{1,}\b",
         r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b",
         r"\b[a-z]+(?:[A-Z][A-Za-z0-9]*)+\b",

@@ -29,10 +29,12 @@ def _contains_raw_html_or_mdx(tokens: list[object]) -> bool:
     for token in tokens:
         token_type = getattr(token, "type", "")
         if token_type in {"html_block", "html_inline"}:
-            return True
+            if not _is_closed_html_comment(getattr(token, "content", "")):
+                return True
+            continue
         children = getattr(token, "children", None) or []
         for child in children:
-            if child.type == "html_inline":
+            if child.type == "html_inline" and not _is_closed_html_comment(child.content):
                 return True
             if child.type != "text":
                 continue
@@ -42,6 +44,10 @@ def _contains_raw_html_or_mdx(tokens: list[object]) -> bool:
             if re.search(r"(?<!\\)\{[A-Za-z_$][^{}\n]*\}", text):
                 return True
     return False
+
+
+def _is_closed_html_comment(content: str) -> bool:
+    return re.fullmatch(r"<!--(?:(?!-->|<!--)[\s\S])*-->", content.strip()) is not None
 
 
 def _is_mdx_esm(text: str) -> bool:
