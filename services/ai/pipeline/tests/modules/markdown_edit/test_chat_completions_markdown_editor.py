@@ -525,6 +525,73 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
                 self.assertEqual(result.edit.replacement_markdown, "- [ ] Open\n- [x] Done")
                 self.assertEqual(len(client.calls), 2 if edit_goal == "shorten" else 1)
 
+    def test_retries_additive_edit_that_drops_existing_content(self) -> None:
+        target = MarkdownEditTarget(type="whole_document", start_line=1, end_line=3)
+        client = SequenceJsonClient(
+            [
+                response("## 배포 절차\n\n새 내용입니다.", actual_target={
+                    "type": "whole_document",
+                    "start_line": 1,
+                    "end_line": 3,
+                }),
+                response("# 안내\n\n기존 내용입니다.\n\n## 배포 절차\n\n새 내용입니다.", actual_target={
+                    "type": "whole_document",
+                    "start_line": 1,
+                    "end_line": 3,
+                }),
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+
+        result = editor.generate_edit(
+            MarkdownEditRequest(
+                instruction="기존 문서에 배포 절차를 추가해줘.",
+                markdown="# 안내\n\n기존 내용입니다.",
+                target=target,
+                edit_goal="other",
+            )
+        )
+
+        self.assertEqual(
+            result.edit.replacement_markdown,
+            "# 안내\n\n기존 내용입니다.\n\n## 배포 절차\n\n새 내용입니다.",
+        )
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn(
+            "additive edit must preserve every existing non-empty line in order",
+            retry_payload["contract_failures"],
+        )
+
+    def test_retries_section_addition_classified_as_convert_format(self) -> None:
+        target = MarkdownEditTarget(type="whole_document", start_line=1, end_line=3)
+        client = SequenceJsonClient(
+            [
+                response("## 문제 해결\n\n로그를 확인합니다.", actual_target={
+                    "type": "whole_document",
+                    "start_line": 1,
+                    "end_line": 3,
+                }),
+                response("# 설치 안내\n\n기존 절차입니다.\n\n## 문제 해결\n\n로그를 확인합니다.", actual_target={
+                    "type": "whole_document",
+                    "start_line": 1,
+                    "end_line": 3,
+                }),
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+
+        result = editor.generate_edit(
+            MarkdownEditRequest(
+                instruction="문제 해결 섹션을 추가하고 예시를 작성해줘.",
+                markdown="# 설치 안내\n\n기존 절차입니다.",
+                target=target,
+                edit_goal="convert_format",
+            )
+        )
+
+        self.assertIn("기존 절차입니다.", result.edit.replacement_markdown)
+        self.assertEqual(len(client.calls), 2)
+
     def test_allows_explicit_task_marker_change(self) -> None:
         client = SequenceJsonClient(
             [

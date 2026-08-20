@@ -120,6 +120,7 @@ class DocumentServiceBlocksTest {
     @Mock fruition.core.aihistory.service.OperationRecorder operationRecorder;
     @Mock fruition.core.aihistory.service.IngestOperationStarter ingestOperationStarter;
     @Mock fruition.core.aihistory.service.AgentApplyOperationStore applyOperationStore;
+    @Mock fruition.core.authz.WorkspaceAiModelClient workspaceAiModelClient;
 
     PlatformTransactionManager transactionManager;
     DocumentService documentService;
@@ -139,7 +140,8 @@ class DocumentServiceBlocksTest {
                 new ObjectMapper().findAndRegisterModules(),
                 applyOperationStore,
                 operationRecorder,
-                ingestOperationStarter);
+                ingestOperationStarter,
+                workspaceAiModelClient);
         lenient().when(pipelineWikiStateRequester.documentContext(anyString(), anyString()))
                 .thenReturn(new PipelineWikiStateRequester.DocumentWikiContext(List.of(), List.of()));
         // 직접 생성·복제·변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.

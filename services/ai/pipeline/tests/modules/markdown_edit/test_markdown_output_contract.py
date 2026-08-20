@@ -384,6 +384,49 @@ class MarkdownOutputContractTest(unittest.TestCase):
             validate_markdown_output(request, "- 배포 전 테스트가 필요하다."),
         )
 
+    def test_additive_edit_preserves_existing_lines_in_order(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="기존 문서에 배포 절차를 추가해줘.",
+            markdown="# 안내\n\n기존 내용입니다.\n\n- 유지할 항목",
+            target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=5),
+            edit_goal="other",
+        )
+
+        self.assertIn(
+            "additive edit must preserve every existing non-empty line in order",
+            validate_markdown_output(request, "## 배포 절차\n\n새 내용입니다."),
+        )
+        self.assertEqual(
+            validate_markdown_output(
+                request,
+                "# 안내\n\n기존 내용입니다.\n\n## 배포 절차\n\n새 내용입니다.\n\n- 유지할 항목",
+            ),
+            [],
+        )
+
+    def test_additive_preservation_does_not_block_explicit_content_change(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="배포 절차를 추가하고 기존 설명도 수정해줘.",
+            markdown="# 안내\n\n기존 내용입니다.",
+            target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=3),
+            edit_goal="other",
+        )
+
+        self.assertEqual(validate_markdown_output(request, "# 안내\n\n수정한 내용과 배포 절차입니다."), [])
+
+    def test_section_addition_preserves_existing_document_for_convert_format(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="기존 문서에 문제 해결 섹션을 추가하고 예시를 작성해줘.",
+            markdown="# 설치 안내\n\n기존 설치 절차입니다.",
+            target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=3),
+            edit_goal="convert_format",
+        )
+
+        self.assertIn(
+            "additive edit must preserve every existing non-empty line in order",
+            validate_markdown_output(request, "## 문제 해결\n\n문제가 생기면 로그를 확인합니다."),
+        )
+
     def test_rejects_unrequested_list_marker_for_shorten(self) -> None:
         request = MarkdownEditRequest(
             instruction="한 문장으로 줄여줘.",

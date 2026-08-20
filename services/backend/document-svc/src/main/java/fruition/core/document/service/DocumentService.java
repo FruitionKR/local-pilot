@@ -2,6 +2,7 @@ package fruition.core.document.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import fruition.core.authz.WorkspaceAiModelClient;
 import fruition.shared.util.StorageProperties;
 import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentAsset;
@@ -114,6 +115,7 @@ public class DocumentService {
     private final PipelineWikiStateRequester pipelineWikiStateRequester;
     private final DocumentConvertQueueRepository convertQueueRepository;
     private final ConverterClient converterClient;
+    private final WorkspaceAiModelClient workspaceAiModelClient;
     private final TransactionTemplate transactionTemplate;
     private final DocumentEditStateInitializer editStateInitializer;
     private final DocumentEditStateRepository editStateRepository;
@@ -155,7 +157,8 @@ public class DocumentService {
                            ObjectMapper objectMapper,
                            AgentApplyOperationStore applyOperationStore,
                            OperationRecorder operationRecorder,
-                           IngestOperationStarter ingestOperationStarter) {
+                           IngestOperationStarter ingestOperationStarter,
+                           WorkspaceAiModelClient workspaceAiModelClient) {
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
         this.workspaceAccessGuard = workspaceAccessGuard;
@@ -165,6 +168,7 @@ public class DocumentService {
         this.pipelineWikiStateRequester = pipelineWikiStateRequester;
         this.convertQueueRepository = convertQueueRepository;
         this.converterClient = converterClient;
+        this.workspaceAiModelClient = workspaceAiModelClient;
         this.transactionTemplate = transactionTemplate;
         this.editStateInitializer = editStateInitializer;
         this.editStateRepository = editStateRepository;
@@ -914,7 +918,10 @@ public class DocumentService {
             byte[] pdfBytes = readOriginalBytes(source);
             log.info("[문서 변환 시작] documentId={} sourceDocumentId={} pdfByteSize={}",
                     documentId, sourceDocumentId, pdfBytes.length);
-            String markdown = converterClient.convertPdf(source.getFilename(), pdfBytes);
+            WorkspaceAiModelClient.AiModelSelection aiModel =
+                    workspaceAiModelClient.get(placeholder.getWorkspaceId());
+            String markdown = converterClient.convertPdf(
+                    source.getFilename(), pdfBytes, aiModel.provider(), aiModel.model());
             DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
             applyConvertedMarkdown(queueId, placeholder, content);
             log.info("[문서 변환 완료] documentId={} sourceDocumentId={} markdownByteSize={}",

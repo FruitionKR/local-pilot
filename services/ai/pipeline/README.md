@@ -172,7 +172,7 @@ python run_lab.py \
 
 ### PDF 문서 복원 CLI
 
-문서 복원 전용 Python 의존성을 설치하고 `llmPipeline` 폴더에서 모듈 CLI를 실행합니다. 기본 mode는 `crop-first`이며 AnyDoc 본문과 Heron 특수 영역 crop을 조립해 `final/{document_slug}.restored.md`를 만듭니다. OpenAI API key가 없거나 OpenAI의 429/5xx 요청이 모두 실패하면 선택 보완을 건너뛰고 이 baseline 결과를 게시합니다.
+문서 복원 전용 Python 의존성을 설치하고 `llmPipeline` 폴더에서 모듈 CLI를 실행합니다. 기본 mode는 `crop-first`이며 AnyDoc 본문과 Heron 특수 영역 crop을 조립해 `final/{document_slug}.restored.md`를 만듭니다. 선택 provider의 API key가 없거나 요청이 모두 실패하면 선택 보완을 건너뛰고 이 baseline 결과를 게시합니다.
 
 ```bash
 python -m pip install -r requirements-document-restoration.txt
@@ -193,19 +193,21 @@ python -m app.modules.document_restoration.interfaces.cli \
   --document-slug paper
 ```
 
-표·수식·손상 본문을 원본 이미지와 대조해 선택 보완하려면 OpenAI API key를 환경변수로 전달합니다. 해당 복원 CLI의 선택 보완 옵션과 reasoning 값은 CLI help 및 코드 기본값을 따릅니다. 그림은 모델 대상에서 제외하고 crop asset을 보존합니다.
+표·수식·손상 본문을 원본 이미지와 대조해 선택 보완하려면 provider와 해당 provider의 API key를 지정합니다. model을 생략하면 선택 provider의 catalog 모델을 사용하며, 지원 조합은 공통 AI model catalog와 동일합니다. 그림은 모델 대상에서 제외하고 crop asset을 보존합니다.
 
 ```bash
-export DOCUMENT_REPAIR_OPENAI_API_KEY=...
+export GEMINI_API_KEY=...
 
 python -m app.modules.document_restoration.interfaces.cli \
   --pdf-file /path/to/paper.pdf \
   --output-dir /path/to/output \
   --document-slug paper \
-  --mode selective-repair
+  --mode selective-repair \
+  --selective-provider gemini \
+  --selective-model gemini-3.1-flash-lite
 ```
 
-환경변수 `OPENAI_API_KEY`도 fallback으로 사용할 수 있습니다. 모델과 병렬도는 각각 `--selective-model`, `--selective-max-workers`로 변경할 수 있습니다.
+키는 선택 provider에 따라 `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` 중 하나만 읽습니다. `--selective-model`을 생략하면 선택 provider의 catalog 모델을 사용하고, 병렬도는 `--selective-max-workers`로 변경할 수 있습니다.
 
 기존 OCR·규칙·SLLM·Vision 전체 복원이 필요한 경우에만 `full-repair`를 명시합니다. 전용 requirements에는 수식 image-to-LaTeX 근거를 생성하는 `pix2tex`가 포함됩니다. `tesseract`는 별도 시스템 명령으로 설치되어 있어야 하며, Paddle FormulaRecognition은 `paddleocr`이 설치된 환경에서 선택적으로 사용됩니다.
 

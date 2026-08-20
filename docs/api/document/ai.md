@@ -165,8 +165,8 @@ ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와
 {
   "can_update": true,
   "ingest_lint": {
-    "model": "gpt-5-nano",
-    "provider": "openai"
+    "model": "gemini-3.1-flash-lite",
+    "provider": "gemini"
   }
 }
 ```
@@ -207,8 +207,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 {
   "can_update": true,
   "ingest_lint": {
-    "model": "gpt-5-nano",
-    "provider": "openai"
+    "model": "gemini-3.1-flash-lite",
+    "provider": "gemini"
   }
 }
 ```
@@ -979,7 +979,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 
 #### 2. 목적
 
-PDF 원본 문서를 Markdown 문서로 변환합니다. 변환 결과를 담을 편집 가능 placeholder 문서를 즉시 만들어 반환하고, 실제 변환은 백그라운드에서 진행됩니다.
+PDF 원본 문서를 Markdown 문서로 변환합니다. 변환 결과를 담을 편집 가능 placeholder 문서를 즉시 만들어 반환하고, 실제 변환은 백그라운드에서 진행됩니다. worker는 실행 시점의 workspace `ingest_lint` provider/model을 converter에 전달하며 converter는 선택 provider의 API key로 복원합니다.
 
 #### 3. Auth 필요 여부
 

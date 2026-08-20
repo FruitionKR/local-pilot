@@ -18,7 +18,7 @@ class RestorationStage(str, Enum):
     BUILD_PRIMARY_MANIFEST = "build_docling_primary_manifest"
     AUGMENT_TEXT_CANDIDATES = "augment_text_candidates_with_crop_ocr"
     ASSEMBLE_DETECTED_MARKDOWN = "assemble_detected_markdown"
-    SELECTIVE_REPAIR_WITH_OPENAI = "selective_repair_with_openai"
+    SELECTIVE_REPAIR_WITH_PROVIDER = "selective_repair_with_provider"
     RECOVER_BLOCKS = "recover_blocks"
     REVIEW_BLOCKS_WITH_VISION = "review_blocks_with_vision"
     RECOVER_FIGURES_WITH_VISION = "recover_figure_blocks_with_vision"

@@ -112,7 +112,7 @@ public class WorkspaceAiModelSettingsController {
             @Schema(description = "모델명", example = "gpt-5-nano")
             String model) {}
 
-    @Schema(description = "AI 모델 설정. 기본값은 openai + gpt-5-nano다.")
+    @Schema(description = "AI 모델 설정. 기본값은 gemini + gemini-3.1-flash-lite다.")
     public record SettingsResponse(
             @JsonProperty("ingest_lint")
             @Schema(description = "ingest·lint에 쓰는 provider/model 조합")
