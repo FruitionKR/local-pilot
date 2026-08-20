@@ -12,6 +12,7 @@ import fruition.core.document.domain.DocumentContentVersionId;
 import fruition.core.document.dto.DocumentContentSaveResponse;
 import fruition.core.document.exception.DocumentContentVersionNotFoundException;
 import fruition.core.document.repository.DocumentContentVersionRepository;
+import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.service.DocumentService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,13 +36,16 @@ public class DocumentRestoreApplier {
 
     private final DocumentService documentService;
     private final DocumentContentVersionRepository contentVersionRepository;
+    private final DocumentRepository documentRepository;
     private final OperationChangeRepository operationChangeRepository;
 
     public DocumentRestoreApplier(DocumentService documentService,
                                   DocumentContentVersionRepository contentVersionRepository,
+                                  DocumentRepository documentRepository,
                                   OperationChangeRepository operationChangeRepository) {
         this.documentService = documentService;
         this.contentVersionRepository = contentVersionRepository;
+        this.documentRepository = documentRepository;
         this.operationChangeRepository = operationChangeRepository;
     }
 
@@ -52,6 +56,11 @@ public class DocumentRestoreApplier {
                 .findById(new DocumentContentVersionId(plan.documentId(), plan.toVersion()))
                 .orElseThrow(() -> new DocumentContentVersionNotFoundException(
                         plan.documentId(), plan.toVersion()));
+        String resourceDisplayName = documentRepository
+                .findByIdAndWorkspaceIdForUpdate(plan.documentId(), restore.getWorkspaceId())
+                .filter(document -> document.getDeletedAt() == null)
+                .map(document -> document.getDisplayName())
+                .orElse(null);
 
         DocumentContentSaveResponse saved = documentService.saveContentInCurrentTransaction(
                 restore.getWorkspaceId(), restore.getUserId(), plan.documentId(),
@@ -65,7 +74,7 @@ public class DocumentRestoreApplier {
 
         operationChangeRepository.save(new OperationChange(
                 restore.getOperationId(), ResourceType.document, plan.documentId(),
-                plan.fromVersion(), saved.currentVersion(), ChangeType.restored,
+                resourceDisplayName, plan.fromVersion(), saved.currentVersion(), ChangeType.restored,
                 "편집 revision " + plan.toVersion() + " 내용으로 되돌렸습니다.", null, null));
 
         return saved.currentVersion();

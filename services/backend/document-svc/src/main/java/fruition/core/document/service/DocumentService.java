@@ -1197,7 +1197,8 @@ public class DocumentService {
         }
         validateRevisionWriteId(revisionWriteId);
 
-        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+        Document document = documentRepository.findByIdAndWorkspaceIdForUpdate(documentId, workspaceId)
+                .filter(value -> value.getDeletedAt() == null)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         verifyDocumentOwner(document, userId);
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
@@ -1232,6 +1233,7 @@ public class DocumentService {
                     int linked = contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId);
                     if (linked == 1) {
                         operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
+                                document.getDisplayName(),
                                 result.baseRevision(), result.revision(), result.baseMarkdown(),
                                 content.markdown(), result.updatedAt());
                     } else if (!contentVersionRepository.findById(

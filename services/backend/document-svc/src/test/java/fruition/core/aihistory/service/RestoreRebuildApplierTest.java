@@ -95,6 +95,7 @@ class RestoreRebuildApplierTest {
         ArgumentCaptor<OperationChange> captor = ArgumentCaptor.forClass(OperationChange.class);
         verify(operationChangeRepository).save(captor.capture());
         assertThat(captor.getValue().getChangeType()).isEqualTo(ChangeType.rebuilt);
+        assertThat(captor.getValue().getResourceDisplayName()).isEqualTo("제목");
         assertThat(captor.getValue().getBeforeRevision()).isEqualTo(4L);
         assertThat(captor.getValue().getAfterRevision()).isEqualTo(5L);
     }
@@ -104,6 +105,8 @@ class RestoreRebuildApplierTest {
     void recordsFailureWithoutTouchingContent() {
         OperationLog operation = givenOperation(manifest(PageRestorePlan.rebuild(PAGE_ID, keptOf(2))));
         givenPreviousRevision(4, "sha256:old");
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID)).thenReturn(List.of(
+                change(ResourceType.wiki_page, PAGE_ID, "제목", ChangeType.delegated)));
         OperationResultRequest request = new OperationResultRequest(
                 OPERATION_ID, "restore", "partially_succeeded", WORKSPACE_ID, USER_ID, "doc_A",
                 "재조립 실패 1건", List.of(),
@@ -116,6 +119,7 @@ class RestoreRebuildApplierTest {
         assertThat(captor.getValue().getChangeType()).isEqualTo(ChangeType.rebuild_failed);
         assertThat(captor.getValue().getChangeSummary()).isEqualTo("contribution_missing");
         assertThat(captor.getValue().getAfterRevision()).isNull();
+        assertThat(captor.getValue().getResourceDisplayName()).isEqualTo("제목");
         verify(versionRepository, never()).save(any());
         assertThat(response.status()).isEqualTo("partially_succeeded");
         assertThat(operation.getStatus()).isEqualTo(OperationStatus.partially_succeeded);
@@ -404,6 +408,12 @@ class RestoreRebuildApplierTest {
     private OperationChange change(ResourceType resourceType, String resourceId, ChangeType changeType) {
         return new OperationChange(OPERATION_ID, resourceType, resourceId,
                 null, null, changeType, null, null, null);
+    }
+
+    private OperationChange change(ResourceType resourceType, String resourceId,
+                                   String displayName, ChangeType changeType) {
+        return new OperationChange(OPERATION_ID, resourceType, resourceId,
+                displayName, null, null, changeType, null, null, null);
     }
 
     private OperationResultRequest request() {

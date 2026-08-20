@@ -75,6 +75,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
@@ -143,6 +144,9 @@ class DocumentServiceBlocksTest {
                 .thenReturn(new PipelineWikiStateRequester.DocumentWikiContext(List.of(), List.of()));
         // 직접 생성·복제·변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.
         lenient().when(storageProps.getBucket()).thenReturn("test-bucket");
+        lenient().when(documentRepository.findByIdAndWorkspaceIdForUpdate(anyString(), anyString()))
+                .thenAnswer(invocation -> documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                        invocation.getArgument(0), invocation.getArgument(1)));
         lenient().when(idempotencyService.replay(
                 anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(Optional.empty());
@@ -820,8 +824,8 @@ class DocumentServiceBlocksTest {
                 "sources/documents/doc_edit/original", "original-hash");
         DocumentEditState editState = new DocumentEditState(
                 document.getId(), "old", DocumentEditingRules.markdown("old").contentHash(), 1);
-        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
-                .thenReturn(Optional.of(document));
+        doReturn(Optional.of(document)).when(documentRepository)
+                .findByIdAndWorkspaceIdForUpdate(document.getId(), WORKSPACE_ID);
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
         when(applyOperationStore.consume("op-agent", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n"))
                 .thenReturn(true);
@@ -839,7 +843,11 @@ class DocumentServiceBlocksTest {
         verify(applyOperationStore).consume("op-agent", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n");
         verify(operationRecorder).recordDocumentEdit(
                 eq("op-agent"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
+                eq(document.getDisplayName()),
                 eq(1L), eq(2L), eq("old"), eq("# 변경\n"), any());
+        verify(documentRepository).findByIdAndWorkspaceIdForUpdate(document.getId(), WORKSPACE_ID);
+        verify(documentRepository, never()).findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                document.getId(), WORKSPACE_ID);
         verify(contentVersionRepository).linkOperation(document.getId(), 2L, "op-agent");
     }
 
@@ -878,7 +886,7 @@ class DocumentServiceBlocksTest {
 
         verify(contentVersionRepository, never()).linkOperation(anyString(), anyLong(), anyString());
         verify(operationRecorder, never()).recordDocumentEdit(
-                anyString(), anyString(), anyString(), anyString(), anyLong(), anyLong(),
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyLong(), anyLong(),
                 anyString(), anyString(), any());
     }
 
@@ -912,6 +920,7 @@ class DocumentServiceBlocksTest {
 
         verify(operationRecorder).recordDocumentEdit(
                 eq("op-replay"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
+                eq(document.getDisplayName()),
                 eq(1L), eq(2L), eq("old"), eq("# 변경\n"), any());
         verify(contentVersionRepository, times(2)).linkOperation(document.getId(), 2L, "op-replay");
     }
@@ -936,6 +945,7 @@ class DocumentServiceBlocksTest {
         doThrow(new IllegalStateException("감사 실패")).doNothing()
                 .when(operationRecorder).recordDocumentEdit(
                         eq("op-retry"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
+                        eq(document.getDisplayName()),
                         eq(1L), eq(2L), eq("old"), eq("# 변경\n"), any());
 
         assertThatThrownBy(() -> documentService.saveContent(
@@ -950,6 +960,7 @@ class DocumentServiceBlocksTest {
         verify(contentVersionRepository, times(2)).linkOperation(document.getId(), 2L, "op-retry");
         verify(operationRecorder, times(2)).recordDocumentEdit(
                 eq("op-retry"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
+                eq(document.getDisplayName()),
                 eq(1L), eq(2L), eq("old"), eq("# 변경\n"), any());
     }
 
@@ -1158,8 +1169,8 @@ class DocumentServiceBlocksTest {
         document.updateStatus(fruition.core.document.domain.DocumentStatus.completed, null, java.time.Instant.now(), null);
         DocumentEditState editState = new DocumentEditState(
                 document.getId(), "# 편집본\n", DocumentEditingRules.markdown("# 편집본\n").contentHash(), 1);
-        when(documentRepository.findByIdAndWorkspaceIdForUpdate(document.getId(), WORKSPACE_ID))
-                .thenReturn(Optional.of(document));
+        doReturn(Optional.of(document)).when(documentRepository)
+                .findByIdAndWorkspaceIdForUpdate(document.getId(), WORKSPACE_ID);
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
         when(storageProps.getBucket()).thenReturn("bucket");
         when(ingestOperationStarter.start(eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),

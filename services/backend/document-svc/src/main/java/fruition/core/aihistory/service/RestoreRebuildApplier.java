@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -75,14 +76,18 @@ public class RestoreRebuildApplier {
 
         RestorePlan plan = restorePlan(operation);
         Map<String, Integer> targetCounts = targetContributionCounts(plan);
+        Map<String, String> pageTitles = pageTitles(operationId);
         validateDeletedPages(request, plan);
+        Map<String, PipelineWikiStateRequester.WikiPageSnapshot> pageSnapshots = pageSnapshots(
+                operation, loaded);
+        pageSnapshots.forEach((pageId, page) -> pageTitles.putIfAbsent(pageId, page.title()));
         for (RebuiltPage page : loaded) {
-            applyPage(operation, page, targetCounts, now);
+            applyPage(operation, page, targetCounts, pageSnapshots.get(page.pageId()), now);
         }
         for (OperationResultRequest.FailedPage failed : request.failedPagesOrEmpty()) {
-            recordFailure(operation, failed, targetCounts);
+            recordFailure(operation, failed, targetCounts, pageTitles);
         }
-        recordReportedChanges(operation, request);
+        recordReportedChanges(operation, request, pageTitles);
         recordFailedActions(operation, request);
 
         int changed = (int) operationChangeRepository.countByOperationId(operationId);
@@ -113,13 +118,14 @@ public class RestoreRebuildApplier {
     }
 
     /** 실행 단계에서 빠진 삭제 기록을 보완하고 llmPipeline이 처리한 링크 변경을 감사 로그로 남긴다. */
-    private void recordReportedChanges(OperationLog operation, OperationResultRequest request) {
+    private void recordReportedChanges(OperationLog operation, OperationResultRequest request,
+                                       Map<String, String> pageTitles) {
         for (String pageId : request.deletedPagesOrEmpty()) {
             if (!alreadyRecorded(operation, pageId, ChangeType.deleted)) {
                 long revision = versionRepository.findMaxRevision(pageId);
                 operationChangeRepository.save(new OperationChange(
                         operation.getOperationId(), ResourceType.wiki_page, pageId,
-                        revision == 0 ? null : revision, null, ChangeType.deleted,
+                        pageTitles.get(pageId), revision == 0 ? null : revision, null, ChangeType.deleted,
                         "llmPipeline이 페이지 삭제를 완료했습니다.", null, null));
             }
         }
@@ -209,15 +215,17 @@ public class RestoreRebuildApplier {
     }
 
     private void applyPage(OperationLog operation, RebuiltPage page,
-                           Map<String, Integer> targetCounts, Instant now) {
+                           Map<String, Integer> targetCounts,
+                           PipelineWikiStateRequester.WikiPageSnapshot wikiPage,
+                           Instant now) {
         String pageId = page.pageId();
         int contributionCount = targetCount(targetCounts, pageId);
 
         versionRepository.lockPage(pageId);
-        var wikiPage = wikiStateRequester.lookup(List.of(pageId), operation.getWorkspaceId()).stream()
-                .findFirst()
-                .orElseThrow(() -> new InvalidCallbackPayloadException(
-                        "Wiki 페이지를 찾을 수 없습니다: pageId=" + pageId));
+        if (wikiPage == null) {
+            throw new InvalidCallbackPayloadException(
+                    "Wiki 페이지를 찾을 수 없습니다: pageId=" + pageId);
+        }
         if (!wikiPage.workspaceId().equals(operation.getWorkspaceId())) {
             throw new InvalidCallbackPayloadException(
                     "다른 워크스페이스의 페이지입니다: pageId=" + pageId);
@@ -241,7 +249,7 @@ public class RestoreRebuildApplier {
                 previous.map(WikiPageVersion::getMarkdown).orElse(null), revision, page.markdown());
         operationChangeRepository.save(new OperationChange(
                 operation.getOperationId(), ResourceType.wiki_page, pageId,
-                beforeRevision, revision, ChangeType.rebuilt,
+                wikiPage.title(), beforeRevision, revision, ChangeType.rebuilt,
                 "남은 기여 " + contributionCount + "개로 다시 만들었습니다.",
                 lines.additions(), lines.deletions()));
     }
@@ -250,7 +258,7 @@ public class RestoreRebuildApplier {
      * 실패는 본문을 건드리지 않고 기록만 남긴다. 페이지는 복구 직전 내용 그대로 남아 다음 lint에 맡긴다.
      */
     private void recordFailure(OperationLog operation, OperationResultRequest.FailedPage failed,
-                               Map<String, Integer> targetCounts) {
+                               Map<String, Integer> targetCounts, Map<String, String> pageTitles) {
         String pageId = failed.pageId();
         targetCount(targetCounts, pageId);
         if (operationChangeRepository.existsByOperationIdAndResourceIdAndChangeType(
@@ -260,8 +268,31 @@ public class RestoreRebuildApplier {
         long maxRevision = versionRepository.findMaxRevision(pageId);
         operationChangeRepository.save(new OperationChange(
                 operation.getOperationId(), ResourceType.wiki_page, pageId,
-                maxRevision == 0 ? null : maxRevision, null, ChangeType.rebuild_failed,
+                pageTitles.get(pageId), maxRevision == 0 ? null : maxRevision, null,
+                ChangeType.rebuild_failed,
                 safeFailureCode(failed.reason()), null, null));
+    }
+
+    private Map<String, String> pageTitles(String operationId) {
+        Map<String, String> titles = new LinkedHashMap<>();
+        for (OperationChange change : operationChangeRepository
+                .findByOperationIdOrderByIdAsc(operationId)) {
+            if (change.getResourceType() == ResourceType.wiki_page) {
+                titles.putIfAbsent(change.getResourceId(), change.getResourceDisplayName());
+            }
+        }
+        return titles;
+    }
+
+    private Map<String, PipelineWikiStateRequester.WikiPageSnapshot> pageSnapshots(
+            OperationLog operation, List<RebuiltPage> loaded) {
+        List<String> pageIds = loaded.stream().map(RebuiltPage::pageId).distinct().toList();
+        Map<String, PipelineWikiStateRequester.WikiPageSnapshot> snapshots = new LinkedHashMap<>();
+        for (PipelineWikiStateRequester.WikiPageSnapshot page
+                : wikiStateRequester.lookup(pageIds, operation.getWorkspaceId())) {
+            snapshots.put(page.id(), page);
+        }
+        return snapshots;
     }
 
     private String safeIdentifier(String value) {

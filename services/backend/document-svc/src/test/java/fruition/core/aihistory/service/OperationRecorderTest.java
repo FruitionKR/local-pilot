@@ -5,6 +5,7 @@ import fruition.core.aihistory.domain.OperationStatus;
 import fruition.core.aihistory.domain.OperationType;
 import fruition.core.aihistory.repository.OperationChangeRepository;
 import fruition.core.aihistory.repository.OperationLogRepository;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -47,5 +48,29 @@ class OperationRecorderTest {
         verify(operationLogRepository, times(2)).insertConflictIfAbsent(
                 eq("op-1"), eq("ws-1"), eq("user-1"), eq("doc-1"), any(), any());
         verify(operationLogRepository).findById("op-1");
+    }
+
+    @Test
+    void recordsDocumentDisplayNameAtChangeTime() {
+        OperationRecorder recorder = new OperationRecorder(
+                operationLogRepository, operationChangeRepository, lineCounter);
+        when(lineCounter.count("doc-1", 1L, "이전", 2L, "이후"))
+                .thenReturn(new LineCounter.LineCount(1, 1));
+
+        OperationLog operation = OperationLog.applyingDocumentEdit(
+                "op-1", "ws-1", "user-1", "doc-1", Instant.parse("2026-08-12T00:00:00Z"));
+        when(operationLogRepository.findById("op-1")).thenReturn(Optional.of(operation));
+        when(operationChangeRepository.existsByOperationIdAndResourceIdAndChangeType(
+                "op-1", "doc-1", fruition.core.aihistory.domain.ChangeType.updated)).thenReturn(false);
+
+        recorder.recordDocumentEdit("op-1", "ws-1", "user-1", "doc-1",
+                "변경 당시 이름", 1L, 2L, "이전", "이후",
+                Instant.parse("2026-08-12T00:00:00Z"));
+
+        ArgumentCaptor<fruition.core.aihistory.domain.OperationChange> captor =
+                ArgumentCaptor.forClass(fruition.core.aihistory.domain.OperationChange.class);
+        verify(operationChangeRepository).save(captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getResourceDisplayName())
+                .isEqualTo("변경 당시 이름");
     }
 }
