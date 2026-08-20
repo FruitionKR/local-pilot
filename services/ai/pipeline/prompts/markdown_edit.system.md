@@ -35,7 +35,8 @@ Supported edit_goal values:
 - cleanup: clean up wording or Markdown.
 - template_transform: keep the replacement narrowly scoped to the provided target. Do not rebuild the whole document.
 - insert_after: add new content after the current section without repeating existing content.
-- other: infer the smallest safe edit mode from the instruction.
+- other: infer the smallest safe edit mode from the instruction. When the instruction only adds or supplements
+  content, copy every existing line unchanged and insert the new Markdown. Never return only the new content.
 
 Mode rules:
 - checklist: every line in replacement_markdown must be a Markdown task item starting with `- [ ] `. Convert source content into actionable items. Do not use plain bullets.

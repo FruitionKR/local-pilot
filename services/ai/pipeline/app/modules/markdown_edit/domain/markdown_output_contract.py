@@ -16,6 +16,12 @@ STRUCTURE_WORDS = (
     "frontmatter", "이미지", "image", "표", "table", "각주", "footnote", "링크", "link", "code",
     "목록", "리스트", "list", "checklist", "체크리스트", "checkbox", "체크박스", "task list",
 )
+ADDITION_WORDS = ("추가", "덧붙", "보강", "보충", "add", "append", "supplement")
+ADDITIVE_EDIT_GOALS = {"other", "convert_format"}
+CONTENT_CHANGE_WORDS = (
+    "삭제", "제거", "지워", "수정", "변경", "바꿔", "교체", "대체", "요약", "축약", "줄여",
+    "delete", "remove", "edit", "change", "replace", "rewrite", "summarize", "shorten",
+)
 TASK_LIST_MARKER_PATTERN = r"(?m)^[ \t]*[-*+][ \t]+\[[ xX]\](?:[ \t]+|[ \t]*\r?$)"
 PROTECTED_TOKEN_PATTERN = r"\{\{FRUITION_PROTECTED_\d{4}\}\}"
 
@@ -132,6 +138,8 @@ def validate_markdown_output(request: MarkdownEditRequest, replacement: str) -> 
 
     if request.edit_goal == "shorten":
         failures.extend(_shortening_failures(request.markdown, instruction, replacement))
+    if _asks_for_addition_only(request):
+        failures.extend(_additive_preservation_failures(request.markdown, replacement))
 
     return failures
 
@@ -231,6 +239,14 @@ def _shortening_failures(source: str, instruction: str, replacement: str) -> lis
         if anchor not in replacement:
             failures.append(f"shortening must preserve literal anchor: {anchor}")
     return failures
+
+
+def _additive_preservation_failures(source: str, replacement: str) -> list[str]:
+    replacement_lines = iter(line for line in replacement.splitlines() if line.strip())
+    for source_line in (line for line in source.splitlines() if line.strip()):
+        if not any(line == source_line for line in replacement_lines):
+            return ["additive edit must preserve every existing non-empty line in order"]
+    return []
 
 
 def repair_markdown_output(request: MarkdownEditRequest, replacement: str) -> str:
@@ -339,6 +355,17 @@ def _asks_for_one_sentence(instruction: str) -> bool:
 
 def _asks_to_shorten(instruction: str) -> bool:
     return any(marker in instruction for marker in ("짧게", "줄여", "축약", "shorten", "concise"))
+
+
+def _asks_for_addition_only(request: MarkdownEditRequest) -> bool:
+    if request.edit_goal not in ADDITIVE_EDIT_GOALS:
+        return False
+    instruction = request.instruction.lower()
+    asks_to_add = any(word in instruction for word in ADDITION_WORDS)
+    asks_to_preserve = any(word in instruction for word in PRESERVE_WORDS) or bool(
+        re.search(r"(?:변경|수정|삭제|제거).{0,6}(?:않|말)", instruction)
+    )
+    return asks_to_add and (asks_to_preserve or not any(word in instruction for word in CONTENT_CHANGE_WORDS))
 
 
 def _literal_anchors(markdown: str) -> set[str]:
