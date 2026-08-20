@@ -1726,6 +1726,66 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(max(item.depth for item in graph_context.nodes), 2)
         self.assertEqual(stop_reason, "max_depth")
 
+    def test_traverses_materialized_lint_relations_and_excludes_non_materialized_links(self) -> None:
+        relation_types = [
+            "source_mentions_concept",
+            "concept_related_to",
+            "part_of",
+            "child_of",
+            "uses_or_depends_on",
+            "contrasts_with",
+            "supports_or_enables",
+        ]
+        pages = [source_page("source:seed", "Seed Source")]
+        links = []
+        for index, relation_type in enumerate(relation_types, start=1):
+            target = concept_page(f"concept:{index}", f"Concept {index}")
+            pages.append(target)
+            links.append(WikiPageLink("source:seed", target.id, relation_type, confidence=0.99))
+        pages.extend(
+            [
+                concept_page("concept:related-evidence", "Related Evidence"),
+                concept_page("concept:unknown", "Unknown Concept"),
+            ]
+        )
+        links.extend(
+            [
+                WikiPageLink("source:seed", "concept:related-evidence", "related_evidence", confidence=0.99),
+                WikiPageLink("source:seed", "concept:unknown", "unknown", confidence=0.99),
+            ]
+        )
+
+        graph_context, paths, _stop_reason = TraverseWikiGraphUseCase().execute(
+            pages_by_id={page.id: page for page in pages},
+            links=links,
+            seed_page_ids=["source:seed"],
+            node_scores={page.id: 1.0 for page in pages},
+        )
+
+        self.assertEqual(
+            {edge.link_type for edge in graph_context.edges},
+            set(relation_types),
+        )
+        self.assertNotIn(
+            ("source:seed", "concept:related-evidence", "related_evidence"),
+            {(edge.from_page_id, edge.to_page_id, edge.link_type) for edge in graph_context.edges},
+        )
+        self.assertNotIn(
+            ("source:seed", "concept:unknown", "unknown"),
+            {(edge.from_page_id, edge.to_page_id, edge.link_type) for edge in graph_context.edges},
+        )
+        self.assertEqual(
+            {item.page.id for item in graph_context.nodes},
+            {"source:seed", *(f"concept:{index}" for index in range(1, 8))},
+        )
+        self.assertFalse(
+            any(
+                excluded_id in path.nodes
+                for path in paths
+                for excluded_id in ("concept:related-evidence", "concept:unknown")
+            )
+        )
+
     def test_reports_no_frontier_when_graph_ends_at_max_depth(self) -> None:
         pages = [
             source_page("source:seed", "Seed Source"),
