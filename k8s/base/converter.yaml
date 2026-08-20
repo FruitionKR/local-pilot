@@ -34,6 +34,21 @@ spec:
               value: "300"
             - name: PDF_DIAGNOSTIC_TIMEOUT_SECONDS
               value: "60"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: OPENAI_API_KEY
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: GEMINI_API_KEY
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: ANTHROPIC_API_KEY
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
