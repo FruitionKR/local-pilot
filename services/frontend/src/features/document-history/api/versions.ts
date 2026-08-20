@@ -1,4 +1,4 @@
-import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId } from "@/shared/api/client";
+import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, workspacePath } from "@/shared/api/client";
 import type { ServerDiffHunk } from "../lib/versionDiff";
 
 /** 복원 기준 버전(base_version)이 이미 지나가 서버가 409를 반환한 경우. */
@@ -35,8 +35,7 @@ type DocumentContentSaveResponse = {
 };
 
 function documentPath(documentId: string): string {
-  const workspaceId = getWorkspaceId();
-  return `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`;
+  return workspacePath(getWorkspaceId(), "documents", documentId);
 }
 
 /** 서버에 저장된 문서 버전 이력 목록(메타데이터만, 최신 순)을 조회한다. */

@@ -1,4 +1,4 @@
-import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
+import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, workspacePath, ERROR_MESSAGES } from "@/shared/api/client";
 import type { NoteContentResponse } from "@/entities/document/model/document";
 
 export class NoteContentConflictError extends Error {}
@@ -22,7 +22,7 @@ type DocumentContentSaveResponse = {
 export async function fetchNoteDraft(documentId: string): Promise<NoteContentResponse | null> {
   const workspaceId = getWorkspaceId();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
+    workspacePath(workspaceId, "documents", documentId),
     { cache: "no-store" }
   );
   if (response.status === 404) return null;
@@ -55,7 +55,7 @@ export async function saveNoteDraft(
   if (source) formData.append("source", source);
   if (source === "agent") formData.append("apply_operation_id", applyOperationId ?? "");
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/content`,
+    workspacePath(workspaceId, "documents", documentId, "content"),
     {
       method: "PUT",
       body: formData

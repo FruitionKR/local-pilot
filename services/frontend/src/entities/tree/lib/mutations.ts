@@ -175,10 +175,6 @@ export function appendItemsToFolder(items: TreeItem[], folderId: string | null, 
   return mapTreeItemById(items, folderId, (item) => ({ ...item, children: [...(item.children ?? []), ...nextItems] }));
 }
 
-export function appendFolderToFolder(items: TreeItem[], folderId: string | null, folder: TreeItem): TreeItem[] {
-  return appendItemsToFolder(items, folderId, [folder]);
-}
-
 export function updateTreeItemStatus(items: TreeItem[], itemId: string, status: TreeItem["status"], errorMessage?: string): TreeItem[] {
   return mapTreeItemById(items, itemId, (item) => ({ ...item, status, errorMessage }));
 }

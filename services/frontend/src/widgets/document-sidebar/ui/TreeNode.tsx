@@ -36,23 +36,8 @@ export function TreeNode({
   openIds,
   onToggle,
   projectId,
-  draggedItemId,
-  selectedItemId,
-  dropTarget,
-  fileDropTarget,
-  editing,
-  onDragStart,
-  onDragOverItem,
-  onFileDragOver,
-  onFileDragLeave,
   onDropItem,
-  onDropFiles,
-  onDragEnd,
-  onContextMenuItem,
-  onSelectGraphNode,
-  onEditingChange,
-  onCommitEditing,
-  onCancelEditing
+  interaction
 }: {
   item: TreeItem;
   depth: number;
@@ -60,7 +45,10 @@ export function TreeNode({
   onToggle: (id: string) => void;
   projectId: string;
   onDropItem: (target: DropTarget) => void;
-} & Omit<TreeInteractionProps, "onMoveItem">) {
+  /** 트리 상호작용 상태·핸들러 묶음. onMoveItem은 onDropItem으로 감싸서 받는다 */
+  interaction: Omit<TreeInteractionProps, "onMoveItem">;
+}) {
+  const { draggedItemId, dropTarget, fileDropTarget, editing } = interaction;
   const hasChildren = Boolean(item.children?.length);
   const isOpen = openIds.has(item.id);
   const isDropTarget = dropTarget?.projectId === projectId && dropTarget.targetId === item.id;
@@ -75,12 +63,12 @@ export function TreeNode({
   } = useTreeNodeDragDrop({
     item,
     projectId,
-    onDragStart,
-    onDragOverItem,
-    onFileDragOver,
-    onFileDragLeave,
+    onDragStart: interaction.onDragStart,
+    onDragOverItem: interaction.onDragOverItem,
+    onFileDragOver: interaction.onFileDragOver,
+    onFileDragLeave: interaction.onFileDragLeave,
     onDropItem,
-    onDropFiles
+    onDropFiles: interaction.onDropFiles
   });
 
   return (
@@ -104,11 +92,11 @@ export function TreeNode({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onDragEnd={onDragEnd}
-        onContextMenu={(event) => onContextMenuItem(event, projectId, item.id)}
+        onDragEnd={interaction.onDragEnd}
+        onContextMenu={(event) => interaction.onContextMenuItem(event, projectId, item.id)}
         onClick={(event) => {
           event.stopPropagation();
-          if (!isEditing && (item.graphNodeId || item.documentId)) onSelectGraphNode(item);
+          if (!isEditing && (item.graphNodeId || item.documentId)) interaction.onSelectGraphNode(item);
           if (!isEditing && hasChildren) onToggle(item.id);
         }}
       >
@@ -116,9 +104,9 @@ export function TreeNode({
         {isEditing ? (
           <InlineEditInput
             value={editing.label}
-            onChange={onEditingChange}
-            onCommit={onCommitEditing}
-            onCancel={onCancelEditing}
+            onChange={interaction.onEditingChange}
+            onCommit={interaction.onCommitEditing}
+            onCancel={interaction.onCancelEditing}
           />
         ) : (
           <>
@@ -136,23 +124,8 @@ export function TreeNode({
           openIds={openIds}
           onToggle={onToggle}
           projectId={projectId}
-          draggedItemId={draggedItemId}
-          selectedItemId={selectedItemId}
-          dropTarget={dropTarget}
-          fileDropTarget={fileDropTarget}
-          editing={editing}
-          onDragStart={onDragStart}
-          onDragOverItem={onDragOverItem}
-          onFileDragOver={onFileDragOver}
-          onFileDragLeave={onFileDragLeave}
           onDropItem={onDropItem}
-          onDropFiles={onDropFiles}
-          onDragEnd={onDragEnd}
-          onContextMenuItem={onContextMenuItem}
-          onSelectGraphNode={onSelectGraphNode}
-          onEditingChange={onEditingChange}
-          onCommitEditing={onCommitEditing}
-          onCancelEditing={onCancelEditing}
+          interaction={interaction}
         />
       ))}
     </>

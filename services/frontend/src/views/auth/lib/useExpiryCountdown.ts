@@ -12,7 +12,12 @@ function formatRemainingTime(totalSeconds: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-export function useExpiryCountdown(expiresAt: number): string {
+type ExpiryCountdown = {
+  label: string;
+  isExpired: boolean;
+};
+
+export function useExpiryCountdown(expiresAt: number): ExpiryCountdown {
   const [seconds, setSeconds] = useState(() => remainingSeconds(expiresAt));
 
   useEffect(() => {
@@ -23,5 +28,8 @@ export function useExpiryCountdown(expiresAt: number): string {
     return () => window.clearInterval(timerId);
   }, [expiresAt]);
 
-  return formatRemainingTime(seconds);
+  return {
+    label: formatRemainingTime(seconds),
+    isExpired: expiresAt > 0 && seconds <= 0
+  };
 }

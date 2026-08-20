@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { exchangeOAuthCode, loginWithEmail } from "@/entities/user";
 import { saveAccessToken } from "@/shared/lib/auth";
 import { AuthError, AuthField, AuthSubmitButton, SocialLoginButtons } from "@/shared/ui/AuthControls";
+import { AuthScreen, AuthScreenBlank } from "@/shared/ui/AuthScreen";
 
 const INVALID_CREDENTIALS_MESSAGE = "가입하지 않은 아이디거나, 잘못된 비밀번호입니다.";
 
@@ -17,7 +18,7 @@ const LEGACY_AUTH_ROUTES: Record<string, string> = {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<main className="auth-screen auth-screen--login" />}>
+    <Suspense fallback={<AuthScreenBlank />}>
       <LoginPageContent />
     </Suspense>
   );
@@ -86,46 +87,38 @@ function LoginPageContent() {
   }
 
   return (
-    <main className="auth-screen auth-screen--login">
-      <section className="auth-shell auth-shell--login" aria-labelledby="auth-title">
-        <div className="auth-content">
-          <h1 className="auth-title" id="auth-title">로그인</h1>
-          <div className="auth-main-section">
-            <form className="auth-form" method="post" onSubmit={handleLogin}>
-              <div className="auth-field-stack">
-                <AuthField
-                  autoComplete="email"
-                  label="이메일"
-                  name="email"
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="example@email.com"
-                  type="email"
-                  value={email}
-                />
-                <div className="auth-field-with-error">
-                  <AuthField
-                    autoComplete="current-password"
-                    label="비밀번호"
-                    name="password"
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="password"
-                    type="password"
-                    value={password}
-                  />
-                  {errorMessage ? <AuthError>{errorMessage}</AuthError> : null}
-                </div>
-              </div>
-              <AuthSubmitButton disabled={isSubmitting}>로그인</AuthSubmitButton>
-            </form>
-            <nav aria-label="계정 도움말" className="auth-login-links">
-              <button onClick={() => router.push("/forgot-password")} type="button">비밀번호 찾기</button>
-              <span />
-              <button onClick={() => router.push("/signup")} type="button">회원가입</button>
-            </nav>
+    <AuthScreen extra={<SocialLoginButtons />} shellModifier="login" title="로그인">
+      <form className="auth-form" method="post" onSubmit={handleLogin}>
+        <div className="auth-field-stack">
+          <AuthField
+            autoComplete="email"
+            label="이메일"
+            name="email"
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="example@email.com"
+            type="email"
+            value={email}
+          />
+          <div className="auth-field-with-error">
+            <AuthField
+              autoComplete="current-password"
+              label="비밀번호"
+              name="password"
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="password"
+              type="password"
+              value={password}
+            />
+            {errorMessage ? <AuthError>{errorMessage}</AuthError> : null}
           </div>
-          <SocialLoginButtons />
         </div>
-      </section>
-    </main>
+        <AuthSubmitButton disabled={isSubmitting}>로그인</AuthSubmitButton>
+      </form>
+      <nav aria-label="계정 도움말" className="auth-login-links">
+        <button onClick={() => router.push("/forgot-password")} type="button">비밀번호 찾기</button>
+        <span />
+        <button onClick={() => router.push("/signup")} type="button">회원가입</button>
+      </nav>
+    </AuthScreen>
   );
 }

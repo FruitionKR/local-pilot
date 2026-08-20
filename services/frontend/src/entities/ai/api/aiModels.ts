@@ -1,4 +1,4 @@
-import { apiFetch, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
+import { apiFetch, parseJsonOrThrow, getWorkspaceId, workspacePath, ERROR_MESSAGES } from "@/shared/api/client";
 import type { AiModel, AiModelsResponse, AiModelSelection, WorkspaceAiModelSettings } from "../model/aiModel";
 
 /** 선택 가능한 provider/model 조합을 백엔드 카탈로그에서 가져온다. */
@@ -12,7 +12,7 @@ export async function fetchAiModels(): Promise<AiModel[]> {
 export async function fetchWorkspaceAiModelSettings(): Promise<WorkspaceAiModelSettings> {
   const workspaceId = getWorkspaceId();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/ai-model-settings`,
+    workspacePath(workspaceId, "ai-model-settings"),
     { cache: "no-store" }
   );
   return parseJsonOrThrow<WorkspaceAiModelSettings>(response, "LLM Provider 설정을 불러오지 못했습니다.");
@@ -24,7 +24,7 @@ export async function updateWorkspaceAiModelSettings(
 ): Promise<WorkspaceAiModelSettings> {
   const workspaceId = getWorkspaceId();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/ai-model-settings`,
+    workspacePath(workspaceId, "ai-model-settings"),
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },

@@ -24,7 +24,6 @@ export const ERROR_MESSAGES = {
   agentTurnFailed: "AI 편집 요청에 실패했습니다.",
   chatLoadFailed: "채팅 기록을 불러오지 못했습니다.",
   chatSessionFailed: "채팅 세션을 준비하지 못했습니다.",
-  documentBlocksLoadFailed: "원본 문서 block을 불러오지 못했습니다.",
   documentsLoadFailed: "문서 목록을 불러오지 못했습니다.",
   wikiExportFailed: "위키 내보내기에 실패했습니다.",
   wikiGraphLoadFailed: "Wiki graph를 불러오지 못했습니다.",
@@ -96,6 +95,13 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   throw new Error(ERROR_MESSAGES.loginRequired);
 }
 
+/** 응답이 실패(!ok)면 에러 메시지를 추출해 던진다. 본문이 필요 없는 요청에서 사용한다. */
+export async function throwIfNotOk(response: Response, fallbackMessage: string): Promise<void> {
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, fallbackMessage));
+  }
+}
+
 export async function parseJsonOrThrow<T>(response: Response, fallback: string): Promise<T> {
   if (!response.ok) {
     throw new Error(await parseErrorResponse(response, fallback));
@@ -110,4 +116,12 @@ export function getWorkspaceId(): string {
     throw new Error(ERROR_MESSAGES.workspaceRequired);
   }
   return selected;
+}
+
+/** /api/workspaces/{workspaceId}/... 경로 생성. 모든 segment를 encodeURIComponent 처리한다. */
+export function workspacePath(workspaceId: string, ...segments: (string | number)[]): string {
+  return (
+    `/api/workspaces/${encodeURIComponent(workspaceId)}` +
+    segments.map((segment) => `/${encodeURIComponent(String(segment))}`).join("")
+  );
 }

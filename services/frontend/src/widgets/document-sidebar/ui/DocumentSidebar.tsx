@@ -11,7 +11,7 @@ import { SidebarMenuRow } from "./SidebarMenuRow";
 import { SidebarProfile } from "./SidebarProfile";
 import { SidebarWorkspaceHeader } from "./SidebarWorkspaceHeader";
 import { DocumentSearch } from "@/features/document-search/ui/DocumentSearch";
-import type { SelectableTreeItem } from "../model/types";
+import type { SelectableTreeItem, TreeInteractionProps } from "../model/types";
 import { canCreateProjectFromView } from "../model/sidebarMenu";
 import { useFileDropZone } from "../lib/useFileDropZone";
 import styles from "./DocumentSidebar.module.css";
@@ -108,6 +108,26 @@ export function DocumentSidebar({
     onFileDragLeave,
     onDropFiles
   });
+  // 트리 상호작용 상태·핸들러를 한 객체로 묶어 하위 트리로 전달한다.
+  const interaction: TreeInteractionProps = {
+    draggedItemId,
+    selectedItemId,
+    dropTarget,
+    fileDropTarget,
+    editing,
+    onMoveItem,
+    onDropFiles,
+    onDragStart,
+    onDragOverItem,
+    onFileDragOver,
+    onFileDragLeave,
+    onDragEnd,
+    onContextMenuItem,
+    onSelectGraphNode,
+    onEditingChange,
+    onCommitEditing,
+    onCancelEditing
+  };
 
   return (
     <aside
@@ -154,24 +174,8 @@ export function DocumentSidebar({
                 isPrimary={index === 0}
                 useFullSidebarDropZone={Boolean(onlyProject)}
                 onUploadToProject={onUploadToProject}
-                draggedItemId={draggedItemId}
-                selectedItemId={selectedItemId}
-                dropTarget={dropTarget}
-                fileDropTarget={fileDropTarget}
-                editing={editing}
-                onMoveItem={onMoveItem}
-                onDropFiles={onDropFiles}
-                onDragStart={onDragStart}
-                onDragOverItem={onDragOverItem}
-                onFileDragOver={onFileDragOver}
-                onFileDragLeave={onFileDragLeave}
-                onDragEnd={onDragEnd}
                 onContextMenuProject={onContextMenuProject}
-                onContextMenuItem={onContextMenuItem}
-                onSelectGraphNode={onSelectGraphNode}
-                onEditingChange={onEditingChange}
-                onCommitEditing={onCommitEditing}
-                onCancelEditing={onCancelEditing}
+                interaction={interaction}
               />
             ))}
             {contextMenu && (

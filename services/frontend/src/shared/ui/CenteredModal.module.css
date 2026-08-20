@@ -1,0 +1,75 @@
+/* 중앙 모달 공통 셸 (Figma 757:17248: 840×680, bg secondary/900, radius 20). */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.modal-box {
+  width: 840px;
+  max-width: calc(100vw - 48px);
+  height: 680px;
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 32px 24px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.7);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-header input {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.modal-header input::placeholder {
+  color: var(--muted);
+}
+
+.modal-header input:focus-visible {
+  outline: none;
+}
+
+.modal-close {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+}
+
+.modal-close:hover,
+.modal-close:focus-visible {
+  color: var(--ink);
+}
+
+/* plus 아이콘을 45도 돌려 X로 사용 */
+.modal-close-icon {
+  width: 24px;
+  height: 24px;
+  transform: rotate(45deg);
+}

@@ -1,4 +1,5 @@
 import { createClientId } from "@/entities/tree/lib/guards";
+import { sleep } from "@/shared/lib/polling";
 import type { SchemaFragments, SchemaIssue, WikiSchema, WikiSchemaPreview } from "@/entities/schema/model/schema";
 
 // [임시 목업] wiki-schema Java 프록시가 아직 없으므로 클라이언트 목업으로 화면을 구동한다.
@@ -14,10 +15,6 @@ const ISSUE_RULES: { pattern: RegExp; severity: SchemaIssue["severity"]; categor
   { pattern: /you are now|act as|역할을.*변경|관리자 권한/i, severity: "blocked", category: "role_override", reason: "역할/권한을 임의로 바꾸려 합니다." },
   { pattern: /maybe|아마|가능하면|알아서/i, severity: "unclear", category: "unclear_preference", reason: "지시가 모호해 해석이 필요합니다." }
 ];
-
-function delay(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, MOCK_LATENCY_MS));
-}
 
 function readStore(): WikiSchema[] {
   if (typeof window === "undefined") return [];
@@ -96,12 +93,12 @@ function buildPreview(rawMarkdown: string): WikiSchemaPreview {
 }
 
 export async function previewWikiSchema(rawMarkdown: string): Promise<WikiSchemaPreview> {
-  await delay();
+  await sleep(MOCK_LATENCY_MS);
   return buildPreview(rawMarkdown);
 }
 
 export async function createWikiSchemaDraft(rawMarkdown: string, name: string): Promise<WikiSchema> {
-  await delay();
+  await sleep(MOCK_LATENCY_MS);
   const preview = buildPreview(rawMarkdown);
   const now = new Date().toISOString();
   const draft: WikiSchema = {
@@ -122,7 +119,7 @@ export async function createWikiSchemaDraft(rawMarkdown: string, name: string): 
 }
 
 export async function activateWikiSchema(id: string): Promise<WikiSchema> {
-  await delay();
+  await sleep(MOCK_LATENCY_MS);
   const now = new Date().toISOString();
   let activated: WikiSchema | null = null;
   // 한 워크스페이스에 활성 스킬은 하나. 대상만 active, 나머지 active는 draft로 되돌린다.
@@ -139,11 +136,6 @@ export async function activateWikiSchema(id: string): Promise<WikiSchema> {
 }
 
 export async function listWikiSchemas(): Promise<WikiSchema[]> {
-  await delay();
+  await sleep(MOCK_LATENCY_MS);
   return readStore();
-}
-
-export async function getActiveWikiSchema(): Promise<WikiSchema | null> {
-  await delay();
-  return readStore().find((schema) => schema.status === "active") ?? null;
 }

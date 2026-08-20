@@ -6,29 +6,15 @@ import type { TreeInteractionProps } from "../model/types";
 export function SidebarTree({
   items,
   projectId,
-  draggedItemId,
-  selectedItemId,
-  dropTarget,
-  fileDropTarget,
-  editing,
-  onMoveItem,
-  onDropFiles,
-  onDragStart,
-  onDragOverItem,
-  onFileDragOver,
-  onFileDragLeave,
-  onDragEnd,
-  onContextMenuItem,
-  onSelectGraphNode,
-  onEditingChange,
-  onCommitEditing,
-  onCancelEditing,
+  interaction,
   defaultOpenIds = []
 }: {
   items: TreeItem[];
   projectId: string;
+  /** 트리 상호작용 상태·핸들러 묶음 */
+  interaction: TreeInteractionProps;
   defaultOpenIds?: string[];
-} & TreeInteractionProps) {
+}) {
   const [openIds, setOpenIds] = useState(() => new Set(defaultOpenIds));
   const generatedFolderIds = useMemo(
     () => items.filter((item) => item.generated && item.children?.length).map((item) => item.id),
@@ -54,8 +40,8 @@ export function SidebarTree({
   }
 
   function handleDropItem(target: DropTarget) {
-    if (!draggedItemId) return;
-    onMoveItem(target);
+    if (!interaction.draggedItemId) return;
+    interaction.onMoveItem(target);
   }
 
   return (
@@ -68,23 +54,8 @@ export function SidebarTree({
           openIds={openIds}
           onToggle={toggleNode}
           projectId={projectId}
-          draggedItemId={draggedItemId}
-          selectedItemId={selectedItemId}
-          dropTarget={dropTarget}
-          fileDropTarget={fileDropTarget}
-          editing={editing}
-          onDragStart={onDragStart}
-          onDragOverItem={onDragOverItem}
-          onFileDragOver={onFileDragOver}
-          onFileDragLeave={onFileDragLeave}
           onDropItem={handleDropItem}
-          onDropFiles={onDropFiles}
-          onDragEnd={onDragEnd}
-          onContextMenuItem={onContextMenuItem}
-          onSelectGraphNode={onSelectGraphNode}
-          onEditingChange={onEditingChange}
-          onCommitEditing={onCommitEditing}
-          onCancelEditing={onCancelEditing}
+          interaction={interaction}
         />
       ))}
     </>

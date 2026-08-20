@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { checkEmailAvailability, requestEmailVerification } from "@/entities/user";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useAuthFlow } from "@/views/auth/model/AuthFlowContext";
 import { AuthError, AuthField, AuthSubmitButton } from "@/shared/ui/AuthControls";
+import { AuthScreen } from "@/shared/ui/AuthScreen";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -15,15 +16,10 @@ export default function SignupPage() {
   const [password, setPassword] = useState(signupDraft?.password ?? "");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const mountedRef = useRef(true);
   const draftError = signupDraft?.email === email.trim().toLowerCase()
     ? signupDraft.verificationRequestError ?? null
     : null;
   const visibleError = errorMessage ?? draftError;
-
-  useEffect(() => () => {
-    mountedRef.current = false;
-  }, []);
 
   async function handleVerificationRequest(event: React.FormEvent) {
     event.preventDefault();
@@ -40,7 +36,6 @@ export default function SignupPage() {
     const normalizedEmail = email.trim().toLowerCase();
     try {
       const availability = await checkEmailAvailability(normalizedEmail);
-      if (!mountedRef.current) return;
       if (!availability.available) {
         setErrorMessage("이미 가입된 이메일입니다.");
         setIsSubmitting(false);
@@ -78,31 +73,25 @@ export default function SignupPage() {
         ...pendingDraft,
         verificationRequestError: getErrorMessage(error, "인증번호 요청에 실패했습니다.")
       });
+      setIsSubmitting(false);
       router.replace("/signup");
     }
   }
 
   return (
-    <main className="auth-screen auth-screen--login">
-      <section className="auth-shell" aria-labelledby="auth-title">
-        <div className="auth-content">
-          <h1 className="auth-title" id="auth-title">회원가입</h1>
-          <div className="auth-main-section">
-            <form className="auth-form" method="post" onSubmit={handleVerificationRequest}>
-              <div className="auth-field-with-error">
-                <div className="auth-field-stack">
-                  <AuthField label="닉네임" name="nickname" onChange={(event) => setNickname(event.target.value)} placeholder="name" value={nickname} />
-                  <AuthField autoComplete="email" label="이메일" name="email" onChange={(event) => setEmail(event.target.value)} placeholder="example@email.com" type="email" value={email} />
-                  <AuthField autoComplete="new-password" label="비밀번호" name="password" onChange={(event) => setPassword(event.target.value)} placeholder="password" type="password" value={password} />
-                </div>
-                {visibleError ? <AuthError>{visibleError}</AuthError> : null}
-              </div>
-              <AuthSubmitButton disabled={isSubmitting}>인증 요청</AuthSubmitButton>
-            </form>
-            <p className="auth-prompt">이미 아이디가 있으신가요?<button onClick={() => router.push("/login")} type="button">로그인하기</button></p>
+    <AuthScreen title="회원가입">
+      <form className="auth-form" method="post" onSubmit={handleVerificationRequest}>
+        <div className="auth-field-with-error">
+          <div className="auth-field-stack">
+            <AuthField label="닉네임" name="nickname" onChange={(event) => setNickname(event.target.value)} placeholder="name" value={nickname} />
+            <AuthField autoComplete="email" label="이메일" name="email" onChange={(event) => setEmail(event.target.value)} placeholder="example@email.com" type="email" value={email} />
+            <AuthField autoComplete="new-password" label="비밀번호" name="password" onChange={(event) => setPassword(event.target.value)} placeholder="password" type="password" value={password} />
           </div>
+          {visibleError ? <AuthError>{visibleError}</AuthError> : null}
         </div>
-      </section>
-    </main>
+        <AuthSubmitButton disabled={isSubmitting}>인증 요청</AuthSubmitButton>
+      </form>
+      <p className="auth-prompt">이미 아이디가 있으신가요?<button onClick={() => router.push("/login")} type="button">로그인하기</button></p>
+    </AuthScreen>
   );
 }

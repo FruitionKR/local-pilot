@@ -14,11 +14,8 @@ export {
   mergeRefreshedLogPage,
   pickSelectedOperationId
 } from "./model/operationLogPage";
-export type { OperationLogDateGroup } from "./model/operationLogPage";
 export { formatOperationLogTitle, OPERATION_TYPE_LABELS } from "./model/operationType";
 export type {
-  DiffHunk,
-  DiffLine,
   OperationChange,
   OperationLogDetail,
   OperationLogItem,

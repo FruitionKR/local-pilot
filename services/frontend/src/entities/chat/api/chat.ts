@@ -1,4 +1,4 @@
-import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
+import { apiFetch, throwIfNotOk, parseJsonOrThrow, getWorkspaceId, workspacePath, ERROR_MESSAGES } from "@/shared/api/client";
 import type { ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse } from "@/entities/chat/model/chat";
 
 // 세션 선택 UI 도입 전까지 가장 최근 세션을 사용한다(없으면 생성).
@@ -22,7 +22,7 @@ export function clearSessionCache() {
 /** 새 채팅 세션을 만든다. 생성된 세션을 반환한다(활성 전환은 호출측에서 처리). */
 export async function createChatSession(title?: string): Promise<ChatSessionResponse> {
   const workspaceId = getWorkspaceId();
-  const response = await apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions`, {
+  const response = await apiFetch(workspacePath(workspaceId, "chat", "sessions"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(title ? { title } : {})
@@ -34,12 +34,10 @@ export async function createChatSession(title?: string): Promise<ChatSessionResp
 export async function deleteChatSession(sessionId: string): Promise<void> {
   const workspaceId = getWorkspaceId();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions/${encodeURIComponent(sessionId)}`,
+    workspacePath(workspaceId, "chat", "sessions", sessionId),
     { method: "DELETE" }
   );
-  if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.chatSessionFailed));
-  }
+  await throwIfNotOk(response, ERROR_MESSAGES.chatSessionFailed);
   if (selectedSession?.sessionId === sessionId) selectedSession = null;
   if (sessionCache?.workspaceId === workspaceId) sessionCache = null;
 }
@@ -47,17 +45,17 @@ export async function deleteChatSession(sessionId: string): Promise<void> {
 /** 현재 워크스페이스의 채팅 세션 목록을 가져온다. */
 export async function fetchChatSessions(): Promise<ChatSessionListResponse> {
   const workspaceId = getWorkspaceId();
-  const response = await apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions`, { cache: "no-store" });
+  const response = await apiFetch(workspacePath(workspaceId, "chat", "sessions"), { cache: "no-store" });
   return parseJsonOrThrow<ChatSessionListResponse>(response, ERROR_MESSAGES.chatSessionFailed);
 }
 
 async function resolveSessionId(workspaceId: string): Promise<string> {
-  const listResponse = await apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions`, { cache: "no-store" });
+  const listResponse = await apiFetch(workspacePath(workspaceId, "chat", "sessions"), { cache: "no-store" });
   const list = await parseJsonOrThrow<ChatSessionListResponse>(listResponse, ERROR_MESSAGES.chatSessionFailed);
   const latest = list.sessions?.[0];
   if (latest) return latest.id;
 
-  const createResponse = await apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions`, {
+  const createResponse = await apiFetch(workspacePath(workspaceId, "chat", "sessions"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({})
@@ -90,7 +88,7 @@ export async function fetchCurrentChatSessionId(): Promise<string> {
 export async function fetchChatMessages(): Promise<ChatMessagesResponse> {
   const { workspaceId, sessionId } = await getSessionContext();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions/${encodeURIComponent(sessionId)}/messages`,
+    workspacePath(workspaceId, "chat", "sessions", sessionId, "messages"),
     { cache: "no-store" }
   );
 
