@@ -481,6 +481,65 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             {item.page.id for item in result.related_pages},
         )
 
+    def test_graph_link_limit_counts_only_traversable_relations(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:excluded", "Excluded Concept"),
+            concept_page("concept:allowed", "Allowed Concept"),
+        ]
+        repository = InMemoryWikiRepository(
+            pages,
+            [
+                WikiPageLink(
+                    "source:seed",
+                    "concept:excluded",
+                    "related_evidence",
+                    confidence=0.99,
+                ),
+                WikiPageLink(
+                    "source:seed",
+                    "concept:allowed",
+                    "part_of",
+                    confidence=0.98,
+                ),
+            ],
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=repository,
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 0.98,
+                    "Excluded Concept": 0.99,
+                    "Allowed Concept": 1.0,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:seed.md": "---\ndocument_id: doc_seed\n---\n\nSeed. [B0001]",
+                    "s3://test/concept:excluded.md": "Excluded. [B0002]",
+                    "s3://test/concept:allowed.md": (
+                        "---\nsources: doc_allowed\n---\n\nAllowed evidence. [B0003]"
+                    ),
+                }
+            ),
+            source_candidate_limit=1,
+            concept_candidate_limit=0,
+            candidate_pool_multiplier=1,
+            graph_link_limit=1,
+        )
+
+        result = use_case.execute("allowed evidence", workspace_id="ws_test")
+
+        self.assertIn(
+            "concept:allowed",
+            {item.page.id for item in result.related_pages},
+        )
+        self.assertEqual(result.evidence_snippets[0].source_document_id, "doc_allowed")
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0003"])
+        self.assertIn("[1]", result.answer.content)
+
     def test_expands_bounded_graph_to_configured_depth(self) -> None:
         pages = [
             source_page("source:seed", "Seed Source"),

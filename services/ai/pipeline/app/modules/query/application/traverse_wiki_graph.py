@@ -4,6 +4,19 @@ from app.modules.query.domain.entities import GraphContext, RetrievedPage, Trave
 from app.modules.query.domain.scoring import edge_role, traversal_score
 
 
+TRAVERSABLE_RELATION_TYPES = frozenset(
+    {
+        "source_mentions_concept",
+        "concept_related_to",
+        "part_of",
+        "child_of",
+        "uses_or_depends_on",
+        "contrasts_with",
+        "supports_or_enables",
+    }
+)
+
+
 class TraverseWikiGraphUseCase:
     def __init__(
         self,
@@ -130,17 +143,8 @@ class TraverseWikiGraphUseCase:
 
     def _build_adjacency(self, links: list[WikiPageLink]) -> dict[str, list[WikiPageLink]]:
         adjacency: dict[str, list[WikiPageLink]] = defaultdict(list)
-        allowed = {
-            "source_mentions_concept",
-            "concept_related_to",
-            "part_of",
-            "child_of",
-            "uses_or_depends_on",
-            "contrasts_with",
-            "supports_or_enables",
-        }
         for link in links:
-            if link.link_type not in allowed:
+            if link.link_type not in TRAVERSABLE_RELATION_TYPES:
                 continue
             adjacency[link.from_page_id].append(link)
             adjacency[link.to_page_id].append(link)

@@ -135,7 +135,7 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
         sql, params = connection.calls[0]
         self.assertIn("from_page.workspace_id = %s", sql)
         self.assertIn("to_page.workspace_id = %s", sql)
-        self.assertIn("l.link_type <> 'source_related_to'", sql)
+        self.assertIn("l.link_type = ANY(%s)", sql)
         self.assertIn("l.from_page_id = ANY(%s)", sql)
         self.assertIn("l.to_page_id = ANY(%s)", sql)
         self.assertIn("AND NOT (l.to_page_id = ANY(%s))", sql)
@@ -146,6 +146,15 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
             (
                 "ws_target",
                 "ws_target",
+                [
+                    "child_of",
+                    "concept_related_to",
+                    "contrasts_with",
+                    "part_of",
+                    "source_mentions_concept",
+                    "supports_or_enables",
+                    "uses_or_depends_on",
+                ],
                 ["source-1", "concept-1"],
                 [],
                 ["source-1", "concept-1"],
