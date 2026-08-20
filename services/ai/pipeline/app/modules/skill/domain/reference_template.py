@@ -2,7 +2,7 @@ import re
 
 
 HEADING_PATTERN = re.compile(r"^ {0,3}#{1,6}\s+\S")
-LIST_ITEM_PATTERN = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+\S")
+LIST_ITEM_PATTERN = re.compile(r"^(\s*)((?:[-+*]|\d+[.)]))\s+(?:(\[[ xX]\])\s+)?\S")
 TABLE_SEPARATOR_PATTERN = re.compile(r"^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$")
 FIXED_TEMPLATE_START = "# 고정 출력 템플릿\n\n```markdown\n"
 FIXED_TEMPLATE_END = "\n```"
@@ -28,8 +28,11 @@ def extract_markdown_structure(markdown: str) -> str:
             continue
         list_item = LIST_ITEM_PATTERN.match(line)
         if list_item:
-            marker = line[len(list_item.group(1)) :].split(maxsplit=1)[0]
-            structure.append(f"{list_item.group(1)}{marker} [item]")
+            indent, marker, checkbox = list_item.groups()
+            prefix = f"{indent}{marker}"
+            if checkbox:
+                prefix += f" {checkbox}"
+            structure.append(f"{prefix} [item]")
             continue
         if index + 1 < len(lines) and "|" in line and TABLE_SEPARATOR_PATTERN.match(lines[index + 1]):
             structure.extend((line.rstrip(), lines[index + 1].rstrip()))
