@@ -4,6 +4,7 @@ import { SvgIcon, toggleIcon } from "@/shared/ui/SvgIcon";
 import { useWorkspaceName } from "@/entities/workspace/model/useWorkspaceName";
 import { createWorkspace, fetchWorkspaces } from "@/entities/workspace";
 import { setSelectedWorkspaceId } from "@/shared/lib/auth";
+import { useDismissOnOutside } from "@/shared/lib/useDismissOnOutside";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { LoadingOverlay } from "@/shared/ui/LoadingOverlay";
 import type { WorkspaceResponse } from "@/entities/workspace";
@@ -26,21 +27,12 @@ export function SidebarWorkspaceHeader() {
   const [isCreating, setIsCreating] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
+  useDismissOnOutside(rootRef, isOpen, () => setIsOpen(false));
+
   useEffect(() => {
     if (!isOpen) return;
 
     let cancelled = false;
-    function handleOutsidePointerDown(event: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setIsOpen(false);
-    }
-
-    document.addEventListener("pointerdown", handleOutsidePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
     fetchWorkspaces()
       .then((response) => {
         if (cancelled) return;
@@ -53,8 +45,6 @@ export function SidebarWorkspaceHeader() {
 
     return () => {
       cancelled = true;
-      document.removeEventListener("pointerdown", handleOutsidePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 

@@ -12,6 +12,7 @@ import { fetchNoteDraft, waitForPendingDocumentSave, type DetachedNoteSaveResult
 import { getErrorMessage } from "@/shared/lib/errors";
 import { buildMarkdownDocumentFilename, getMarkdownDocumentTitle, splitEditableNoteMarkdown } from "@/entities/document/lib/note";
 import { cx } from "@/shared/lib/classNames";
+import { useDismissOnOutside } from "@/shared/lib/useDismissOnOutside";
 import styles from "./SourcePreviewPanel.module.css";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { DocumentRole, SourceBlockHighlight } from "@/entities/document";
@@ -155,23 +156,7 @@ export function SourcePreviewPanel({
     setNoteSaveError(null);
   }, [documentId]);
 
-  useEffect(() => {
-    if (!isOptionsOpen) return;
-
-    function closeOptions(event: MouseEvent) {
-      if (!optionsRef.current?.contains(event.target as Node)) setIsOptionsOpen(false);
-    }
-    function closeOptionsWithEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setIsOptionsOpen(false);
-    }
-
-    window.addEventListener("mousedown", closeOptions);
-    window.addEventListener("keydown", closeOptionsWithEscape);
-    return () => {
-      window.removeEventListener("mousedown", closeOptions);
-      window.removeEventListener("keydown", closeOptionsWithEscape);
-    };
-  }, [isOptionsOpen]);
+  useDismissOnOutside(optionsRef, isOptionsOpen, () => setIsOptionsOpen(false));
 
   const handleMarkdownEditContextChange = useCallback((context: ActiveMarkdownEditContext | null) => {
     onMarkdownEditContextChange?.(context);

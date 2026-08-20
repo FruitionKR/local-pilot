@@ -68,7 +68,7 @@ document-svc는 workspace 멤버십을 DB에서 직접 읽지 않는다:
   3. HTTP 실패 → WorkspaceNotFoundException (fail-closed, 404)
 ```
 
-access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. **access-svc가 죽어도 캐시 warm 상태의 문서 기능은 계속 동작한다**(TTL 내). 실측: access 강제 정지 중 문서 조회 200·업로드 201, cold 캐시는 fail-closed 404. 결정 근거: [adr/0002](adr/0002-choose-auth-strategy.md)
+projection 적재는 document-svc가 miss 시 내부 API 판정 결과를 캐시하는 방식이고, access-svc는 멤버십이 변하는 지점(삭제·복구 등)에서 무효화만 담당한다. **access-svc가 죽어도 캐시 warm 상태의 문서 기능은 계속 동작한다**(TTL 내). 실측: access 강제 정지 중 문서 조회 200·업로드 201, cold 캐시는 fail-closed 404. 결정 근거: [adr/0002](adr/0002-choose-auth-strategy.md)
 
 ## 5. 데이터 소유
 

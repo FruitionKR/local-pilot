@@ -41,13 +41,3 @@ export type SourceBlockHighlight = {
   block_id: string;
   rank: number;
 };
-
-export type DocumentBlockResponse = {
-  block_id: string;
-  text: string;
-};
-
-export type DocumentBlocksResponse = {
-  document_id: string;
-  blocks: DocumentBlockResponse[];
-};

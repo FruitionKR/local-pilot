@@ -2,6 +2,7 @@ import { ArrowUp, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { AiModel } from "@/entities/ai";
 import { cx } from "@/shared/lib/classNames";
+import { useDismissOnOutside } from "@/shared/lib/useDismissOnOutside";
 import styles from "./AgentChat.module.css";
 
 export type AiModelCatalogStatus = "loading" | "ready" | "empty" | "error";
@@ -38,16 +39,7 @@ export function AgentComposer({
   const modelListRef = useRef<HTMLDivElement | null>(null);
   const selectedKey = selectedModel ? modelKey(selectedModel) : null;
 
-  useEffect(() => {
-    if (!isModelListOpen) return;
-    function handleOutsidePointerDown(event: PointerEvent) {
-      if (modelListRef.current && !modelListRef.current.contains(event.target as Node)) {
-        setIsModelListOpen(false);
-      }
-    }
-    document.addEventListener("pointerdown", handleOutsidePointerDown);
-    return () => document.removeEventListener("pointerdown", handleOutsidePointerDown);
-  }, [isModelListOpen]);
+  useDismissOnOutside(modelListRef, isModelListOpen, () => setIsModelListOpen(false));
 
   useEffect(() => {
     if (isLoading) setIsModelListOpen(false);

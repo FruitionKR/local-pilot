@@ -81,20 +81,17 @@ html[data-reduce-motion="true"] *::after {
 }
 
 .agent-body::-webkit-scrollbar,
-.sidebar-content::-webkit-scrollbar,
-.source-preview-content::-webkit-scrollbar {
+.sidebar-content::-webkit-scrollbar {
   width: 8px;
 }
 
 .agent-body::-webkit-scrollbar-track,
-.sidebar-content::-webkit-scrollbar-track,
-.source-preview-content::-webkit-scrollbar-track {
+.sidebar-content::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .agent-body::-webkit-scrollbar-thumb,
-.sidebar-content::-webkit-scrollbar-thumb,
-.source-preview-content::-webkit-scrollbar-thumb {
+.sidebar-content::-webkit-scrollbar-thumb {
   background: var(--line);
   border: 2px solid var(--panel);
   border-radius: 999px;

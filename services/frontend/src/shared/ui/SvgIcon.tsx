@@ -17,7 +17,6 @@ import homeIcon from "../../../svg/navigation/menu_home.svg";
 import homeSelectIcon from "../../../svg/navigation/home_select.svg";
 import logSelectIcon from "../../../svg/navigation/log_select.svg";
 import rawPageIcon from "../../../svg/graph/raw.svg";
-import searchIcon from "../../../svg/workspace/search.svg";
 import sideboxIcon from "../../../svg/workspace/sidebox.svg";
 import sourceIcon from "../../../svg/document/source.svg";
 import sourcePageIcon from "../../../svg/graph/source_page.svg";
@@ -27,7 +26,6 @@ import toggleIcon from "../../../svg/workspace/toggle.svg";
 import userCircleIcon from "../../../svg/workspace/UserCircle.svg";
 
 // svg 파일 없이 인라인 SVG로만 렌더링하는 아이콘 식별자
-const archiveIcon = { inlineIcon: "archive" } as const;
 const bellIcon = { inlineIcon: "bell" } as const;
 const chatBubbleIcon = { inlineIcon: "chatBubble" } as const;
 const lightningIcon = { inlineIcon: "lightning" } as const;
@@ -37,7 +35,6 @@ const settingIcon = { inlineIcon: "setting" } as const;
 
 export type SvgAsset =
   | StaticImageData
-  | typeof archiveIcon
   | typeof bellIcon
   | typeof chatBubbleIcon
   | typeof lightningIcon
@@ -46,7 +43,6 @@ export type SvgAsset =
   | typeof settingIcon;
 
 export {
-  archiveIcon,
   arrowIcon,
   bellIcon,
   chatBubbleIcon,
@@ -69,7 +65,6 @@ export {
   lightningIcon,
   profileToggleIcon,
   rawPageIcon,
-  searchIcon,
   sideboxIcon,
   sourceIcon,
   sourcePageIcon,
@@ -80,14 +75,6 @@ export {
 
 // currentColor 적용이 필요해 next/image 대신 인라인 SVG로 렌더링하는 아이콘 목록
 const inlineIconRenderers = new Map<SvgAsset, (iconClassName: string) => ReactElement>([
-  [archiveIcon, (iconClassName) => (
-    <svg aria-hidden className={iconClassName} viewBox="0 0 16 16" fill="none">
-      <path d="M2.7501 1.87491C2.28597 1.87491 1.84085 2.05928 1.51266 2.38747C1.18447 2.71566 1.0001 3.16078 1.0001 3.62491C1.0001 4.08904 1.18447 4.53416 1.51266 4.86235C1.84085 5.19053 2.28597 5.37491 2.7501 5.37491H13.2501C13.7142 5.37491 14.1593 5.19053 14.4875 4.86235C14.8157 4.53416 15.0001 4.08904 15.0001 3.62491C15.0001 3.16078 14.8157 2.71566 14.4875 2.38747C14.1593 2.05928 13.7142 1.87491 13.2501 1.87491H2.7501Z" fill="currentColor" opacity="0.55" />
-      <path fillRule="evenodd" clipRule="evenodd" d="M1.87498 5.1064H14.125V12.1207C14.125 12.6522 13.9406 13.162 13.6124 13.5378C13.2842 13.9137 12.8391 14.1248 12.375 14.1248H3.62498C3.16086 14.1248 2.71574 13.9137 2.38755 13.5378C2.05936 13.162 1.87498 12.6522 1.87498 12.1207V5.1064Z" fill="currentColor" opacity="0.55" />
-      <path d="M6.50627 8.25621C6.34217 8.4203 6.24998 8.64286 6.24998 8.87492C6.24998 9.10699 6.34217 9.32955 6.50627 9.49364C6.67036 9.65774 6.89292 9.74992 7.12498 9.74992H8.87498C9.10705 9.74992 9.32961 9.65774 9.4937 9.49364C9.6578 9.32955 9.74998 9.10699 9.74998 8.87492C9.74998 8.64286 9.6578 8.4203 9.4937 8.25621C9.32961 8.09211 9.10705 7.99992 8.87498 7.99992H7.12498C6.89292 7.99992 6.67036 8.09211 6.50627 8.25621Z" fill="currentColor" />
-      <rect x="1.87498" y="5.15607" width="12.2499" height="0.796814" fill="currentColor" />
-    </svg>
-  )],
   // 규칙(schema) 번개: 기존 menu_schema.svg 패스를 currentColor 인라인으로 이관
   [lightningIcon, (iconClassName) => (
     <svg aria-hidden className={iconClassName} viewBox="0 0 36 36" fill="none">

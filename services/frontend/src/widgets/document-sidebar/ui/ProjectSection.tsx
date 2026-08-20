@@ -15,24 +15,8 @@ export function ProjectSection({
   isPrimary,
   useFullSidebarDropZone,
   onUploadToProject,
-  draggedItemId,
-  selectedItemId,
-  dropTarget,
-  fileDropTarget,
-  editing,
-  onMoveItem,
-  onDropFiles,
-  onDragStart,
-  onDragOverItem,
-  onFileDragOver,
-  onFileDragLeave,
-  onDragEnd,
   onContextMenuProject,
-  onContextMenuItem,
-  onSelectGraphNode,
-  onEditingChange,
-  onCommitEditing,
-  onCancelEditing
+  interaction
 }: {
   project: Project;
   /** 첫 번째 프로젝트는 시안처럼 밝은 pill 헤더 + 업로드 버튼을 표시한다 */
@@ -40,17 +24,20 @@ export function ProjectSection({
   useFullSidebarDropZone?: boolean;
   onUploadToProject: (projectId: string) => void;
   onContextMenuProject: (event: ReactMouseEvent<HTMLElement>, projectId: string) => void;
-} & TreeInteractionProps) {
+  /** 트리 상호작용 상태·핸들러 묶음 */
+  interaction: TreeInteractionProps;
+}) {
   const [isOpen, setIsOpen] = useState(true);
+  const { fileDropTarget, dropTarget, editing } = interaction;
   const isRootFileDropTarget = fileDropTarget?.projectId === project.id && fileDropTarget.folderId === null;
   const isTreeRootDropTarget = dropTarget?.projectId === project.id && dropTarget.targetId === null;
   const isProjectEditing = editing?.projectId === project.id && editing.itemId === null;
   const { handleDragOver, handleDragLeave, handleDrop } = useFileDropZone({
     projectId: project.id,
     folderId: null,
-    onFileDragOver,
-    onFileDragLeave,
-    onDropFiles
+    onFileDragOver: interaction.onFileDragOver,
+    onFileDragLeave: interaction.onFileDragLeave,
+    onDropFiles: interaction.onDropFiles
   });
 
   function handleTreeDragOver(event: ReactDragEvent<HTMLDivElement>) {
@@ -58,14 +45,14 @@ export function ProjectSection({
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
-    onDragOverItem({ projectId: project.id, targetId: null, position: "inside" });
+    interaction.onDragOverItem({ projectId: project.id, targetId: null, position: "inside" });
   }
 
   function handleTreeDrop(event: ReactDragEvent<HTMLDivElement>) {
-    if (hasDroppedFiles(event) || !draggedItemId) return;
+    if (hasDroppedFiles(event) || !interaction.draggedItemId) return;
     event.preventDefault();
     event.stopPropagation();
-    onMoveItem({ projectId: project.id, targetId: null, position: "inside" });
+    interaction.onMoveItem({ projectId: project.id, targetId: null, position: "inside" });
   }
 
   return (
@@ -94,9 +81,9 @@ export function ProjectSection({
           {isProjectEditing ? (
             <InlineEditInput
               value={editing.label}
-              onChange={onEditingChange}
-              onCommit={onCommitEditing}
-              onCancel={onCancelEditing}
+              onChange={interaction.onEditingChange}
+              onCommit={interaction.onCommitEditing}
+              onCancel={interaction.onCancelEditing}
             />
           ) : (
             <>
@@ -123,23 +110,7 @@ export function ProjectSection({
             <SidebarTree
               items={project.items}
               projectId={project.id}
-              draggedItemId={draggedItemId}
-              selectedItemId={selectedItemId}
-              dropTarget={dropTarget}
-              fileDropTarget={fileDropTarget}
-              editing={editing}
-              onMoveItem={onMoveItem}
-              onDropFiles={onDropFiles}
-              onDragStart={onDragStart}
-              onDragOverItem={onDragOverItem}
-              onFileDragOver={onFileDragOver}
-              onFileDragLeave={onFileDragLeave}
-              onDragEnd={onDragEnd}
-              onContextMenuItem={onContextMenuItem}
-              onSelectGraphNode={onSelectGraphNode}
-              onEditingChange={onEditingChange}
-              onCommitEditing={onCommitEditing}
-              onCancelEditing={onCancelEditing}
+              interaction={interaction}
             />
           )
           : <p className={styles["project-empty"]}>폴더가 없습니다.</p>

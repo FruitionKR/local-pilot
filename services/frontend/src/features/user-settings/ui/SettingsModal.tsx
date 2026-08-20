@@ -14,6 +14,7 @@ import {
 import { fetchMe, useUserPreferences } from "@/entities/user";
 import { useWorkspaceName } from "@/entities/workspace/model/useWorkspaceName";
 import { getErrorMessage } from "@/shared/lib/errors";
+import { useEscapeKey } from "@/shared/lib/useEscapeKey";
 import {
   bellIcon,
   claudeIcon,
@@ -104,15 +105,12 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         if (!cancelled) setAiModelError(getErrorMessage(error, "LLM Provider 설정을 불러오지 못했습니다."));
       });
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", handleKeyDown);
     return () => {
       cancelled = true;
-      document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onClose]);
+  }, []);
+
+  useEscapeKey(true, onClose);
 
   const name = displayName || "사용자";
   const wsName = workspaceName ?? "워크스페이스";

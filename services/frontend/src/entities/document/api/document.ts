@@ -1,12 +1,12 @@
-import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
-import type { DocumentBlocksResponse, DocumentItemResponse, DocumentRole, DocumentUploadResponse } from "@/entities/document/model/document";
+import { apiFetch, throwIfNotOk, parseJsonOrThrow, getWorkspaceId, workspacePath, ERROR_MESSAGES } from "@/shared/api/client";
+import type { DocumentItemResponse, DocumentRole, DocumentUploadResponse } from "@/entities/document/model/document";
 
 export async function uploadDocumentFile(file: File) {
   const workspaceId = getWorkspaceId();
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents`, {
+  const response = await apiFetch(workspacePath(workspaceId, "documents"), {
     method: "POST",
     headers: { "Idempotency-Key": crypto.randomUUID() },
     body: formData
@@ -19,12 +19,10 @@ export async function uploadDocumentFile(file: File) {
 async function startDocumentIngest(documentId: string): Promise<void> {
   const workspaceId = getWorkspaceId();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/ingest`,
+    workspacePath(workspaceId, "documents", documentId, "ingest"),
     { method: "POST" }
   );
-  if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, "문서 분석 시작에 실패했습니다."));
-  }
+  await throwIfNotOk(response, "문서 분석 시작에 실패했습니다.");
 }
 
 /**
@@ -34,7 +32,7 @@ async function startDocumentIngest(documentId: string): Promise<void> {
 export async function convertDocumentToMarkdown(documentId: string) {
   const workspaceId = getWorkspaceId();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/convert-markdown`,
+    workspacePath(workspaceId, "documents", documentId, "convert-markdown"),
     {
       method: "POST",
       headers: { "Idempotency-Key": crypto.randomUUID() }
@@ -62,50 +60,34 @@ export async function reflectDocumentToWiki(
 export async function deleteDocument(documentId: string): Promise<void> {
   const workspaceId = getWorkspaceId();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
+    workspacePath(workspaceId, "documents", documentId),
     { method: "DELETE" }
   );
-  if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.documentDeleteFailed));
-  }
+  await throwIfNotOk(response, ERROR_MESSAGES.documentDeleteFailed);
 }
 
 /** 문서 표시명을 변경한다. */
 export async function renameDocument(documentId: string, filename: string): Promise<void> {
   const workspaceId = getWorkspaceId();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/rename`,
+    workspacePath(workspaceId, "documents", documentId, "rename"),
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename })
     }
   );
-  if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.documentRenameFailed));
-  }
-}
-
-export async function fetchDocumentBlocks(documentId: string): Promise<DocumentBlocksResponse> {
-  const workspaceId = getWorkspaceId();
-  const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/blocks`,
-    { cache: "no-store" }
-  );
-
-  return parseJsonOrThrow<DocumentBlocksResponse>(response, ERROR_MESSAGES.documentBlocksLoadFailed);
+  await throwIfNotOk(response, ERROR_MESSAGES.documentRenameFailed);
 }
 
 /** 현재 워크스페이스의 원본 문서를 인증된 요청으로 가져온다. */
 export async function fetchDocumentOriginal(documentId: string): Promise<Blob> {
   const workspaceId = getWorkspaceId();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/original`,
+    workspacePath(workspaceId, "documents", documentId, "original"),
     { cache: "no-store" }
   );
 
-  if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.documentOriginalLoadFailed));
-  }
+  await throwIfNotOk(response, ERROR_MESSAGES.documentOriginalLoadFailed);
   return response.blob();
 }

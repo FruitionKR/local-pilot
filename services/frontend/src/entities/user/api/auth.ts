@@ -1,4 +1,4 @@
-import { apiFetch, parseErrorResponse, parseJsonOrThrow, ERROR_MESSAGES } from "@/shared/api/client";
+import { apiFetch, throwIfNotOk, parseJsonOrThrow, ERROR_MESSAGES } from "@/shared/api/client";
 import type { UserMeResponse } from "@/entities/user/model/auth";
 
 export type AuthTokensResponse = {
@@ -109,9 +109,7 @@ export async function signupWithEmail(
     })
   });
 
-  if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.signupFailed));
-  }
+  await throwIfNotOk(response, ERROR_MESSAGES.signupFailed);
 }
 
 export async function resetPasswordWithVerification(
@@ -129,9 +127,7 @@ export async function resetPasswordWithVerification(
     })
   });
 
-  if (!response.ok) {
-    throw new Error(await parseErrorResponse(response, "비밀번호 재설정에 실패했습니다."));
-  }
+  await throwIfNotOk(response, "비밀번호 재설정에 실패했습니다.");
 }
 
 /** 로그인한 사용자 정보를 가져온다. */

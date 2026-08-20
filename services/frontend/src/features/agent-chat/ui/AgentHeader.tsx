@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createChatSession, deleteChatSession, fetchChatSessions } from "@/entities/chat/api/chat";
 import { getErrorMessage } from "@/shared/lib/errors";
+import { useDismissOnOutside } from "@/shared/lib/useDismissOnOutside";
 import type { ChatSessionResponse } from "@/entities/chat/model/chat";
 import { fruitionLogo, sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import { cx } from "@/shared/lib/classNames";
@@ -43,16 +44,7 @@ export function AgentHeader({
     setRowMenu(null);
   }, [isInteractionLocked]);
 
-  useEffect(() => {
-    if (!isMenuOpen) return;
-    function handleOutsidePointerDown(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleOutsidePointerDown);
-    return () => document.removeEventListener("mousedown", handleOutsidePointerDown);
-  }, [isMenuOpen]);
+  useDismissOnOutside(menuRef, isMenuOpen, () => setIsMenuOpen(false));
 
   async function startNewChat() {
     setIsMenuOpen(false);
@@ -83,6 +75,8 @@ export function AgentHeader({
     if (!isListOpen) setRowMenu(null);
   }, [isListOpen]);
 
+  useDismissOnOutside(rootRef, isListOpen, () => setIsListOpen(false));
+
   useEffect(() => {
     if (!isListOpen) return;
 
@@ -97,16 +91,8 @@ export function AgentHeader({
         if (!cancelled) setLoadErrorMessage(getErrorMessage(error, "채팅 세션을 불러오지 못했습니다."));
       });
 
-    function handleOutsidePointerDown(event: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        setIsListOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleOutsidePointerDown);
-
     return () => {
       cancelled = true;
-      document.removeEventListener("mousedown", handleOutsidePointerDown);
     };
   }, [isListOpen]);
 
@@ -234,7 +220,7 @@ export function AgentHeader({
           className={styles["chat-session-menu-list"]}
           role="menu"
           style={{ top: rowMenu.top, left: rowMenu.left }}
-          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
         >
           <button
             type="button"

@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogIn, RefreshCw, WifiOff } from "lucide-react";
 import { clearSessionCache } from "@/entities/chat";
-import { fetchMe } from "@/entities/user";
+import { fetchMe, useSignOut } from "@/entities/user";
 import { createWorkspace, fetchWorkspaces } from "@/entities/workspace";
 import { ERROR_MESSAGES } from "@/shared/api/client";
-import { clearAuth, setSelectedWorkspaceId } from "@/shared/lib/auth";
+import { setSelectedWorkspaceId } from "@/shared/lib/auth";
 import { getErrorMessage, isErrorMessage } from "@/shared/lib/errors";
 import { LoadingOverlay } from "@/shared/ui/LoadingOverlay";
 import styles from "./WorkspacesPage.module.css";
@@ -16,6 +16,7 @@ const DEFAULT_WORKSPACE_NAME = "나의 워크스페이스";
 
 export default function WorkspacesPage() {
   const router = useRouter();
+  const { signOut } = useSignOut();
   const hasStarted = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -30,13 +31,12 @@ export default function WorkspacesPage() {
       router.replace("/home");
     } catch (error: unknown) {
       if (isErrorMessage(error, ERROR_MESSAGES.loginRequired)) {
-        clearAuth();
-        router.replace("/login");
+        void signOut();
         return;
       }
       setErrorMessage(getErrorMessage(error, "워크스페이스를 준비하지 못했습니다."));
     }
-  }, [router]);
+  }, [router, signOut]);
 
   useEffect(() => {
     if (hasStarted.current) return;

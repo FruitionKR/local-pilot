@@ -313,6 +313,11 @@
   color: var(--auth-accent);
 }
 
+.auth-prompt button:disabled {
+  color: #c4c4c4;
+  cursor: not-allowed;
+}
+
 @media (max-width: 480px) {
   .auth-screen--login {
     padding: 24px 20px;

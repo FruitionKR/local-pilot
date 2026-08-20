@@ -1,6 +1,5 @@
 package fruition.access.workspace.service;
 
-import fruition.access.workspace.domain.WorkspaceRole;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -8,9 +7,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 
-import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,17 +23,6 @@ import static org.mockito.ArgumentCaptor.forClass;
 class AuthzProjectionStoreTest {
 
     @Mock StringRedisTemplate redisTemplate;
-    @Mock ValueOperations<String, String> valueOperations;
-
-    @Test
-    void put_writesRoleWithTtl() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        AuthzProjectionStore store = new AuthzProjectionStore(redisTemplate);
-
-        store.put("ws_1", "user_1", WorkspaceRole.OWNER);
-
-        verify(valueOperations).set("authz:role:ws_1:user_1", "OWNER", Duration.ofSeconds(300));
-    }
 
     @Test
     void evict_deletesSingleKey() {

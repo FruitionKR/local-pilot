@@ -1,4 +1,4 @@
-import { apiFetch, parseJsonOrThrow, ERROR_MESSAGES } from "@/shared/api/client";
+import { apiFetch, parseJsonOrThrow, workspacePath, ERROR_MESSAGES } from "@/shared/api/client";
 import { getSessionContext } from "@/entities/chat/api/chat";
 import type { ChatWikiExportStatus } from "../lib/exportStatus";
 
@@ -15,7 +15,7 @@ export async function exportChatWiki(pairIds: string[] = []): Promise<ChatWikiEx
   const { workspaceId, sessionId } = await getSessionContext();
   const isPartial = pairIds.length > 0;
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions/${encodeURIComponent(sessionId)}/wiki`,
+    workspacePath(workspaceId, "chat", "sessions", sessionId, "wiki"),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

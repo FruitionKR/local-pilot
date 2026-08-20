@@ -1,4 +1,4 @@
-import { apiFetch, parseJsonOrThrow, parseErrorResponse, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
+import { apiFetch, parseJsonOrThrow, parseErrorResponse, getWorkspaceId, workspacePath, ERROR_MESSAGES } from "@/shared/api/client";
 import { getSessionContext } from "@/entities/chat/api/chat";
 import type { AiModelSelection } from "@/entities/ai";
 import type { BackendData, QueryResponse, WikiGraphResponse, WikiPageDetailResponse } from "@/entities/wiki/model/wiki";
@@ -7,27 +7,13 @@ import type { DocumentListResponse } from "@/entities/document/model/document";
 export async function fetchBackendData(): Promise<BackendData> {
   const workspaceId = getWorkspaceId();
   const [documentsResponse, graphResponse] = await Promise.all([
-    apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents`, { cache: "no-store" }),
-    apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/wiki/graph`, { cache: "no-store" })
+    apiFetch(workspacePath(workspaceId, "documents"), { cache: "no-store" }),
+    apiFetch(workspacePath(workspaceId, "wiki", "graph"), { cache: "no-store" })
   ]);
 
   const documents = await parseJsonOrThrow<DocumentListResponse>(documentsResponse, ERROR_MESSAGES.documentsLoadFailed);
   const graph = await parseJsonOrThrow<WikiGraphResponse>(graphResponse, ERROR_MESSAGES.wikiGraphLoadFailed);
   return { documents: documents.documents ?? [], graph };
-}
-
-export async function queryWiki(question: string): Promise<QueryResponse> {
-  const { workspaceId, sessionId } = await getSessionContext();
-  const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions/${encodeURIComponent(sessionId)}/query`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question })
-    }
-  );
-
-  return parseJsonOrThrow<QueryResponse>(response, ERROR_MESSAGES.queryFailed);
 }
 
 // SSE로 전달되는 질의 진행 단계 이벤트.
@@ -63,7 +49,7 @@ export async function runQueryStream(
   const { workspaceId, sessionId } = await getSessionContext();
 
   const createResponse = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions/${encodeURIComponent(sessionId)}/query/runs`,
+    workspacePath(workspaceId, "chat", "sessions", sessionId, "query", "runs"),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -132,7 +118,7 @@ export async function runQueryStream(
 export async function fetchWikiPage(pageId: string): Promise<WikiPageDetailResponse> {
   const workspaceId = getWorkspaceId();
   const response = await apiFetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/wiki/pages/${encodeURIComponent(pageId)}`,
+    workspacePath(workspaceId, "wiki", "pages", pageId),
     { cache: "no-store" }
   );
 
