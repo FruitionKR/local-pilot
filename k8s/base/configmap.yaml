@@ -9,9 +9,6 @@ metadata:
 data:
   # --- document-svc / access-svc ---
   SPRING_PROFILES_ACTIVE: "local"
-  # actuator 전용 포트. ALB healthcheck-port 주석이 Ingress 단위라
-  # document-svc·access-svc가 같은 번호를 써야 한다(로컬 기본값은 8082/8083으로 갈린다).
-  MANAGEMENT_PORT: "8082"
   POSTGRES_HOST: "postgresql"
   POSTGRES_PORT: "5432"
   # DB 분리: access-svc → access_db, document-svc → core_db (비밀번호는 Secret)

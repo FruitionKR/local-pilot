@@ -159,7 +159,17 @@ def get_document(document_id: str) -> dict:
 
 
 # app에 직접 붙인 route는 include_internal_router를 타지 않으므로 여기서 검사 대상에 넣는다.
-INTERNAL_TOKEN_ROUTE_PATTERNS.append(app.routes[-1].path_regex)
+# 인덱스(app.routes[-1])는 아래에서 /metrics를 더 등록하는 순간 다른 route를 가리킨다.
+# 인증 자체는 route의 dependencies가 담당하고 이 등록은 판정 순서(401 먼저)를 맞출 뿐이지만,
+# 어긋나면 조용히 무의미해지므로 경로로 못박는다.
+_DOCUMENT_ROUTE_PATH = "/documents/{document_id}"
+_document_route = next(
+    (route for route in app.routes if getattr(route, "path", None) == _DOCUMENT_ROUTE_PATH),
+    None,
+)
+if _document_route is None:
+    raise RuntimeError(f"내부 토큰 검사 대상 route를 찾지 못했습니다: {_DOCUMENT_ROUTE_PATH}")
+INTERNAL_TOKEN_ROUTE_PATTERNS.append(_document_route.path_regex)
 
 
 # Prometheus 지표 수집과 /metrics 노출.
