@@ -80,7 +80,7 @@ from app.core.llm_env import (
 
 
 class PipelineConfigurationError(ValueError):
-    """실행 전 설정 결함(API 키·모델 누락).
+    """실행 전 설정 결함(API 키·모델·프롬프트 파일 누락).
 
     SystemExit은 worker의 `except Exception`을 통과해 프로세스를 죽이고
     Kafka 재전달 crash loop를 만들므로, 일반 예외로 던져 run 실패로 기록되게 한다.
@@ -191,7 +191,7 @@ def read_prompt(path_like: str) -> str:
     if not prompt_path.exists():
         prompt_path = Path(__file__).parent / path_like
     if not prompt_path.exists():
-        raise SystemExit(f"Prompt not found: {path_like}")
+        raise PipelineConfigurationError(f"Prompt not found: {path_like}")
     return prompt_path.read_text(encoding="utf-8")
 
 

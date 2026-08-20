@@ -12,6 +12,7 @@ from run_lab import (
     load_api_client,
     parse_args,
     pipeline_command_from_cli_args,
+    read_prompt,
     resolve_api_defaults,
     run_pipeline,
 )
@@ -164,3 +165,9 @@ def test_load_api_client_missing_api_key_raises_configuration_error() -> None:
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(PipelineConfigurationError):
             load_api_client(command)
+
+
+def test_read_prompt_missing_file_raises_configuration_error(tmp_path: Path) -> None:
+    # read_prompt도 worker 경로에서 호출되므로 SystemExit이 아닌 일반 예외를 던져야 한다.
+    with pytest.raises(PipelineConfigurationError):
+        read_prompt(str(tmp_path / "no-such-prompt.md"))
