@@ -193,7 +193,7 @@ python -m app.modules.document_restoration.interfaces.cli \
   --document-slug paper
 ```
 
-표·수식·손상 본문을 원본 이미지와 대조해 선택 보완하려면 provider와 model을 함께 지정하고 해당 provider의 API key를 환경변수로 전달합니다. 기본값은 `gemini/gemini-3.1-flash-lite`이고 지원 조합은 공통 AI model catalog와 동일하며 그림은 모델 대상에서 제외하고 crop asset을 보존합니다.
+표·수식·손상 본문을 원본 이미지와 대조해 선택 보완하려면 provider와 해당 provider의 API key를 지정합니다. model을 생략하면 선택 provider의 catalog 모델을 사용하며, 지원 조합은 공통 AI model catalog와 동일합니다. 그림은 모델 대상에서 제외하고 crop asset을 보존합니다.
 
 ```bash
 export GEMINI_API_KEY=...
