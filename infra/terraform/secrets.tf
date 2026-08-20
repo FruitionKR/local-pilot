@@ -6,6 +6,21 @@ resource "aws_secretsmanager_secret" "app" {
   name = "${var.project}/app"
 }
 
+resource "random_password" "jwt_secret" {
+  length  = 64
+  special = false
+}
+
+resource "random_password" "internal_callback_token" {
+  length  = 48
+  special = false
+}
+
+resource "random_password" "agent_internal_token" {
+  length  = 48
+  special = false
+}
+
 resource "aws_secretsmanager_secret_version" "app" {
   secret_id = aws_secretsmanager_secret.app.id
 
@@ -23,9 +38,9 @@ resource "aws_secretsmanager_secret_version" "app" {
     # --- 스토리지·인증 ---
     S3_ACCESS_KEY           = aws_iam_access_key.app.id
     S3_SECRET_KEY           = aws_iam_access_key.app.secret
-    JWT_SECRET              = "CHANGE_ME_32BYTES_MIN"
-    INTERNAL_CALLBACK_TOKEN = "CHANGE_ME"
-    AGENT_INTERNAL_TOKEN    = "CHANGE_ME"
+    JWT_SECRET              = random_password.jwt_secret.result
+    INTERNAL_CALLBACK_TOKEN = random_password.internal_callback_token.result
+    AGENT_INTERNAL_TOKEN    = random_password.agent_internal_token.result
     OPENAI_API_KEY          = ""
     GEMINI_API_KEY          = ""
     ANTHROPIC_API_KEY       = ""

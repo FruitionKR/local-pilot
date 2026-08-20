@@ -36,9 +36,6 @@ public class ChatMessage {
     @Column(name = "error_message", length = 255)
     private String errorMessage;
 
-    @Column(name = "wiki_page_id")
-    private String wikiPageId;
-
     @Column(name = "ai_provider")
     private String aiProvider;
 
@@ -95,9 +92,6 @@ public class ChatMessage {
         complete(content);
     }
 
-    /** 이 메시지(문답)가 세션 위키 source page에 편입됐음을 기록한다. */
-    public void markIngested(String wikiPageId) { this.wikiPageId = wikiPageId; }
-
     public void complete(String content) {
         this.content = content;
         this.status = "completed";
@@ -125,7 +119,6 @@ public class ChatMessage {
     public String getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
     public String getErrorMessage() { return errorMessage; }
-    public String getWikiPageId() { return wikiPageId; }
     public String getAiProvider() { return aiProvider; }
     public String getAiModel() { return aiModel; }
     public Boolean getWebSearchEnabled() { return webSearchEnabled; }

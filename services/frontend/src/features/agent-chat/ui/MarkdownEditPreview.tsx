@@ -14,6 +14,7 @@ export function MarkdownEditPreview({
   isLoading,
   onApply,
   onCancel,
+  onOpenAsNewDocument,
   onRegenerate
 }: {
   preview: MarkdownEditPreviewData;
@@ -21,6 +22,7 @@ export function MarkdownEditPreview({
   isLoading: boolean;
   onApply: () => void;
   onCancel: () => void;
+  onOpenAsNewDocument: () => void;
   onRegenerate: () => void;
 }) {
   return (
@@ -44,9 +46,6 @@ export function MarkdownEditPreview({
             <div className={styles["markdown-edit-rendered-preview"]}>
               <MarkdownViewer markdown={preview.replacementMarkdown} />
             </div>
-            <button type="button" className={styles["markdown-edit-regenerate"]} disabled={isLoading} onClick={onRegenerate}>
-              {isLoading ? "재생성 중" : "재생성"}
-            </button>
           </details>
         </div>
       </header>
@@ -55,6 +54,10 @@ export function MarkdownEditPreview({
 
       <footer>
         <button type="button" disabled={isLoading} onClick={onCancel}>취소</button>
+        <button type="button" disabled={isLoading} onClick={onRegenerate}>
+          {isLoading ? "재시도 중" : "재시도"}
+        </button>
+        <button type="button" disabled={isLoading} onClick={onOpenAsNewDocument}>새 문서로 열기</button>
         <button type="button" className={styles["is-primary"]} disabled={isLoading || Boolean(validationError)} onClick={onApply}>
           수락
         </button>

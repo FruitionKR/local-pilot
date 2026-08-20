@@ -6,6 +6,8 @@ metadata:
   name: fruition-config
   namespace: fruition
 data:
+  SPRING_PROFILES_ACTIVE: "production"
+  AUTH_REFRESH_COOKIE_SECURE: "true"
   # POSTGRES_HOST는 서비스별 RDS가 달라 configmap이 아니라 각 deployment env로 주입
   # (kustomization.yaml의 access-svc/document-svc patch 참조)
   REDIS_HOST: "REPLACE_ME_REDIS_ENDPOINT"

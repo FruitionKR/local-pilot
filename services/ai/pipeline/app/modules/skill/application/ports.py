@@ -50,14 +50,6 @@ class SkillAuthoringGeneratorPort(Protocol):
         requested_description: str | None,
     ) -> dict[str, object]: ...
 
-    def verify(
-        self,
-        instruction: str,
-        references: tuple[SkillAuthoringReference, ...],
-        *,
-        requested_description: str | None,
-    ) -> dict[str, object]: ...
-
     def generate(
         self,
         instruction: str,

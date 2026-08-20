@@ -1,8 +1,7 @@
 import { ChevronDown, Folder, MoreHorizontal, MoreVertical, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { createChatSession, deleteChatSession, fetchChatSessions, setActiveChatSession } from "@/entities/chat/api/chat";
-import { exportChatWiki } from "@/features/wiki-export";
+import { createChatSession, deleteChatSession, fetchChatSessions } from "@/entities/chat/api/chat";
 import { getErrorMessage } from "@/shared/lib/errors";
 import type { ChatSessionResponse } from "@/entities/chat/model/chat";
 import { fruitionLogo, sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
@@ -14,12 +13,18 @@ export function AgentHeader({
   sessionTitle,
   onClose,
   activeSessionId,
-  onSelectSession
+  isInteractionLocked,
+  onSelectSession,
+  canStartWikiExport,
+  onStartWikiExport
 }: {
   sessionTitle: string;
   onClose: () => void;
   activeSessionId: string | null;
+  isInteractionLocked: boolean;
   onSelectSession: (sessionId: string, title: string | null) => void;
+  canStartWikiExport: boolean;
+  onStartWikiExport: () => void;
 }) {
   const [isListOpen, setIsListOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -30,6 +35,13 @@ export function AgentHeader({
   const [rowMenu, setRowMenu] = useState<{ id: string; top: number; left: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isInteractionLocked) return;
+    setIsListOpen(false);
+    setIsMenuOpen(false);
+    setRowMenu(null);
+  }, [isInteractionLocked]);
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -64,19 +76,6 @@ export function AgentHeader({
       else await startNewChat();
     } catch (error: unknown) {
       setLoadErrorMessage(getErrorMessage(error, "채팅을 삭제하지 못했습니다."));
-    }
-  }
-
-  // 세션 전체를 원본 문서(위키)로 내보낸다.
-  async function handleExportSession(sessionId: string) {
-    setRowMenu(null);
-    setIsListOpen(false);
-    try {
-      setActiveChatSession(sessionId);
-      await exportChatWiki();
-      setLoadErrorMessage(null);
-    } catch (error: unknown) {
-      setLoadErrorMessage(getErrorMessage(error, "원본 문서로 만들지 못했습니다."));
     }
   }
 
@@ -124,6 +123,7 @@ export function AgentHeader({
         type="button"
         className={styles["agent-session-title"]}
         aria-expanded={isListOpen}
+        disabled={isInteractionLocked}
         onClick={() => setIsListOpen((open) => !open)}
       >
         <span>{sessionTitle}</span>
@@ -138,6 +138,7 @@ export function AgentHeader({
           className={styles["panel-action"]}
           aria-label="채팅 옵션"
           aria-expanded={isMenuOpen}
+          disabled={isInteractionLocked}
           onClick={() => setIsMenuOpen((open) => !open)}
         >
           <MoreHorizontal size={16} />
@@ -145,6 +146,17 @@ export function AgentHeader({
         {isMenuOpen && (
           <div className={styles["agent-header-menu-list"]} role="menu">
             <button type="button" role="menuitem" onClick={startNewChat}>새 채팅</button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!canStartWikiExport}
+              onClick={() => {
+                setIsMenuOpen(false);
+                onStartWikiExport();
+              }}
+            >
+              채팅을 문서로 편입
+            </button>
           </div>
         )}
       </div>
@@ -176,6 +188,7 @@ export function AgentHeader({
                   <button
                     type="button"
                     className={styles["chat-session-select"]}
+                    disabled={isInteractionLocked}
                     onClick={() => {
                       setRowMenu(null);
                       onSelectSession(session.id, session.title ?? fallbackTitle);
@@ -194,6 +207,7 @@ export function AgentHeader({
                         className={styles["chat-session-more"]}
                         aria-label="채팅 옵션"
                         aria-expanded={rowMenu?.id === session.id}
+                        disabled={isInteractionLocked}
                         onClick={(event) => {
                           if (rowMenu?.id === session.id) {
                             setRowMenu(null);
@@ -222,9 +236,6 @@ export function AgentHeader({
           style={{ top: rowMenu.top, left: rowMenu.left }}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          <button type="button" role="menuitem" onClick={() => handleExportSession(rowMenu.id)}>
-            원본 문서로 생성
-          </button>
           <button
             type="button"
             role="menuitem"

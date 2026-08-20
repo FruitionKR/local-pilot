@@ -52,6 +52,8 @@ export type QueryMessageSummary = {
   created_at: string;
   // 같은 문답(Q&A) 쌍을 묶는 id. 채팅 부분 편입(partial export)에서 pair 선택 단위로 쓴다.
   pair_id?: string;
+  // Agent turn이 선택한 처리 갈래. 일반 질의 메시지에는 없다.
+  action?: string;
 };
 
 export type QueryResponse = {

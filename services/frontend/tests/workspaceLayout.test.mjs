@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { canShowAgentPanel, isAgentPanelVisible } from "../src/widgets/workspace/lib/workspaceLayout.ts";
+import { focusGraphNode } from "../src/widgets/workspace/model/focusGraphNode.ts";
 
 const sidebarProfilePath = new URL(
   "../src/widgets/document-sidebar/ui/SidebarProfile.tsx",
@@ -74,4 +75,18 @@ test("문서 알림 공개 API에서 Wiki 관리 패널을 제거한다", async 
 
   assert.doesNotMatch(indexSource, /NotificationsPanel/);
   assert.doesNotMatch(busSource, /NoticeRecord|NoticeHistory|HISTORY_LIMIT/);
+});
+
+test("그래프 노드 클릭은 문서 선택을 유지하고 그래프 포커스만 바꾼다", () => {
+  const selection = {
+    focusedGraphNodeId: "concept-before",
+    selectedTreeItemId: "tree-document",
+    selectedPreviewTarget: { pageId: null, title: "열어 둔 문서", pageType: null },
+    selectedDocumentId: "document-1"
+  };
+
+  assert.deepEqual(focusGraphNode(selection, "concept-after"), {
+    ...selection,
+    focusedGraphNodeId: "concept-after"
+  });
 });

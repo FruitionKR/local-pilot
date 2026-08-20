@@ -41,7 +41,11 @@ def evaluate_generation(
         json.dumps(payload, ensure_ascii=False, indent=2),
     )
     _normalize_evaluation(evaluation)
-    apply_generation_evaluation_guards(evaluation, normalized)
+    apply_generation_evaluation_guards(
+        evaluation,
+        normalized,
+        source_block_ids=[block.block_id for block in blocks],
+    )
     return evaluation
 
 

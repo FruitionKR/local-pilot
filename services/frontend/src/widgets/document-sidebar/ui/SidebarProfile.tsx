@@ -1,7 +1,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { clearSessionCache } from "@/entities/chat";
-import { fetchMe } from "@/entities/user";
+import { fetchMe, logout } from "@/entities/user";
 import { SettingsModal } from "@/features/user-settings";
 import { clearAuth } from "@/shared/lib/auth";
 import { cx } from "@/shared/lib/classNames";
@@ -51,7 +51,8 @@ export function SidebarProfile() {
     };
   }, [isMenuOpen]);
 
-  function handleLogout() {
+  async function handleLogout() {
+    await logout().catch(() => undefined);
     clearSessionCache();
     clearAuth();
     router.push("/login");
@@ -95,7 +96,7 @@ export function SidebarProfile() {
           >
             설정
           </button>
-          <button type="button" role="menuitem" onClick={handleLogout}>
+          <button type="button" role="menuitem" onClick={() => void handleLogout()}>
             로그아웃
           </button>
         </div>

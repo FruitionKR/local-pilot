@@ -36,7 +36,7 @@ class PromotionConceptPageTest(unittest.TestCase):
         }
         draft = {
             "slug": "Back EMF",
-            "title": "Back EMF",
+            "title": "Adversarial Draft Title",
             "definition": {"text": "회전 전동기에서 유기되는 역기전력이다.", "anchor_block_ids": ["B0001"]},
             "key_points": [{"text": "공차 분석의 입력으로 쓰인다.", "anchor_block_ids": ["doc_a:B0001"]}],
             "evidence": [],
@@ -55,12 +55,26 @@ class PromotionConceptPageTest(unittest.TestCase):
         self.assertEqual(promotion_representative(cluster), "Back EMF")
         self.assertEqual(page["slug"], "back-emf")
         self.assertEqual(page["title"], "Back EMF")
+        self.assertNotIn("Adversarial Draft Title", page["markdown"])
         self.assertIn("sources: doc_a", page["markdown"])
         self.assertIn("회전 전동기에서 유기되는 역기전력이다. [doc_a:B0001]", page["markdown"])
         self.assertIn("- 공차 분석의 입력으로 쓰인다. [doc_a:B0001]", page["markdown"])
         self.assertIn("- claim_001: Back EMF는 제조 공차의 영향을 받는다. [doc_a:B0001]", page["markdown"])
         self.assertIn("- [[manufacturing-tolerance|Manufacturing Tolerance]]", page["markdown"])
         self.assertIn("- [[tolerance-analysis|tolerance-analysis]]", page["markdown"])
+
+    def test_uses_id_when_representative_is_absent(self) -> None:
+        page = build_promotion_concept_page(
+            {
+                "id": "orchid-lease",
+                "claims": [{"id": "claim_001", "claim": "계약", "refs": []}],
+            },
+            {"title": "Adversarial Draft Title"},
+            allowed_refs=set(),
+            source_ref_by_block={},
+        )
+
+        self.assertEqual(page["title"], "orchid-lease")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,12 @@ import type { DocumentItemResponse } from "@/entities/document/model/document";
  */
 export type WikiReflectState = "processing" | "changed" | "not-included" | "retry" | "up-to-date";
 
+const WIKI_REFLECT_LABELS: Partial<Record<WikiReflectState, string>> = {
+  changed: "수정됨",
+  "not-included": "신규",
+  retry: "재시도"
+};
+
 /**
  * 반영 작업이 아직 끝나지 않은 처리 단계.
  * stalled는 heartbeat가 60초 넘게 끊긴 상태일 뿐 실패 확정이 아니라서 진행 중으로 본다.
@@ -46,4 +52,20 @@ export function selectActiveIngestDocuments(
 export function isWikiReflectEligible(document: DocumentItemResponse): boolean {
   const state = getWikiReflectState(document);
   return state !== "processing" && state !== "up-to-date";
+}
+
+export function getWikiReflectLabel(document: DocumentItemResponse): string | null {
+  return WIKI_REFLECT_LABELS[getWikiReflectState(document)] ?? null;
+}
+
+export function isLintActionEnabled({
+  needsLint,
+  isIngestActive,
+  isLintActive
+}: {
+  needsLint: boolean;
+  isIngestActive: boolean;
+  isLintActive: boolean;
+}): boolean {
+  return needsLint && !isIngestActive && !isLintActive;
 }

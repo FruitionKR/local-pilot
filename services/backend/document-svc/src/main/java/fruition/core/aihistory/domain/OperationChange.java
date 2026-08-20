@@ -36,6 +36,10 @@ public class OperationChange {
     @Column(name = "resource_id", nullable = false)
     private String resourceId;
 
+    /** 변경 시점의 리소스 표시 이름. 이후 rename/delete와 무관하게 감사 로그에 남는다. */
+    @Column(name = "resource_display_name")
+    private String resourceDisplayName;
+
     /** 손대기 직전 버전. NULL이면 새로 만든 것이며 되돌릴 지점이 없다. */
     @Column(name = "before_revision")
     private Long beforeRevision;
@@ -61,9 +65,18 @@ public class OperationChange {
     public OperationChange(String operationId, ResourceType resourceType, String resourceId,
                            Long beforeRevision, Long afterRevision, ChangeType changeType,
                            String changeSummary, Integer additions, Integer deletions) {
+        this(operationId, resourceType, resourceId, null, beforeRevision, afterRevision,
+                changeType, changeSummary, additions, deletions);
+    }
+
+    public OperationChange(String operationId, ResourceType resourceType, String resourceId,
+                           String resourceDisplayName, Long beforeRevision, Long afterRevision,
+                           ChangeType changeType, String changeSummary,
+                           Integer additions, Integer deletions) {
         this.operationId = operationId;
         this.resourceType = resourceType;
         this.resourceId = resourceId;
+        this.resourceDisplayName = resourceDisplayName;
         this.beforeRevision = beforeRevision;
         this.afterRevision = afterRevision;
         this.changeType = changeType;
@@ -76,6 +89,7 @@ public class OperationChange {
     public String getOperationId() { return operationId; }
     public ResourceType getResourceType() { return resourceType; }
     public String getResourceId() { return resourceId; }
+    public String getResourceDisplayName() { return resourceDisplayName; }
     public Long getBeforeRevision() { return beforeRevision; }
     public Long getAfterRevision() { return afterRevision; }
     public ChangeType getChangeType() { return changeType; }

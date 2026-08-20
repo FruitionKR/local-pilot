@@ -81,6 +81,8 @@ class PipelineRunCommand:
     selection_mode: str | None = None
     reingest: bool = False
     input_markdown: str | None = None
+    # 채팅 경로 전용. 있으면 Markdown을 다시 쪼개지 않고 이 블록 목록을 그대로 쓴다.
+    input_blocks: list[dict[str, Any]] = field(default_factory=list)
     mode: str = "api"
     provider: str | None = None
     source_page_mode: str = "auto"
@@ -93,7 +95,6 @@ class PipelineRunCommand:
     concept_system_prompt: str = "prompts/concept_page_generation.system.md"
     concept_resolution_system_prompt: str = "prompts/concept_resolution.system.md"
     section_polish_system_prompt: str = "prompts/section_polish.system.md"
-    source_accumulation_system_prompt: str = "prompts/source_accumulation_evaluator.system.md"
     wiki_evaluator_system_prompt: str = "prompts/wiki_generation_evaluator.system.md"
     wiki_patch_system_prompt: str = "prompts/wiki_generation_patch.system.md"
     existing_wiki_dir: str | None = None

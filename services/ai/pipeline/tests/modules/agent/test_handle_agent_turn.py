@@ -1810,6 +1810,53 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             "핵심 내용을 세 문단 이내로 작성한다.",
         )
 
+    def test_explicit_skill_does_not_fall_back_when_one_composite_capability_is_missing(self) -> None:
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        starter = RecordingAgentRunStarter()
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="workspace_workflow",
+                    confidence=0.9,
+                    reason="edit and move",
+                    document_operation="edit",
+                    edit_goal="shorten",
+                    persist=True,
+                    required_capabilities=("document-edit", "folder-organize"),
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            skill_selector=SelectSkillUseCase(
+                FixedSkillRepository(document_skill("folder-organize"))
+            ),  # type: ignore[arg-type]
+            agent_run_starter=starter,
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="문서를 요약한 뒤 옮겨줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                skill_mode="explicit",
+                skill_id="skill-1",
+            )
+        )
+
+        self.assertEqual(result.action, "clarify")
+        self.assertIn("모든 작업", result.message or "")
+        self.assertEqual(starter.requests, [])
+
     def test_stops_for_ambiguous_skill_selection(self) -> None:
         skill = document_skill("folder-organize")
         editor = RecordingMarkdownEditor(

@@ -2,7 +2,8 @@
 
 [API 문서](../README.md) / [document-svc](README.md)
 
-동기·비동기 질의와 실행 상태·SSE API다.
+동기·비동기 질의와 실행 상태·SSE Gateway API다. 동기 요청은 ai-svc 내부 HTTP,
+비동기 요청은 Kafka `ai.query.command`로 전달한다.
 
 - API 수: 4
 
@@ -754,7 +755,7 @@ curl -X GET "$DOCUMENT/api/query/runs/<value>" \
 - HTTP `200`: SSE 구독 시작
 - Content-Type: `text/event-stream`
 
-```json
+```text
 string
 ```
 
@@ -801,7 +802,7 @@ curl -X GET "$DOCUMENT/api/query/runs/<value>/events" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
-```json
+```text
 string
 ```
 

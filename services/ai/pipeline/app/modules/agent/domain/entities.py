@@ -103,6 +103,7 @@ class AgentTurnRoute:
     retrieval_source: RetrievalSource = "none"
     document_operation: DocumentOperation = "none"
     persist: bool = False
+    required_capabilities: tuple[SkillCapability, ...] = ()
 
 
 @dataclass(frozen=True)

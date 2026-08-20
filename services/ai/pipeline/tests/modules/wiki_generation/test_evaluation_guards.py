@@ -50,6 +50,163 @@ class EvaluationGuardsTest(unittest.TestCase):
         self.assertTrue(evaluation["passed"])
         self.assertFalse(evaluation["retry_recommended"])
 
+    def test_rejects_unanchored_and_unknown_factual_refs(self) -> None:
+        evaluation = {
+            "passed": True,
+            "retry_recommended": False,
+            "scores": {"overall": 0.95},
+            "issues": [],
+            "retry_feedback": "",
+        }
+        normalized = {
+            "concept_ledger": [{"slug": "artifact-flow", "title": "Artifact flow", "anchor_reference_ids": []}],
+            "evidence_units": [{"evidence_id": "ev_0001", "claim": "근거", "anchor_reference_ids": ["B9999"]}],
+        }
+
+        apply_generation_evaluation_guards(evaluation, normalized, ["B0001"])
+
+        self.assertFalse(evaluation["passed"])
+        self.assertTrue(evaluation["retry_recommended"])
+        self.assertEqual(
+            {issue["type"] for issue in evaluation["issues"]},
+            {"missing_ref", "invalid_ref"},
+        )
+
+    def test_rejects_any_factual_ref_when_source_allow_list_is_empty(self) -> None:
+        evaluation = {
+            "passed": True,
+            "retry_recommended": False,
+            "scores": {"overall": 0.95},
+            "issues": [],
+            "retry_feedback": "",
+        }
+
+        apply_generation_evaluation_guards(
+            evaluation,
+            {"evidence_units": [{"claim": "근거", "anchor_reference_ids": ["B9999"]}]},
+            [],
+        )
+
+        self.assertEqual([issue["type"] for issue in evaluation["issues"]], ["invalid_ref"])
+
+    def test_rejects_disallowed_direct_semantic_note_anchor(self) -> None:
+        evaluation = {
+            "passed": True,
+            "retry_recommended": False,
+            "scores": {"overall": 0.95},
+            "issues": [],
+            "retry_feedback": "",
+        }
+
+        apply_generation_evaluation_guards(
+            evaluation,
+            {
+                "semantic_notes": [
+                    {
+                        "chunk_id": "chunk_0001",
+                        "semantic_summary": "패킷 의미",
+                        "anchor_reference_ids": ["B9999"],
+                    }
+                ]
+            },
+            ["B0001"],
+        )
+
+        self.assertFalse(evaluation["passed"])
+        self.assertEqual([issue["type"] for issue in evaluation["issues"]], ["invalid_ref"])
+
+    def test_accepts_allowed_direct_semantic_note_anchor(self) -> None:
+        evaluation = {
+            "passed": True,
+            "retry_recommended": False,
+            "scores": {"overall": 0.95},
+            "issues": [],
+            "retry_feedback": "",
+        }
+
+        apply_generation_evaluation_guards(
+            evaluation,
+            {
+                "semantic_notes": [
+                    {
+                        "chunk_id": "chunk_0001",
+                        "semantic_summary": "패킷 의미",
+                        "anchor_reference_ids": ["B0001"],
+                    }
+                ]
+            },
+            ["B0001"],
+        )
+
+        self.assertTrue(evaluation["passed"])
+        self.assertEqual(evaluation["issues"], [])
+
+    def test_rejects_packet_without_anchored_meaning(self) -> None:
+        evaluation = {
+            "passed": True,
+            "retry_recommended": False,
+            "scores": {"overall": 0.95},
+            "issues": [],
+            "retry_feedback": "",
+        }
+
+        apply_generation_evaluation_guards(
+            evaluation,
+            {
+                "semantic_notes": [
+                    {"chunk_id": "chunk_0001", "semantic_summary": "패킷 의미"},
+                    {
+                        "chunk_id": "chunk_0002",
+                        "key_points": [{"text": "근거", "anchor_reference_ids": ["B0002"]}],
+                    },
+                ]
+            },
+            ["B0001", "B0002"],
+        )
+
+        self.assertFalse(evaluation["passed"])
+        self.assertEqual(evaluation["issues"][0]["type"], "semantic_coverage_gap")
+        self.assertEqual(evaluation["issues"][0]["target"], ["chunk_0001"])
+
+    def test_ignores_empty_and_navigation_only_packets(self) -> None:
+        evaluation = {
+            "passed": True,
+            "retry_recommended": False,
+            "scores": {"overall": 0.95},
+            "issues": [],
+            "retry_feedback": "",
+        }
+
+        apply_generation_evaluation_guards(
+            evaluation,
+            {
+                "semantic_notes": [
+                    {"chunk_id": "chunk_empty"},
+                    {
+                        "chunk_id": "chunk_navigation",
+                        "needs_neighbor_context": True,
+                        "context_problem": "다음 섹션과 연결 필요",
+                    },
+                ]
+            },
+            ["B0001"],
+        )
+
+        self.assertEqual(evaluation["issues"], [])
+
+    def test_marks_failed_evaluation_retryable_even_without_issues(self) -> None:
+        evaluation = {
+            "passed": False,
+            "retry_recommended": False,
+            "scores": {},
+            "issues": [],
+            "retry_feedback": "",
+        }
+
+        apply_generation_evaluation_guards(evaluation, {})
+
+        self.assertTrue(evaluation["retry_recommended"])
+
     def test_repairs_broken_and_duplicate_observations(self) -> None:
         normalized = {
             "observations": [

@@ -42,14 +42,9 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ApiConceptResolver,
     ApiConceptPageGenerator,
     ApiSectionPolisher,
-    ApiSourceAccumulator,
     ChatClientConfig,
     ChatCompletionsJsonClient,
     SectionPolishParseError,
-)
-from app.modules.wiki_generation.infrastructure.chat_source_accumulation import (
-    apply_chat_source_accumulation_result,
-    build_chat_source_accumulation_payload,
 )
 from app.modules.wiki_generation.infrastructure.concept_resolution import (
     apply_concept_resolutions,
@@ -63,7 +58,6 @@ from app.modules.wiki_generation.infrastructure.pipeline_log import PipelineLog
 from app.modules.wiki_generation.infrastructure.prompt_io import collect_concept_source_blocks
 from app.modules.wiki_generation.infrastructure.source_context_merge import (
     active_source_artifact,
-    apply_same_source_core_context,
     source_context_blocks,
     source_page_context_normalized,
 )
@@ -91,7 +85,6 @@ class PipelinePrompts:
     concept: str
     concept_resolution: str
     section_polish: str
-    source_accumulation: str
     wiki_evaluator: str
     wiki_patch: str
 
@@ -155,7 +148,6 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--concept-system-prompt", default="prompts/concept_page_generation.system.md")
     ap.add_argument("--concept-resolution-system-prompt", default="prompts/concept_resolution.system.md")
     ap.add_argument("--section-polish-system-prompt", default="prompts/section_polish.system.md")
-    ap.add_argument("--source-accumulation-system-prompt", default="prompts/source_accumulation_evaluator.system.md")
     ap.add_argument("--wiki-evaluator-system-prompt", default="prompts/wiki_generation_evaluator.system.md")
     ap.add_argument("--wiki-patch-system-prompt", default="prompts/wiki_generation_patch.system.md")
     ap.add_argument("--existing-wiki-dir", help="Optional existing wiki directory. If set, existing wiki/concepts/*.md pages are used for concept resolution before page generation.")
@@ -285,6 +277,7 @@ def _run_wiki_generation_loop(
         events=log,
         evaluation_artifacts=EvaluationArtifactAdapter(out, save_debug_json),
         source_block_ids=[block.block_id for block in blocks],
+        packet_block_ids={packet.chunk_id: packet.block_ids for packet in packets},
     ).run(
         semantic_system_prompt=semantic_system_prompt,
         source_context=source_context,
@@ -363,32 +356,6 @@ def _prepare_source_page_polish(
         {"confidence": mapped_source_polish.get("confidence"), "항목 수": len(mapped_source_polish.get("items", []))},
     )
     return source_polish, source_key_points_for_concepts, sp_mode
-
-
-def _evaluate_source_accumulation(
-    *,
-    source_accumulator: ApiSourceAccumulator,
-    normalized: dict[str, Any],
-    source_blocks: list[Any],
-    existing_source_markdown: str | None,
-    raw_dir: Path | None,
-    log: PipelineLog,
-) -> dict[str, Any]:
-    payload = build_chat_source_accumulation_payload(normalized, existing_source_markdown)
-    raw = source_accumulator.evaluate(payload, source_blocks)
-    if raw_dir is not None:
-        write_json(raw_dir / "source_accumulation.json", raw)
-    result = apply_chat_source_accumulation_result(normalized, raw, source_blocks)
-    log.emit(
-        "5-보조. Source 누적 평가",
-        "기존 source page와 새 대화를 함께 평가해 summary/key points/observations/categories 누적 결과를 보정했습니다.",
-        {
-            "passed": raw.get("passed"),
-            "issue 수": len(raw.get("issues", []) or []),
-            "key point 수": len(result.get("source_accumulation_polish", {}).get("key_points", {}).get("items", [])),
-        },
-    )
-    return result
 
 
 def _prepare_concept_section_polish(
@@ -486,7 +453,6 @@ def _load_pipeline_prompts(args: PipelineRunCommand, log: PipelineLog) -> Pipeli
         concept=read_prompt(args.concept_system_prompt),
         concept_resolution=read_prompt(args.concept_resolution_system_prompt),
         section_polish=read_prompt(args.section_polish_system_prompt),
-        source_accumulation=read_prompt(args.source_accumulation_system_prompt),
         wiki_evaluator=read_prompt(args.wiki_evaluator_system_prompt),
         wiki_patch=read_prompt(wiki_patch_path),
     )
@@ -498,7 +464,6 @@ def _load_pipeline_prompts(args: PipelineRunCommand, log: PipelineLog) -> Pipeli
             "concept": args.concept_system_prompt,
             "concept_resolution": args.concept_resolution_system_prompt,
             "section_polish": args.section_polish_system_prompt,
-            "source_accumulation": args.source_accumulation_system_prompt,
             "wiki_evaluator": args.wiki_evaluator_system_prompt,
             "wiki_patch": wiki_patch_path,
         },
@@ -551,13 +516,19 @@ def _extract_pipeline_source(
     log: PipelineLog,
 ) -> tuple[SourceDocument, list[SourceBlock], list[dict[str, str]]]:
     extractor = MarkdownBlockExtractor()
-    preserve_prefixed_refs = bool(getattr(args, "selection_mode", None))
-    if input_text is not None:
+    if getattr(args, "input_blocks", None):
+        # 채팅 경로: 문답 경계와 provenance를 backend가 확정해 보내므로 Markdown을 다시 쪼개지 않는다.
+        document, blocks = extractor.blocks_from_records(
+            args.input_blocks,
+            text=input_text or "",
+            source_path=input_source_name,
+            fallback_title=Path(input_source_name).stem,
+        )
+    elif input_text is not None:
         document, blocks = extractor.extract_text(
             input_text,
             source_path=input_source_name,
             fallback_title=Path(input_source_name).stem,
-            preserve_prefixed_refs=preserve_prefixed_refs,
         )
     else:
         document, blocks = extractor.extract(input_path)
@@ -623,10 +594,9 @@ def _resolve_pipeline_concepts(
     api_client: ChatCompletionsJsonClient,
     concept_resolution_prompt: str,
     normalized: dict[str, Any],
-    existing_source_artifact: dict[str, Any] | None,
     out: Path,
     log: PipelineLog,
-) -> tuple[dict[str, Any], list[SourceBlock]]:
+) -> dict[str, Any]:
     existing_concepts = getattr(args, "existing_concept_index", None)
     if existing_concepts is None:
         existing_concepts = load_existing_concept_index(
@@ -665,19 +635,11 @@ def _resolve_pipeline_concepts(
         existing_concepts,
         hint_resolutions,
     )
-    same_source_context_blocks: list[SourceBlock] = []
-    if getattr(args, "selection_mode", None) == "full" and existing_source_artifact:
-        resolved, same_source_context_blocks = apply_same_source_core_context(
-            resolved,
-            existing_source_artifact,
-        )
     log.emit(
         "4-보조. Concept Resolution",
         "새 concept 후보끼리와 기존 concept page index, missing related hint를 비교해 canonical slug와 관련 링크를 확정했습니다.",
         {
             "기존 개념 수": len(existing_concepts),
-            "기존 source context": bool(existing_source_artifact),
-            "같은 source context 누적 수": len(resolved.get("same_source_context_merges", [])),
             "해결 전 개념 수": len(resolutions),
             "해결 후 개념 수": len(resolved["concept_ledger"]),
             "missing hint 수": len(missing_related_hints),
@@ -692,7 +654,7 @@ def _resolve_pipeline_concepts(
             "링크 판단 수": sum(1 for item in resolutions if item.get("link_targets")),
         },
     )
-    return resolved, same_source_context_blocks
+    return resolved
 
 
 def _prepare_source_page_assembly(
@@ -712,22 +674,12 @@ def _prepare_source_page_assembly(
         if existing_source_artifact
         else None
     )
-    source_page_normalized = (
-        source_page_context_normalized(normalized, existing_source_artifact_with_markdown)
-        if getattr(args, "selection_mode", None) == "full"
-        and existing_source_artifact_with_markdown
-        else normalized
-    )
+    source_page_normalized = normalized
     existing_source_context_blocks = source_context_blocks(
         existing_source_artifact_with_markdown
     )
     section_polisher = (
         ApiSectionPolisher(api_client, prompts.section_polish)
-        if api_client is not None
-        else None
-    )
-    source_accumulator = (
-        ApiSourceAccumulator(api_client, prompts.source_accumulation)
         if api_client is not None
         else None
     )
@@ -737,44 +689,17 @@ def _prepare_source_page_assembly(
         else None
     )
     invalid_polish_dir = out / "raw_llm_outputs" / "section_polish_invalid"
-    source_polish = {}
-    source_key_points_for_concepts = [
-        key_point
-        for note in source_page_normalized.get("semantic_notes", [])
-        for key_point in note.get("key_points", [])
-    ]
-    source_mode = source_page_mode(args)
-    if (
-        getattr(args, "selection_mode", None) == "full"
-        and existing_source_artifact_with_markdown
-        and source_accumulator is not None
-    ):
-        source_page_normalized = _evaluate_source_accumulation(
-            source_accumulator=source_accumulator,
-            normalized=source_page_normalized,
-            source_blocks=[*existing_source_context_blocks, *blocks],
-            existing_source_markdown=existing_source_markdown,
-            raw_dir=raw_polish_dir,
-            log=log,
+    source_polish, source_key_points_for_concepts, source_mode = (
+        _prepare_source_page_polish(
+            args,
+            source_page_normalized,
+            [*existing_source_context_blocks, *blocks],
+            section_polisher,
+            raw_polish_dir,
+            invalid_polish_dir,
+            log,
         )
-        source_polish = source_page_normalized.get("source_accumulation_polish", {})
-        source_key_points_for_concepts = [
-            *source_polish.get("key_points", {}).get("items", []),
-            *source_key_points_for_concepts,
-        ]
-        source_mode = "source-accumulation"
-    else:
-        source_polish, source_key_points_for_concepts, source_mode = (
-            _prepare_source_page_polish(
-                args,
-                source_page_normalized,
-                [*existing_source_context_blocks, *blocks],
-                section_polisher,
-                raw_polish_dir,
-                invalid_polish_dir,
-                log,
-            )
-        )
+    )
 
     return _SourcePagePreparation(
         normalized=source_page_normalized,
@@ -793,7 +718,6 @@ def _prepare_concept_source_blocks(
     *,
     existing_source_context_blocks: list[SourceBlock],
     blocks: list[SourceBlock],
-    same_source_context_blocks: list[SourceBlock],
     source_key_points_for_concepts: list[dict[str, Any]],
     log: PipelineLog,
 ) -> dict[str, list[SourceBlock]]:
@@ -801,7 +725,6 @@ def _prepare_concept_source_blocks(
     concept_input_blocks = [
         *existing_source_context_blocks,
         *blocks,
-        *same_source_context_blocks,
     ]
     for concept in normalized["concept_ledger"]:
         concept_blocks = collect_concept_source_blocks(
@@ -813,7 +736,7 @@ def _prepare_concept_source_blocks(
         concept_source_blocks_by_slug[concept["slug"]] = concept_blocks
     log.emit(
         "5-보조. Concept 입력 준비",
-        "Source 누적 평가 결과를 반영해 전체 개념별 source block을 메모리에 모았습니다.",
+        "전체 개념별 source block을 메모리에 모았습니다.",
         {"대상 개념 수": len(concept_source_blocks_by_slug)},
     )
     return concept_source_blocks_by_slug
@@ -926,7 +849,6 @@ def _assemble_wiki_pages(
     prompts: PipelinePrompts,
     normalized: dict[str, Any],
     blocks: list[SourceBlock],
-    same_source_context_blocks: list[SourceBlock],
     existing_source_artifact: dict[str, Any] | None,
     existing_source_markdown: str | None,
     out: Path,
@@ -947,7 +869,6 @@ def _assemble_wiki_pages(
         normalized,
         existing_source_context_blocks=source_preparation.existing_context_blocks,
         blocks=blocks,
-        same_source_context_blocks=same_source_context_blocks,
         source_key_points_for_concepts=source_preparation.key_points_for_concepts,
         log=log,
     )
@@ -1177,9 +1098,7 @@ def run_pipeline(
     # 3. LLM semantic extraction: summary/key points/concepts/evidence with anchor_block_ids only.
     assert api_client is not None
     existing_source_artifact = (
-        getattr(args, "existing_source_artifact", None)
-        if getattr(args, "selection_mode", None) == "full" or args.reingest
-        else None
+        getattr(args, "existing_source_artifact", None) if args.reingest else None
     )
     if source_changes is not None:
         existing_source_artifact = active_source_artifact(
@@ -1188,14 +1107,7 @@ def run_pipeline(
             current_has_blocks=bool(source_changes.blocks),
         )
     existing_source_markdown = (
-        getattr(args, "existing_source_markdown", None)
-        if getattr(args, "selection_mode", None) == "full" or args.reingest
-        else None
-    )
-    semantic_source_context = (
-        {"source_markdown": existing_source_markdown}
-        if existing_source_markdown and not args.reingest
-        else None
+        getattr(args, "existing_source_markdown", None) if args.reingest else None
     )
     raw_dir = ensure_dir(out / "raw_llm_outputs" / "semantic_extraction") if args.save_debug_json else None
     normalizer = SemanticNormalizer(document, extraction_blocks)
@@ -1215,7 +1127,7 @@ def run_pipeline(
             save_debug_json=args.save_debug_json,
             wiki_evaluation_loop=getattr(args, "wiki_evaluation_loop", True),
             max_eval_attempts=max_eval_attempts,
-            source_context=semantic_source_context,
+            source_context=None,
             wiki_patch_system_prompt=prompts.wiki_patch,
         )
     else:
@@ -1245,17 +1157,14 @@ def run_pipeline(
     # 4a. Resolve incoming concepts against each other and existing wiki concepts before page generation.
     assert api_client is not None
     if extraction_blocks:
-        normalized, same_source_context_blocks = _resolve_pipeline_concepts(
+        normalized = _resolve_pipeline_concepts(
             args,
             api_client=api_client,
             concept_resolution_prompt=prompts.concept_resolution,
             normalized=normalized,
-            existing_source_artifact=existing_source_artifact,
             out=out,
             log=log,
         )
-    else:
-        same_source_context_blocks = []
     contribution_normalized = normalized
     if args.reingest:
         normalized = source_page_context_normalized(
@@ -1273,7 +1182,6 @@ def run_pipeline(
         prompts=prompts,
         normalized=normalized,
         blocks=blocks,
-        same_source_context_blocks=same_source_context_blocks,
         existing_source_artifact=existing_source_artifact,
         existing_source_markdown=existing_source_markdown,
         out=out,

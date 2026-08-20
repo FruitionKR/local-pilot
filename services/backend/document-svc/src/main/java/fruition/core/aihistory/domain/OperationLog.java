@@ -40,6 +40,10 @@ public class OperationLog {
     @Column(name = "target_document_id")
     private String targetDocumentId;
 
+    /** 작업 시작 시점의 대상 표시 이름. 대상이 rename/delete돼도 감사 로그에는 남는다. */
+    @Column(name = "target_display_name")
+    private String targetDisplayName;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private OperationStatus status;
@@ -98,6 +102,15 @@ public class OperationLog {
                                           Instant createdAt) {
         return new OperationLog(operationId, workspaceId, userId, operationType, targetDocumentId,
                 OperationStatus.processing, createdAt);
+    }
+
+    public static OperationLog processing(String operationId, String workspaceId, String userId,
+                                          OperationType operationType, String targetDocumentId,
+                                          String targetDisplayName, Instant createdAt) {
+        OperationLog log = processing(operationId, workspaceId, userId, operationType,
+                targetDocumentId, createdAt);
+        log.targetDisplayName = targetDisplayName;
+        return log;
     }
 
     /** 동기 처리라 시작과 동시에 끝나는 작업(문서 AI 편집). */
@@ -159,6 +172,7 @@ public class OperationLog {
     public String getUserId() { return userId; }
     public OperationType getOperationType() { return operationType; }
     public String getTargetDocumentId() { return targetDocumentId; }
+    public String getTargetDisplayName() { return targetDisplayName; }
     public OperationStatus getStatus() { return status; }
     public String getSummary() { return summary; }
     public int getChangedResourceCount() { return changedResourceCount; }

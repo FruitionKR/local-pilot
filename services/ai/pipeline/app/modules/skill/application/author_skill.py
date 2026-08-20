@@ -20,7 +20,6 @@ from app.modules.skill.domain.policy import (
     CAPABILITY_TOOLS,
     validate_allowed_tools,
     validate_skill_name,
-    with_required_planning_reads,
 )
 from app.modules.skill.domain.reference_template import (
     build_reference_template_instructions,
@@ -119,7 +118,7 @@ class AuthorSkillUseCase:
             )
 
         if preserved_capabilities is None:
-            intent = _verified_intent(
+            intent = _classify_intent(
                 self._generator,
                 instruction,
                 references,
@@ -131,9 +130,8 @@ class AuthorSkillUseCase:
                         status="clarification_required",
                         question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
                     )
-                raise ValueError("Skill request could not be classified consistently.")
-            capability, reference_mode, allowed_tools = intent
-            capabilities: tuple[SkillCapability, ...] = (capability,)
+                raise ValueError("Skill request could not be classified.")
+            capabilities, reference_mode, allowed_tools = intent
         else:
             reference_mode = "none"
             allowed_tools = preserved_allowed_tools or ()
@@ -165,7 +163,7 @@ class AuthorSkillUseCase:
                 references,
                 issues,
             )
-            intent = _verified_intent(
+            intent = _classify_intent(
                 self._generator,
                 instruction,
                 references,
@@ -177,9 +175,8 @@ class AuthorSkillUseCase:
                         status="clarification_required",
                         question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
                     )
-                raise ValueError("Skill request could not be classified consistently.")
-            capability, reference_mode, allowed_tools = intent
-            capabilities = (capability,)
+                raise ValueError("Skill request could not be classified.")
+            capabilities, reference_mode, allowed_tools = intent
             candidate = self._generator.generate(
                 instruction,
                 references,
@@ -554,12 +551,12 @@ def _tag_issues(
     )
 
 
-def _verified_intent(
+def _classify_intent(
     generator: SkillAuthoringGeneratorPort,
     instruction: str,
     references: tuple[SkillAuthoringReference, ...],
     description: str | None,
-) -> tuple[SkillCapability, str, tuple[SkillTool, ...]] | None:
+) -> tuple[tuple[SkillCapability, ...], str, tuple[SkillTool, ...]] | None:
     classification = _intent_result(
         generator.classify(
             instruction,
@@ -568,44 +565,49 @@ def _verified_intent(
         ),
         bool(references),
     )
-    verification = _intent_result(
-        generator.verify(
-            instruction,
-            references,
-            requested_description=description,
-        ),
-        bool(references),
-    )
-    if "unsupported" in {classification[0], verification[0]}:
+    if classification[0] == "unsupported":
         raise ValueError("Skill request does not map to a supported Agent action.")
-    if classification[0] != "supported" or classification != verification:
+    if classification[0] != "supported":
         return None
-    capability = classification[1]
-    assert capability is not None
-    return capability, classification[2], classification[3]
+    capabilities = classification[1]
+    assert capabilities is not None
+    allowed_tools = tuple(
+        sorted(
+            {
+                tool
+                for capability in capabilities
+                for tool in CAPABILITY_TOOLS[capability]
+            }
+        )
+    )
+    return capabilities, classification[2], allowed_tools
 
 
 def _intent_result(
     value: dict[str, object],
     has_references: bool,
-) -> tuple[str, SkillCapability | None, str, tuple[SkillTool, ...]]:
+) -> tuple[str, tuple[SkillCapability, ...] | None, str]:
     decision = value.get("decision")
     if decision not in {"supported", "unsupported", "ambiguous"}:
         raise ValueError("Skill intent result contains an invalid decision.")
     reference_mode = _reference_mode(value.get("reference_mode"), has_references)
     if decision != "supported":
-        if value.get("skill_kind") is not None or value.get("allowed_tools") != []:
-            raise ValueError("Unsupported or ambiguous Skill intent must not grant permissions.")
-        return cast(str, decision), None, reference_mode, ()
-    skill_kind = value.get("skill_kind")
-    if not isinstance(skill_kind, str) or skill_kind not in CAPABILITY_TOOLS:
-        raise ValueError("Skill intent result requires a supported skill_kind.")
-    if reference_mode == "fixed-template" and skill_kind != "template":
+        if value.get("skill_kinds") != []:
+            raise ValueError("Unsupported or ambiguous Skill intent must not select skill kinds.")
+        return cast(str, decision), None, reference_mode
+    skill_kinds = value.get("skill_kinds")
+    if (
+        not isinstance(skill_kinds, list)
+        or not skill_kinds
+        or not all(isinstance(skill_kind, str) for skill_kind in skill_kinds)
+        or any(skill_kind not in CAPABILITY_TOOLS for skill_kind in cast(list[str], skill_kinds))
+        or len(set(cast(list[str], skill_kinds))) != len(skill_kinds)
+    ):
+        raise ValueError("Skill intent result requires unique supported skill_kinds.")
+    capabilities = tuple(sorted(cast(list[SkillCapability], skill_kinds)))
+    if reference_mode == "fixed-template" and "template" not in capabilities:
         raise ValueError("Fixed reference templates require the template skill kind.")
-    capability = cast(SkillCapability, skill_kind)
-    tools = with_required_planning_reads(_tools(value.get("allowed_tools")))
-    validate_allowed_tools((capability,), tools)
-    return "supported", capability, reference_mode, tuple(sorted(tools))
+    return "supported", capabilities, reference_mode
 
 
 def _reference_mode(value: object, has_references: bool) -> str:
@@ -613,17 +615,6 @@ def _reference_mode(value: object, has_references: bool) -> str:
     if not isinstance(value, str) or value not in allowed:
         raise ValueError("Skill authoring result contains an invalid reference mode.")
     return value
-
-
-def _tools(value: object) -> tuple[SkillTool, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise ValueError("Skill authoring result allowed_tools must be an array.")
-    known_tools = {tool for tools in CAPABILITY_TOOLS.values() for tool in tools}
-    if any(item not in known_tools for item in value):
-        raise ValueError("Skill authoring result contains an unsupported tool.")
-    return tuple(cast(SkillTool, item) for item in value)
 
 
 def _reject_reference_literals(values: tuple[str, ...], literals: tuple[str, ...]) -> None:

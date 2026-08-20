@@ -6,8 +6,8 @@
 
 근거 자료:
 
-- `/Users/jaehyeong/Downloads/mongodb-removal-rationale.md`
-- `/Users/jaehyeong/Downloads/0016-consolidate-document-body-into-postgres.md`
+- `<local-downloads>/mongodb-removal-rationale.md`
+- `<local-downloads>/0016-consolidate-document-body-into-postgres.md`
 - 위 기준 commit의 실제 코드·테스트·설정
 
 이 문서는 현행 문서가 아니라 구현 작업용 backlog다. 구현 후 실제 구조는

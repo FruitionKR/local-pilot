@@ -139,8 +139,15 @@ class AgentTurnServiceTest {
         org.mockito.Mockito.when(chatConversationReader.read("session_1", java.util.List.of("pair_9")))
                 .thenReturn(new fruition.core.chat.service.ChatConversationReader.Conversation(
                         java.util.List.of(new fruition.core.chat.service.ChatConversationReader.Message(
-                                "assistant", "날씨를 알려주세요.", "conversation_reply")),
+                                "assistant", "날씨를 알려주세요.", "conversation_reply", "agent_previous")),
                         "사용자: 이전 질문"));
+        var route = new ObjectMapper().createObjectNode()
+                .put("action", "markdown_create")
+                .put("retrieval_source", "workspace");
+        var result = new ObjectMapper().createObjectNode().set("route", route);
+        when(runRepository.find("ws_1", "user_1", "agent_previous")).thenReturn(Optional.of(
+                new AgentRunCommandRepository.RunView(
+                        "agent_previous", null, 0L, null, "ready", result, null)));
         var request = new AgentTurnRequest("session_1", null, null, "이어서 해줘", "openai", "gpt-5-nano",
                 null, "auto", null,
                 new AgentTurnRequest.ConversationContext(java.util.List.of("pair_9"), null, null),
@@ -157,6 +164,51 @@ class AgentTurnServiceTest {
                 .containsExactly("날씨를 알려주세요.");
         assertThat(context.recentMessages()).extracting(AgentTurnService.CommandConversationMessage::action)
                 .containsExactly("conversation_reply");
+        assertThat(context.recentMessages()).extracting(AgentTurnService.CommandConversationMessage::runId)
+                .containsExactly("agent_previous");
+        assertThat(context.recentMessages()).extracting(AgentTurnService.CommandConversationMessage::agentRoute)
+                .containsExactly(route);
+    }
+
+    @Test
+    void turn_omitsAgentRouteWhenCanonicalProjectionIsUnavailableOrInvalid() throws Exception {
+        var objectMapper = new ObjectMapper();
+        var messages = java.util.List.of(
+                new fruition.core.chat.service.ChatConversationReader.Message(
+                        "assistant", "없음", "markdown_create", "agent_missing"),
+                new fruition.core.chat.service.ChatConversationReader.Message(
+                        "assistant", "진행 중", "markdown_create", "agent_queued"),
+                new fruition.core.chat.service.ChatConversationReader.Message(
+                        "assistant", "route 없음", "markdown_edit", "agent_no_route"),
+                new fruition.core.chat.service.ChatConversationReader.Message(
+                        "assistant", "잘못된 route", "markdown_edit", "agent_invalid_route"));
+        when(chatConversationReader.read("session_1", java.util.List.of()))
+                .thenReturn(new fruition.core.chat.service.ChatConversationReader.Conversation(messages, null));
+        when(runRepository.find("ws_1", "user_1", "agent_missing")).thenReturn(Optional.empty());
+        when(runRepository.find("ws_1", "user_1", "agent_queued")).thenReturn(Optional.of(
+                new AgentRunCommandRepository.RunView(
+                        "agent_queued", null, 0L, null, "queued", null, null)));
+        when(runRepository.find("ws_1", "user_1", "agent_no_route")).thenReturn(Optional.of(
+                new AgentRunCommandRepository.RunView(
+                        "agent_no_route", null, 0L, null, "ready",
+                        objectMapper.createObjectNode().put("action", "markdown_edit"), null)));
+        when(runRepository.find("ws_1", "user_1", "agent_invalid_route")).thenReturn(Optional.of(
+                new AgentRunCommandRepository.RunView(
+                        "agent_invalid_route", null, 0L, null, "consumed",
+                        objectMapper.createObjectNode().put("route", "markdown_edit"), null)));
+
+        service.turn("ws_1", "user_1",
+                new AgentTurnRequest("session_1", null, null, "이어서 해줘", "openai", "gpt-5-nano", null, null));
+
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), anyString(), anyString(), command.capture());
+        assertThat(command.getValue().conversationContext().recentMessages())
+                .extracting(AgentTurnService.CommandConversationMessage::agentRoute)
+                .containsOnlyNulls();
+        assertThat(objectMapper.writeValueAsString(command.getValue()))
+                .contains("\"run_id\":\"agent_missing\"")
+                .contains("\"agent_route\":null");
     }
 
     @Test

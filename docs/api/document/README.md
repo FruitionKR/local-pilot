@@ -2,7 +2,9 @@
 
 [API 문서](../README.md)
 
-문서와 core DB를 소유하고 사용자용 AI·Wiki·Agent 요청을 중계한다. 로컬 base URL은 `http://localhost:8080`이다.
+문서와 core DB를 소유하고 사용자용 AI·Wiki·Agent Gateway 요청을 중계한다. 로컬 base URL은
+`http://localhost:8080`이다. 아래 `/api/**` 계약이 클라이언트가 사용하는 계약이며,
+Backend가 ai-svc 내부 계약에 필요한 사용자·워크스페이스·모델 정보를 추가한다.
 
 | 도메인 | API 수 | 역할 |
 |---|---:|---|

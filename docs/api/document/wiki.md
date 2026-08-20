@@ -2,7 +2,8 @@
 
 [API 문서](../README.md) / [document-svc](README.md)
 
-Wiki 그래프·페이지·기여·유지보수 API다.
+Wiki 그래프·페이지·기여·유지보수 Gateway API다. 조회·페이지 수정은 ai-svc 내부 HTTP,
+lint·복구는 Kafka `ai.maintenance.command`로 전달한다.
 
 - API 수: 8
 
@@ -371,7 +372,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/p
           "content": "string",
           "new_line": 10,
           "old_line": 10,
-          "type": "string"
+          "type": "CONTEXT"
         }
       ],
       "new_lines": 5,
@@ -430,7 +431,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/p
           "content": "string",
           "new_line": 10,
           "old_line": 10,
-          "type": "string"
+          "type": "CONTEXT"
         }
       ],
       "new_lines": 5,

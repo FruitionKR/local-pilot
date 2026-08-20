@@ -4,9 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogIn, RefreshCw, WifiOff } from "lucide-react";
 import { clearSessionCache } from "@/entities/chat";
+import { fetchMe } from "@/entities/user";
 import { createWorkspace, fetchWorkspaces } from "@/entities/workspace";
-import { getAccessToken, setSelectedWorkspaceId } from "@/shared/lib/auth";
-import { getErrorMessage } from "@/shared/lib/errors";
+import { ERROR_MESSAGES } from "@/shared/api/client";
+import { clearAuth, setSelectedWorkspaceId } from "@/shared/lib/auth";
+import { getErrorMessage, isErrorMessage } from "@/shared/lib/errors";
 import { LoadingOverlay } from "@/shared/ui/LoadingOverlay";
 import styles from "./WorkspacesPage.module.css";
 
@@ -18,19 +20,20 @@ export default function WorkspacesPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const prepareWorkspace = useCallback(async () => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
-    }
-
     setErrorMessage(null);
     try {
+      await fetchMe();
       const response = await fetchWorkspaces();
       const workspace = response.workspaces?.[0] ?? await createWorkspace(DEFAULT_WORKSPACE_NAME);
       clearSessionCache();
       setSelectedWorkspaceId(workspace.id);
       router.replace("/home");
     } catch (error: unknown) {
+      if (isErrorMessage(error, ERROR_MESSAGES.loginRequired)) {
+        clearAuth();
+        router.replace("/login");
+        return;
+      }
       setErrorMessage(getErrorMessage(error, "워크스페이스를 준비하지 못했습니다."));
     }
   }, [router]);

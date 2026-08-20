@@ -37,12 +37,8 @@ public record ChatMessageResponse(
         @Schema(description = "답변의 근거가 된 원문 참조 목록")
         List<ChatMessageReference> references,
 
-        @JsonProperty("wiki_page_id")
-        @Schema(description = "이 메시지에서 만들어진 Wiki 페이지 ID")
-        String wikiPageId,
-
         @JsonProperty("partial_wiki_page_ids")
-        @Schema(description = "부분 선택 export로 만들어진 Wiki 페이지 ID 목록")
+        @Schema(description = "이 문답을 내보내 만들어진 Wiki 페이지 ID 목록")
         List<String> partialWikiPageIds,
 
         @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -1,39 +1,54 @@
-"""커밋된 api-specs 명세가 현재 코드와 일치하는지 본다. 계약이 바뀌면 여기서 먼저 걸린다.
+"""커밋된 api-specs 명세가 전체 기능 프로필의 코드와 일치하는지 본다.
 
 텍스트로 비교하는 이유: 의미만 비교하면 직렬화 스타일·순서가 흔들려도 통과해 diff가 신호를 잃는다.
 backend(access-svc·document-svc)의 스냅샷 테스트와 같은 규칙이다.
 """
 
-import copy
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import yaml
 
-import api
-
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT_PATH = REPOSITORY_ROOT / "api-specs/pipeline/openapi.yaml"
 
 
 def render_openapi_yaml() -> str:
-    spec = copy.deepcopy(api.app.openapi())
-    # servers는 실행 호스트에 따라 달라져 계약과 무관하다.
-    spec.pop("servers", None)
-    return yaml.safe_dump(
-        spec,
-        allow_unicode=True,
-        # 키 순서를 고정한다 — 순서가 흔들리면 diff가 계약 변경을 못 드러낸다.
-        sort_keys=True,
-        default_flow_style=False,
-        # 긴 한글 설명이 임의 지점에서 접히면 줄 단위 diff가 무의미해진다.
-        width=10**9,
+    environment = os.environ.copy()
+    environment.update(AGENT_SKILLS_ENABLED="true", SKILL_API_ENABLED="true")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import copy, yaml, api; "
+                "spec = copy.deepcopy(api.app.openapi()); "
+                "spec.pop('servers', None); "
+                "print(yaml.safe_dump(spec, allow_unicode=True, sort_keys=True, "
+                "default_flow_style=False, width=10**9), end='')"
+            ),
+        ],
+        cwd=PIPELINE_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
     )
+    return result.stdout
 
 
 def test_openapi_matches_committed_snapshot() -> None:
     actual = render_openapi_yaml()
+    spec = yaml.safe_load(actual)
+    agent_turn_headers = {
+        parameter["name"]
+        for parameter in spec["paths"]["/agent/turn"]["post"]["parameters"]
+        if parameter["in"] == "header"
+    }
+    assert agent_turn_headers >= {"X-Internal-Token", "X-Agent-Service-Token"}
 
     # UPDATE_OPENAPI_SNAPSHOT=1 로 실행하면 비교 대신 커밋 대상 파일을 갱신한다.
     if os.environ.get("UPDATE_OPENAPI_SNAPSHOT"):

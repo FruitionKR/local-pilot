@@ -16,7 +16,7 @@ def build_promotion_concept_page(
     source_ref_by_block: dict[str, str],
 ) -> dict[str, Any]:
     slug = slugify(str(draft.get("slug") or cluster.get("id") or "promoted-concept"))
-    title = str(draft.get("title") or promotion_representative(cluster) or slug).strip()
+    title = promotion_representative(cluster) or slug
     definition = draft.get("definition") if isinstance(draft.get("definition"), dict) else {}
     key_points = draft.get("key_points") if isinstance(draft.get("key_points"), list) else []
     evidence = draft.get("evidence") if isinstance(draft.get("evidence"), list) else []

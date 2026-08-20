@@ -18,7 +18,6 @@ from app.modules.skill.infrastructure.chat_completions_skill_authoring_generator
     ChatCompletionsSkillAuthoringGenerator,
     DEFAULT_PROMPT,
     DEFAULT_CLASSIFIER_PROMPT,
-    DEFAULT_VERIFIER_PROMPT,
     build_skill_authoring_generator,
 )
 from app.modules.skill.infrastructure.backend_skill_reference_reader import BackendSkillReferenceReader
@@ -27,17 +26,24 @@ from app.modules.skill.interfaces.http.schemas import SkillAuthoringResponse
 from app.modules.skill.interfaces.http.routes import router as skill_router
 
 
-def test_intent_prompts_require_canonical_tool_sets() -> None:
-    for prompt_path in (DEFAULT_CLASSIFIER_PROMPT, DEFAULT_VERIFIER_PROMPT):
-        prompt = prompt_path.read_text(encoding="utf-8")
-        assert "complete canonical tool list" in prompt
-        assert "never choose a task-specific subset" in prompt
-        assert "Do not return `ambiguous` merely because" in prompt
-        assert "Classify the reusable action that the finished Skill will perform" in prompt
-        assert '"고객에게 이메일을 자동 발송하는 규칙을 만들어줘" -> `unsupported`' in prompt
-        assert "A workspace document entry's display name or filename" in prompt
-        assert "A Markdown H1 or title inside the document body" in prompt
-        assert 'never the string `"null"`' in prompt
+def test_intent_prompt_defines_supported_boundaries() -> None:
+    prompt = DEFAULT_CLASSIFIER_PROMPT.read_text(encoding="utf-8")
+    assert "Do not return `ambiguous` merely because" in prompt
+    assert "Classify the reusable action that the finished Skill will perform" in prompt
+    assert '"고객에게 이메일을 자동 발송하는 규칙을 만들어줘" -> `unsupported`' in prompt
+    assert "A workspace document entry's display name or filename" in prompt
+    assert "A Markdown H1 or title inside the document body" in prompt
+    assert "every Skill kind required" in prompt
+    assert "Do not infer `template` from meta words" in prompt
+    assert "Naming an output genre" in prompt
+    assert "Bind each requested action to its explicit object" in prompt
+    assert "Dividing documents among folders" in prompt
+    assert "Do not add `document-edit` unless" in prompt
+    assert "Select multiple Skill kinds only when" in prompt
+    assert "select `template` with `fixed-template`" in prompt
+    assert '"skill_kinds"' in prompt
+    assert "do not return tool names" in prompt
+    assert '"allowed_tools"' not in prompt
 
 
 def test_authoring_prompt_requires_complete_preserve_proposal() -> None:
@@ -52,11 +58,10 @@ class FixedGenerator:
         self,
         result: dict[str, object],
         intent: dict[str, object] | None = None,
-        verification: dict[str, object] | None = None,
     ) -> None:
         self.result = result
         self.intent = intent or intent_result()
-        self.verification = verification or self.intent
+        self.classification_count = 0
         self.instruction = ""
         self.references: tuple[SkillAuthoringReference, ...] = ()
         self.allow_clarification = True
@@ -72,16 +77,8 @@ class FixedGenerator:
         *,
         requested_description: str | None,
     ) -> dict[str, object]:
+        self.classification_count += 1
         return self.intent
-
-    def verify(
-        self,
-        instruction: str,
-        references: tuple[SkillAuthoringReference, ...],
-        *,
-        requested_description: str | None,
-    ) -> dict[str, object]:
-        return self.verification
 
     def generate(
         self,
@@ -198,17 +195,13 @@ def draft_result() -> dict[str, object]:
 
 def intent_result(
     *,
-    skill_kind: str = "document-create",
+    skill_kinds: list[str] | None = None,
     reference_mode: str = "none",
-    allowed_tools: list[str] | None = None,
 ) -> dict[str, object]:
     return {
         "decision": "supported",
-        "skill_kind": skill_kind,
+        "skill_kinds": skill_kinds if skill_kinds is not None else ["document-create"],
         "reference_mode": reference_mode,
-        "allowed_tools": allowed_tools
-        if allowed_tools is not None
-        else ["list_root_items", "list_folder_children", "create_document"],
     }
 
 
@@ -224,6 +217,17 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(client.provider, "claude")
         self.assertEqual(client.config.model, "claude-sonnet-5")
         self.assertEqual(client.config.api_key, "claude-key")
+        self.assertIsNone(client.config.temperature)
+
+    def test_skill_builder_uses_deterministic_openai_temperature(self) -> None:
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "openai-key"}, clear=True):
+            generator = build_skill_authoring_generator(
+                provider="openai",
+                model="gpt-5-nano",
+            )
+
+        client = generator._client  # type: ignore[attr-defined]
+        self.assertEqual(client.config.temperature, 0.0)
 
     def build_use_case(
         self,
@@ -241,7 +245,8 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         )
 
     def test_returns_unpersisted_proposal_with_reviewed_permissions(self) -> None:
-        use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
+        generator = FixedGenerator(draft_result())
+        use_case, repository = self.build_use_case(generator)
 
         result = use_case.execute(
             workspace_id="workspace-1",
@@ -253,17 +258,48 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         response = SkillAuthoringResponse.from_domain(result).model_dump()
 
         self.assertEqual(result.status, "proposal_ready")
+        self.assertEqual(generator.classification_count, 1)
         self.assertIsNone(result.skill)
         self.assertEqual(repository.skills, {})
         self.assertEqual(response["capabilities"], ["document-create"])
         self.assertEqual(
             response["allowed_tools"],
-            ["create_document", "list_folder_children", "list_root_items"],
+            [
+                "create_document",
+                "get_document_content",
+                "get_document_metadata",
+                "list_folder_children",
+                "list_root_items",
+            ],
         )
         self.assertEqual(response["name"], "concise-document-writer")
         self.assertEqual(response["description"], "요청한 내용을 간결한 문서로 작성합니다.")
         self.assertEqual(response["instructions_markdown"], "# 작성 절차\n\n- 핵심 내용을 먼저 정리한다.")
         self.assertIn("# 작성 절차", response["skill_markdown"])
+
+    def test_combines_server_permissions_for_every_required_skill_kind(self) -> None:
+        generator = FixedGenerator(
+            draft_result(),
+            intent=intent_result(skill_kinds=["folder-organize", "document-edit"]),
+        )
+        use_case, _ = self.build_use_case(generator)
+
+        result = use_case.execute(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            instruction="문서를 요약한 뒤 보관 폴더로 옮기는 스킬",
+            reference_document_ids=(),
+        )
+
+        assert result.proposal is not None
+        self.assertEqual(
+            result.proposal.capabilities,
+            ("document-edit", "folder-organize"),
+        )
+        self.assertIn("apply_document_edit", result.proposal.allowed_tools)
+        self.assertIn("move_document", result.proposal.allowed_tools)
+        self.assertNotIn("create_document", result.proposal.allowed_tools)
 
     def test_has_no_direct_create_route_that_bypasses_authoring_review(self) -> None:
         direct_create = [
@@ -274,20 +310,9 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
 
         self.assertEqual(direct_create, [])
 
-    def test_completed_run_draft_preserves_permissions_when_intents_disagree(self) -> None:
+    def test_completed_run_draft_preserves_permissions_without_intent_classification(self) -> None:
         use_case, repository = self.build_use_case(
-            FixedGenerator(
-                draft_result(),
-                intent=intent_result(),
-                verification=intent_result(
-                    skill_kind="document-edit",
-                    allowed_tools=[
-                        "list_root_items",
-                        "list_folder_children",
-                        "apply_document_edit",
-                    ],
-                ),
-            )
+            FixedGenerator(draft_result())
         )
         draft = SkillDraftProposal(
             name="project-document-organizer",
@@ -343,7 +368,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         use_case, repository = self.build_use_case(
             FixedGenerator(
                 candidate,
-                intent=intent_result(skill_kind="template", reference_mode="fixed-template"),
+                intent=intent_result(skill_kinds=["template"], reference_mode="fixed-template"),
             ),
             FixedReferenceReader(
                 "# 8월 제품 회의\n\n"
@@ -389,7 +414,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         use_case, repository = self.build_use_case(
             FixedGenerator(
                 candidate,
-                intent=intent_result(skill_kind="template", reference_mode="fixed-template"),
+                intent=intent_result(skill_kinds=["template"], reference_mode="fixed-template"),
             )
         )
 
@@ -408,7 +433,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         candidate = draft_result()
         candidate["instructions_markdown"] = "# 재생성된 내용"
         use_case, repository = self.build_use_case(
-            FixedGenerator(candidate, intent=intent_result(skill_kind="template"))
+            FixedGenerator(candidate, intent=intent_result(skill_kinds=["template"]))
         )
         original = (
             "# 작성 규칙\n\n"
@@ -479,15 +504,14 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
     def test_rejects_skill_without_routable_capability(self) -> None:
         invalid_intent = {
             "decision": "supported",
-            "skill_kind": None,
+            "skill_kinds": [],
             "reference_mode": "none",
-            "allowed_tools": [],
         }
         use_case, repository = self.build_use_case(
             FixedGenerator(draft_result(), intent=invalid_intent)
         )
 
-        with self.assertRaisesRegex(ValueError, "supported skill_kind"):
+        with self.assertRaisesRegex(ValueError, "supported skill_kinds"):
             use_case.execute(
                 workspace_id="workspace-1",
                 user_id="user-1",
@@ -501,16 +525,11 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
     def test_rejects_request_outside_supported_agent_actions(self) -> None:
         unsupported = {
             "decision": "unsupported",
-            "skill_kind": None,
+            "skill_kinds": [],
             "reference_mode": "none",
-            "allowed_tools": [],
         }
         use_case, repository = self.build_use_case(
-            FixedGenerator(
-                draft_result(),
-                intent=unsupported,
-                verification=intent_result(),
-            )
+            FixedGenerator(draft_result(), intent=unsupported)
         )
 
         with self.assertRaisesRegex(ValueError, "supported Agent action"):
@@ -524,40 +543,11 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
 
         self.assertEqual(repository.skills, {})
 
-    def test_rejects_disagreeing_intent_classifications(self) -> None:
-        use_case, repository = self.build_use_case(
-            FixedGenerator(
-                draft_result(),
-                intent=intent_result(),
-                verification=intent_result(
-                    skill_kind="document-edit",
-                    allowed_tools=[
-                        "list_root_items",
-                        "list_folder_children",
-                        "apply_document_edit",
-                    ],
-                ),
-            )
-        )
-
-        with self.assertRaisesRegex(ValueError, "classified consistently"):
-            use_case.execute(
-                workspace_id="workspace-1",
-                user_id="user-1",
-                scope_type="personal",
-                instruction="문서를 정리하는 스킬",
-                reference_document_ids=(),
-                allow_clarification=False,
-            )
-
-        self.assertEqual(repository.skills, {})
-
     def test_chat_asks_when_intent_classification_is_ambiguous(self) -> None:
         ambiguous = {
             "decision": "ambiguous",
-            "skill_kind": None,
+            "skill_kinds": [],
             "reference_mode": "none",
-            "allowed_tools": [],
         }
         use_case, repository = self.build_use_case(
             FixedGenerator(draft_result(), intent=ambiguous)
@@ -670,18 +660,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
 
     def test_final_publish_keeps_reviewed_tool_subset(self) -> None:
         use_case, _ = self.build_use_case(
-            FixedGenerator(
-                draft_result(),
-                intent=intent_result(
-                    allowed_tools=[
-                        "list_root_items",
-                        "list_folder_children",
-                        "get_document_metadata",
-                        "get_document_content",
-                        "create_document",
-                    ]
-                ),
-            )
+            FixedGenerator(draft_result())
         )
 
         result = use_case.publish(
@@ -1232,25 +1211,31 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
                 document_id="document-1",
             )
 
-    def test_rejects_classified_tool_outside_capability(self) -> None:
+    def test_ignores_model_tool_permissions_and_assigns_canonical_tools(self) -> None:
+        intent = intent_result()
+        intent["allowed_tools"] = ["move_document"]
         use_case, repository = self.build_use_case(
-            FixedGenerator(
-                draft_result(),
-                intent=intent_result(
-                    allowed_tools=["list_root_items", "list_folder_children", "move_document"]
-                ),
-            )
+            FixedGenerator(draft_result(), intent=intent)
         )
 
-        with self.assertRaisesRegex(ValueError, "unsupported tools"):
-            use_case.execute(
-                workspace_id="workspace-1",
-                user_id="user-1",
-                scope_type="personal",
-                instruction="문서를 작성하는 스킬",
-                reference_document_ids=(),
-            )
+        result = use_case.execute(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            instruction="문서를 작성하는 스킬",
+            reference_document_ids=(),
+        )
 
+        self.assertEqual(
+            result.proposal.allowed_tools,  # type: ignore[union-attr]
+            (
+                "create_document",
+                "get_document_content",
+                "get_document_metadata",
+                "list_folder_children",
+                "list_root_items",
+            ),
+        )
         self.assertEqual(repository.skills, {})
 
     def test_rejects_unsafe_generated_instructions(self) -> None:
@@ -1342,7 +1327,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             ]
         )
         generator = ChatCompletionsSkillAuthoringGenerator(
-            client, "system rules", "classifier rules", "verifier rules"
+            client, "system rules", "classifier rules"
         )  # type: ignore[arg-type]
 
         result = generator.generate(
@@ -1362,10 +1347,10 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(first_payload["authoring_mode"], "enhance")
         self.assertIn("single_turn authoring", retry_payload["contract_failures"][0])
 
-    def test_intent_classifier_and_verifier_use_independent_prompts(self) -> None:
-        client = RecordingClient([intent_result(), intent_result()])
+    def test_intent_classifier_uses_classifier_prompt_once(self) -> None:
+        client = RecordingClient([intent_result()])
         generator = ChatCompletionsSkillAuthoringGenerator(
-            client, "author rules", "classifier rules", "verifier rules"
+            client, "author rules", "classifier rules"
         )  # type: ignore[arg-type]
 
         classified = generator.classify(
@@ -1373,19 +1358,14 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             (),
             requested_description=None,
         )
-        verified = generator.verify(
-            "회의록을 작성하는 스킬",
-            (),
-            requested_description=None,
-        )
 
-        self.assertEqual(classified, verified)
-        self.assertEqual(client.system_prompts, ["classifier rules", "verifier rules"])
+        self.assertEqual(classified, intent_result())
+        self.assertEqual(client.system_prompts, ["classifier rules"])
 
     def test_keeps_reference_in_user_payload_not_system_prompt(self) -> None:
         client = RecordingClient()
         generator = ChatCompletionsSkillAuthoringGenerator(
-            client, "system rules", "classifier rules", "verifier rules"
+            client, "system rules", "classifier rules"
         )  # type: ignore[arg-type]
 
         generator.generate(
@@ -1417,7 +1397,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
     def test_sends_only_reference_markdown_structure(self) -> None:
         client = RecordingClient()
         generator = ChatCompletionsSkillAuthoringGenerator(
-            client, "system rules", "classifier rules", "verifier rules"
+            client, "system rules", "classifier rules"
         )  # type: ignore[arg-type]
 
         generator.generate(

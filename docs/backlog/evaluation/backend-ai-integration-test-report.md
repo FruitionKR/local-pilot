@@ -9,7 +9,7 @@
 시점 HEAD의 ancestor이지만, 그 이후 변경까지 이 보고서가 자동으로 검증하는 것은 아니다.
 
 외부 증거 bundle은 `back-ai-e2e-clean2/`이며 이 장비에서는
-`/Users/jaehyeong/Downloads/back-ai-e2e-clean2`에 보존했다. 62개 `REPORT.md`와 raw
+`<local-downloads>/back-ai-e2e-clean2`에 보존했다. 62개 `REPORT.md`와 raw
 artifact를 포함하지만 Git에는 추적하지 않는다. 아래 경로는 이 bundle root 기준 상대 경로다.
 
 ## 1. 최종 결론

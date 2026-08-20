@@ -51,6 +51,7 @@ def generation_retry_block_ids(
     normalized: JsonDict,
     evaluation: GenerationEvaluation,
     source_block_ids: list[str] | None = None,
+    packet_block_ids: dict[str, list[str]] | None = None,
 ) -> list[str] | None:
     """모든 evaluator target을 source block으로 해석하며, None은 전체 재생성을 뜻합니다."""
     issues = evaluation.get("issues") or []
@@ -64,6 +65,7 @@ def generation_retry_block_ids(
         *normalized.get("section_candidates", []),
         *normalized.get("mentions", []),
         *normalized.get("categories", []),
+        *normalized.get("semantic_notes", []),
     ]
     evidence_by_id = {
         str(item.get("evidence_id")): item
@@ -91,12 +93,19 @@ def generation_retry_block_ids(
                 and (valid_source_block_ids is None or target in valid_source_block_ids)
             ):
                 target_block_ids.append(target)
+            if issue.get("type") == "semantic_coverage_gap" and packet_block_ids:
+                target_block_ids.extend(packet_block_ids.get(target, []))
             for record in records:
                 if target not in _record_identifiers(record):
                     continue
                 target_block_ids.extend(_record_anchor_ids(record))
                 for evidence_id in record.get("evidence_claim_ids", []) or []:
                     target_block_ids.extend(_record_anchor_ids(evidence_by_id.get(str(evidence_id), {})))
+            target_block_ids = [
+                block_id
+                for block_id in target_block_ids
+                if valid_source_block_ids is None or block_id in valid_source_block_ids
+            ]
             if not target_block_ids:
                 return None
             resolved.extend(target_block_ids)

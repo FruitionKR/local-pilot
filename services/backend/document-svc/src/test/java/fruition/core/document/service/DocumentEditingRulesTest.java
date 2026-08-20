@@ -88,4 +88,64 @@ class DocumentEditingRulesTest {
         assertThat(content.hasSameContent(content.contentHash())).isTrue();
         assertThat(content.hasSameContent("different")).isFalse();
     }
+
+    @Test
+    @DisplayName("이름이 비어 있으면 번호를 붙이지 않는다")
+    void uniqueFilename_whenFree_keepsName() {
+        DocumentEditingRules.Filename result =
+                DocumentEditingRules.uniqueFilename("검색 인덱싱", java.util.Set.of());
+
+        assertThat(result.displayName()).isEqualTo("검색 인덱싱");
+        assertThat(result.filename()).isEqualTo("검색 인덱싱.md");
+    }
+
+    @Test
+    @DisplayName("이름이 겹치면 비어 있는 번호를 찾아 붙인다")
+    void uniqueFilename_whenTaken_appendsNumber() {
+        DocumentEditingRules.Filename result = DocumentEditingRules.uniqueFilename(
+                "검색 인덱싱", java.util.Set.of("검색 인덱싱.md", "검색 인덱싱 (2).md"));
+
+        assertThat(result.displayName()).isEqualTo("검색 인덱싱 (3)");
+        assertThat(result.filename()).isEqualTo("검색 인덱싱 (3).md");
+    }
+
+    @Test
+    @DisplayName("긴 파일명은 Unicode code point 경계를 보존해 자른다")
+    void uniqueFilename_truncatesAtCodePointBoundary() {
+        String displayName = "a".repeat(251) + "😀" + "tail";
+
+        DocumentEditingRules.Filename result =
+                DocumentEditingRules.uniqueFilename(displayName, java.util.Set.of());
+
+        assertThat(result.filename()).isEqualTo("a".repeat(251) + "😀.md");
+        assertThat(result.filename().codePointCount(0, result.filename().length())).isEqualTo(255);
+    }
+
+    @Test
+    @DisplayName("파일명에 못 쓰는 문자를 걷어낸다")
+    void sanitizeDisplayName_stripsUnusableCharacters() {
+        assertThat(DocumentEditingRules.sanitizeDisplayName("CI/CD 파이프라인")).isEqualTo("CI CD 파이프라인");
+        assertThat(DocumentEditingRules.sanitizeDisplayName("a\\b")).isEqualTo("a b");
+        assertThat(DocumentEditingRules.sanitizeDisplayName("앞\n뒤")).isEqualTo("앞 뒤");
+    }
+
+    @Test
+    @DisplayName("정제 결과가 이름으로 쓸 수 없으면 빈 문자열이다")
+    void sanitizeDisplayName_returnsEmptyWhenUnusable() {
+        assertThat(DocumentEditingRules.sanitizeDisplayName(null)).isEmpty();
+        assertThat(DocumentEditingRules.sanitizeDisplayName("   ")).isEmpty();
+        assertThat(DocumentEditingRules.sanitizeDisplayName("/")).isEmpty();
+        assertThat(DocumentEditingRules.sanitizeDisplayName("..")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("정제한 이름은 normalizeDisplayName 검증을 통과한다")
+    void sanitizedNameIsAcceptedByUniqueFilename() {
+        String sanitized = DocumentEditingRules.sanitizeDisplayName("[채팅] CI/CD 파이프라인");
+
+        DocumentEditingRules.Filename result =
+                DocumentEditingRules.uniqueFilename(sanitized, java.util.Set.of());
+
+        assertThat(result.filename()).isEqualTo("[채팅] CI CD 파이프라인.md");
+    }
 }

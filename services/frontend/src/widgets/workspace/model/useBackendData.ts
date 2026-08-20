@@ -7,8 +7,8 @@ import { mergeBackendDataIntoProjects } from "@/entities/tree";
 import type { DocumentItemResponse } from "@/entities/document";
 import type { Project } from "@/entities/tree";
 import type { BackendData, WikiGraphResponse } from "@/entities/wiki";
+import { getWikiWorkPollInterval } from "@/features/wiki-ingest/model/wikiWorkPolling";
 
-const PROCESSING_POLL_INTERVAL_MS = 3000;
 const BACKEND_DATA_QUERY_KEY = ["backendData"] as const;
 const EMPTY_GRAPH: WikiGraphResponse = { nodes: [], edges: [] };
 
@@ -27,9 +27,8 @@ export function useBackendData({
   const query = useQuery({
     queryKey: BACKEND_DATA_QUERY_KEY,
     queryFn: fetchBackendData,
-    // 처리 중(processing/uploaded) 문서가 있을 때만 3초 폴링한다.
     refetchInterval: (activeQuery) =>
-      hasProcessingDocuments(activeQuery.state.data) ? PROCESSING_POLL_INTERVAL_MS : false,
+      getWikiWorkPollInterval(hasProcessingDocuments(activeQuery.state.data)),
     refetchIntervalInBackground: true,
     // 폴링으로 갱신 주기를 이미 제어하므로 탭 포커스마다 refetch하지 않는다.
     refetchOnWindowFocus: false

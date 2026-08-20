@@ -2,7 +2,8 @@
 
 [API 문서](../README.md) / [document-svc](README.md)
 
-사용자용 Agent 실행·승인과 내부 Tool 실행 API다.
+사용자용 Agent 실행·승인과 내부 Tool 실행 API다. Agent turn은 Kafka `ai.agent.command`,
+계획 조회·승인·거절·취소·수정은 ai-svc 내부 HTTP로 전달한다.
 
 - API 수: 10
 
@@ -148,7 +149,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/
 
 ```json
 {
-  "operation_hash": "string",
+  "operation_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "plan_version": 1
 }
 ```
@@ -183,7 +184,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/
 curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>/approve" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
-  --data '{"operation_hash":"<value>","plan_version":1}'
+  --data '{"operation_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","plan_version":1}'
 ```
 
 ```json
@@ -626,7 +627,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
-  --data '{"baseVersion":3,"conversationContext":{"pendingSkillProposal":{"allowed_tools":["list_root_items"],"capabilities":["document-create"],"description":"<value>","instructions_markdown":"<value>","name":"<value>","scope_type":"<value>"},"recentConversationSummary":"<value>","referenceContext":{}},"documentId":"doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83","editorSnapshot":{"markdown":"<value>","target":{"endLine":24,"startLine":10,"type":"selection"}},"message":"이 문단을 표로 정리해줘","model":"gpt-5-nano","provider":"openai","skill_draft_excluded_literals":["<value>"],"skill_draft_sources":[{"run_id":"<value>"}],"skill_draft_user_directives":["<value>"]}'
+  --data '{"session_id":"session_0ff8564ea24047cd8144d3f48badfe3f","documentId":"doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83","baseVersion":3,"message":"이 문단을 표로 정리해줘","conversationContext":{"selected_pair_ids":["pair_01"],"referenceContext":{}},"editorSnapshot":{"markdown":"# 회의록\n\n정리할 문단","target":{"endLine":3,"startLine":3,"type":"selection"}},"provider":"openai","model":"gpt-5-nano"}'
 ```
 
 ```json
@@ -817,7 +818,7 @@ AI가 질의로 판정한 턴만 단계 이벤트를 낸다. 편집·Skill 갈�
 - HTTP `200`: SSE 구독 시작
 - Content-Type: `text/event-stream`
 
-```json
+```text
 string
 ```
 
@@ -868,7 +869,7 @@ curl -N -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/age
   -H 'Accept: text/event-stream'
 ```
 
-```json
+```text
 string
 ```
 
@@ -925,7 +926,7 @@ string
   "arguments": {
   },
   "idempotency_key": "string",
-  "operation_hash": "string",
+  "operation_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "operation_id": "string",
   "plan_id": "string",
   "plan_version": 1,
@@ -967,7 +968,7 @@ string
 curl -X POST "$DOCUMENT/internal/agent/tools/execute/<value>" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"arguments":{},"idempotency_key":"<value>","operation_hash":"<value>","operation_id":"<value>","plan_id":"<value>","plan_version":1,"run_id":"<value>","user_id":"<value>","workspace_id":"<value>"}'
+  --data '{"arguments":{},"idempotency_key":"<value>","operation_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","operation_id":"<value>","plan_id":"<value>","plan_version":1,"run_id":"<value>","user_id":"<value>","workspace_id":"<value>"}'
 ```
 
 ```json

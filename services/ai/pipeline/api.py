@@ -17,7 +17,6 @@ from app.modules.skill.interfaces.http.routes import agent_router as agent_skill
 from app.modules.skill.interfaces.http.routes import router as skill_router
 from app.modules.wiki_ingestion.interfaces.http.routes import router as pipeline_router
 from app.modules.wiki_ingestion.interfaces.http.schemas import (
-    CHAT_APPEND_SEMANTIC_PROMPT,
     CHAT_SEMANTIC_PROMPT,
     DOCUMENT_SEMANTIC_PROMPT,
     ChatWikiRunIn,
@@ -125,7 +124,9 @@ internal_token_dependencies = [Depends(require_internal_token)]
 # agent turn은 Skill 기능이 켜져 있어도 내부 토큰이 필요하다 (그 위에 agent service token이 더 붙는다).
 include_internal_router(
     agent_router,
-    [Depends(require_agent_service_token)] if AGENT_SKILLS_ENABLED else internal_token_dependencies,
+    internal_token_dependencies + [Depends(require_agent_service_token)]
+    if AGENT_SKILLS_ENABLED
+    else internal_token_dependencies,
 )
 include_internal_router(query_router, internal_token_dependencies)
 include_internal_router(pipeline_router, internal_token_dependencies)

@@ -16,9 +16,13 @@ const nextConfig = {
         destination: `${accessUrl}/api/workspaces`
       },
       {
-        // 한 세그먼트(:wid)까지만 access-svc. /api/workspaces/:wid/** 는 아래 규칙으로 document-svc.
+        // 워크스페이스 자체 CRUD·휴지통·복구는 access-svc. 그 밖의 하위 기능은 document-svc가 받는다.
         source: "/api/workspaces/:wid",
         destination: `${accessUrl}/api/workspaces/:wid`
+      },
+      {
+        source: "/api/workspaces/:wid/restore",
+        destination: `${accessUrl}/api/workspaces/:wid/restore`
       },
       {
         source: "/api/:path*",

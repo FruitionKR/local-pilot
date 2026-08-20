@@ -72,8 +72,6 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
 
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [visibleNodeCount, setVisibleNodeCount] = useState(0);
-  const [graphZoom, setGraphZoom] = useState(() => initialCache?.zoom ?? 1);
-  const [graphPan, setGraphPan] = useState<NodePosition>(() => initialCache?.pan ?? { x: 0, y: 0 });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const simulationRef = useRef<GraphSimulation | null>(null);
   const zoomBehaviorRef = useRef<ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
@@ -83,13 +81,14 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   const externalFocusedNodeIdRef = useRef<string | null>(focusedNodeId);
   const draggingNodeIdRef = useRef(draggingNodeId);
   const visibleNodeCountRef = useRef(visibleNodeCount);
-  const graphZoomRef = useRef(graphZoom);
-  const graphPanRef = useRef(graphPan);
+  const graphZoomRef = useRef(initialCache?.zoom ?? 1);
+  const graphPanRef = useRef<NodePosition>(initialCache?.pan ?? { x: 0, y: 0 });
   const isPointerHeldRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
   const cacheWriteRef = useRef<number | null>(null);
   const tickGraphRef = useRef<() => boolean>(() => false);
   const advanceHoverAnimationRef = useRef<(deltaMs: number) => boolean>(() => false);
+  const requestAnimationRef = useRef<() => void>(() => {});
   const drawGraphRef = useRef<() => void>(() => {});
   const hitTestNodeRef = useRef<(clientX: number, clientY: number) => GraphNode | null>(() => null);
 
@@ -146,6 +145,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     hoveredNodeIdRef.current = externalId;
     nodeHoverAmountsRef.current = externalId ? { [externalId]: nodeHoverAmountsRef.current[externalId] ?? 1 } : {};
     drawGraphRef.current();
+    requestAnimationRef.current();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphSignature, initialNodePositions]);
 
@@ -153,8 +153,6 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   function applyViewState(nextPan: NodePosition, nextZoom: number) {
     graphPanRef.current = nextPan;
     graphZoomRef.current = nextZoom;
-    setGraphPan(nextPan);
-    setGraphZoom(nextZoom);
     const canvas = canvasRef.current;
     const behavior = zoomBehaviorRef.current;
     if (canvas && behavior) {
@@ -173,22 +171,13 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
 
   useEffect(() => {
     draggingNodeIdRef.current = draggingNodeId;
+    requestAnimationRef.current();
   }, [draggingNodeId]);
 
   useEffect(() => {
     visibleNodeCountRef.current = visibleNodeCount;
     drawGraphRef.current();
   }, [visibleNodeCount]);
-
-  useEffect(() => {
-    graphZoomRef.current = graphZoom;
-    drawGraphRef.current();
-  }, [graphZoom]);
-
-  useEffect(() => {
-    graphPanRef.current = graphPan;
-    drawGraphRef.current();
-  }, [graphPan]);
 
   // graphSignature를 ref로 유지해 안정 참조 콜백(d3-zoom, RAF)에서 최신 서명으로 캐시를 기록한다.
   const graphSignatureRef = useRef(graphSignature);
@@ -242,8 +231,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
         const nextPan = transformToPan(event.transform, canvasEl);
         graphZoomRef.current = event.transform.k;
         graphPanRef.current = nextPan;
-        setGraphZoom(event.transform.k);
-        setGraphPan(nextPan);
+        drawGraphRef.current();
         scheduleGraphCacheWrite();
       });
 
@@ -281,6 +269,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     if (hoveredNodeIdRef.current === nodeId) return;
     hoveredNodeIdRef.current = nodeId;
     drawGraphRef.current();
+    requestAnimationRef.current();
   }, []);
 
   const setSelectedNode = useCallback((nodeId: string | null) => {
@@ -288,6 +277,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     selectedNodeIdRef.current = nodeId;
     hoveredNodeIdRef.current = nodeId;
     drawGraphRef.current();
+    requestAnimationRef.current();
   }, []);
 
   useEffect(() => {
@@ -433,7 +423,8 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     advanceHoverAnimationRef,
     drawGraphRef,
     draggingNodeIdRef,
-    scheduleGraphCacheWrite
+    scheduleGraphCacheWrite,
+    requestAnimationRef
   });
 
   const graphCanvasProps = useGraphPointer({

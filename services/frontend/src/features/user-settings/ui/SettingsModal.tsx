@@ -2,9 +2,29 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  fetchAiModels,
+  fetchWorkspaceAiModelSettings,
+  isSameSelection,
+  resolveProviderModel,
+  updateWorkspaceAiModelSettings,
+  type AiModel,
+  type AiModelSelection
+} from "@/entities/ai";
 import { fetchMe, useUserPreferences } from "@/entities/user";
 import { useWorkspaceName } from "@/entities/workspace/model/useWorkspaceName";
-import { bellIcon, lightningIcon, plusIcon, settingIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { getErrorMessage } from "@/shared/lib/errors";
+import {
+  bellIcon,
+  claudeIcon,
+  geminiIcon,
+  gptIcon,
+  lightningIcon,
+  plusIcon,
+  settingIcon,
+  SvgIcon,
+  type SvgAsset
+} from "@/shared/ui/SvgIcon";
 import styles from "./SettingsModal.module.css";
 
 type SettingsSection = "general" | "notifications";
@@ -20,6 +40,12 @@ const NOTIFICATION_ROWS: { key: NotificationKey; title: string; description: str
   { key: "browser", title: "브라우저 알림", description: "탭이 백그라운드일 때 브라우저 알림으로도 보냅니다." }
 ];
 
+const LLM_PROVIDERS: { id: string; label: string; icon: SvgAsset }[] = [
+  { id: "openai", label: "OpenAI", icon: gptIcon },
+  { id: "gemini", label: "Gemini", icon: geminiIcon },
+  { id: "claude", label: "Claude", icon: claudeIcon }
+];
+
 /** 설정 모달 (Figma 771:19544). 닉네임·이메일·워크스페이스명은 실제 데이터, 변경 액션은 미리보기 단계. */
 export function SettingsModal({ onClose }: { onClose: () => void }) {
   const workspaceName = useWorkspaceName();
@@ -28,12 +54,21 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [isAutoSaveOn, setIsAutoSaveOn] = useState(true);
+  const [aiModels, setAiModels] = useState<AiModel[]>([]);
+  const [aiModelSelection, setAiModelSelection] = useState<AiModelSelection | null>(null);
+  const [aiModelError, setAiModelError] = useState<string | null>(null);
+  const [isAiModelSaving, setIsAiModelSaving] = useState(false);
+  // PUT /ai-model-settings는 OWNER 전용이다. 설정 로드 전에는 안전하게 읽기 전용으로 둔다.
+  const [canUpdateAiModel, setCanUpdateAiModel] = useState(false);
 
-  function toggleNotification(key: NotificationKey) {
+  async function toggleNotification(key: NotificationKey) {
     const nextValue = !preferences.notifications[key];
-    // 브라우저 알림을 켤 때 권한이 미결정이면 요청한다.
-    if (key === "browser" && nextValue && "Notification" in window && Notification.permission === "default") {
-      void Notification.requestPermission();
+    if (key === "browser" && nextValue) {
+      if (!("Notification" in window)) return;
+      const permission = Notification.permission === "default"
+        ? await Notification.requestPermission()
+        : Notification.permission;
+      if (permission !== "granted") return;
     }
     updatePreferences((current) => ({
       ...current,
@@ -52,6 +87,22 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       .catch(() => {
         // 표시용 데이터라 실패 시 빈 값을 유지한다.
       });
+    fetchAiModels()
+      .then((models) => {
+        if (!cancelled) setAiModels(models);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setAiModelError(getErrorMessage(error, "LLM Provider 목록을 불러오지 못했습니다."));
+      });
+    fetchWorkspaceAiModelSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setAiModelSelection(settings.ingest_lint);
+        setCanUpdateAiModel(settings.can_update === true);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setAiModelError(getErrorMessage(error, "LLM Provider 설정을 불러오지 못했습니다."));
+      });
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -65,6 +116,27 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
   const name = displayName || "사용자";
   const wsName = workspaceName ?? "워크스페이스";
+
+  async function selectAiProvider(provider: string) {
+    if (!canUpdateAiModel) return;
+    const selected = resolveProviderModel(aiModels, provider, aiModelSelection);
+    // provider만 같고 model이 catalog에서 빠진 경우에도 유효 조합으로 복구해야 하므로 전체를 비교한다.
+    if (!selected || isSameSelection(selected, aiModelSelection) || isAiModelSaving) return;
+    setIsAiModelSaving(true);
+    setAiModelError(null);
+    try {
+      const settings = await updateWorkspaceAiModelSettings({
+        provider: selected.provider,
+        model: selected.model
+      });
+      setAiModelSelection(settings.ingest_lint);
+      setCanUpdateAiModel(settings.can_update === true);
+    } catch (error: unknown) {
+      setAiModelError(getErrorMessage(error, "LLM Provider 설정을 저장하지 못했습니다."));
+    } finally {
+      setIsAiModelSaving(false);
+    }
+  }
 
   // 사이드바(z-index 스태킹 컨텍스트) 내부에 렌더되면 편집기 등에 가려지므로 body로 portal한다.
   return createPortal(
@@ -135,7 +207,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                       aria-checked={preferences.notifications[row.key]}
                       aria-label={row.title}
                       className={`${styles.switch} ${preferences.notifications[row.key] ? styles["is-on"] : ""}`}
-                      onClick={() => toggleNotification(row.key)}
+                      onClick={() => void toggleNotification(row.key)}
                     >
                       <span className={styles["switch-ball"]} />
                     </button>
@@ -228,11 +300,34 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               <div className={styles.row}>
                 <div className={styles["row-title"]}>
                   <strong>LLM Provider</strong>
-                  <small>위키 생성·편집에 사용하는 모델</small>
+                  <small>위키 생성·편집에 사용할 회사를 선택하세요.</small>
                 </div>
-                <div className={styles["model-select"]}>
-                  <span className={styles["model-pill"]}>Gemini • gemini-flash-latest</span>
-                  <button type="button" className={styles.btn} disabled>모델 변경</button>
+                <div className={styles["provider-setting"]}>
+                  <div className={styles["provider-list"]} aria-label="LLM Provider 선택">
+                    {LLM_PROVIDERS.filter((provider) => aiModels.some((model) => model.provider === provider.id))
+                      .map((provider) => (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          aria-label={provider.label}
+                          aria-pressed={aiModelSelection?.provider === provider.id}
+                          className={`${styles["provider-button"]} ${
+                            aiModelSelection?.provider === provider.id ? styles["is-selected"] : ""
+                          }`}
+                          disabled={isAiModelSaving || !canUpdateAiModel}
+                          onClick={() => void selectAiProvider(provider.id)}
+                        >
+                          <SvgIcon src={provider.icon} className={styles["provider-icon"]} />
+                          <span>{provider.label}</span>
+                        </button>
+                      ))}
+                  </div>
+                  {!canUpdateAiModel && aiModelSelection && (
+                    <small className={styles["provider-readonly"]}>
+                      Provider 변경은 워크스페이스 OWNER만 할 수 있습니다.
+                    </small>
+                  )}
+                  {aiModelError && <small className={styles["model-error"]} role="alert">{aiModelError}</small>}
                 </div>
               </div>
             </section>
