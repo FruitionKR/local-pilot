@@ -146,6 +146,33 @@ class PlanGeneratorTest(unittest.TestCase):
         self.assertIn("For create_folder and create_document, target_id and base_version must both be null.", prompt)
         self.assertIn('"field":"current_version"', prompt)
 
+    def test_plan_prompt_describes_pending_mutations_without_read_only_summary(self) -> None:
+        prompt = DEFAULT_PLAN_PROMPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "Planning reads the hierarchy snapshot only; it does not change the workspace.",
+            prompt,
+        )
+        self.assertIn(
+            "The generated plan is awaiting user approval. Its summary must state that no changes have been made yet and that the listed operations will be executed only after approval.",
+            prompt,
+        )
+        mutation_tools = (
+            "create_folder",
+            "rename_folder",
+            "move_folder",
+            "move_document",
+            "rename_document",
+            "create_document",
+            "apply_document_edit",
+        )
+        self.assertIn(
+            "If operations include any of the allowed mutations—create_folder, rename_folder, move_folder, move_document, rename_document, create_document, or apply_document_edit—do not describe the plan or its summary as read-only or 읽기 전용.",
+            prompt,
+        )
+        for mutation_tool in mutation_tools:
+            self.assertIn(mutation_tool, prompt)
+        self.assertNotIn("You create a read-only workspace organization plan", prompt)
+
     def test_rejects_more_than_twenty_operations(self) -> None:
         candidate = {
             "summary": "too many",
