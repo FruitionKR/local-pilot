@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "editable": false,
   "refresh": "30s",
   "time": {
@@ -22,6 +22,28 @@
         "type": "datasource",
         "query": "prometheus",
         "current": {},
+        "hide": 0
+      },
+      {
+        "name": "consumergroup",
+        "label": "Consumer group",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(kafka_consumergroup_lag, consumergroup)",
+        "query": "label_values(kafka_consumergroup_lag, consumergroup)",
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "ingest-worker",
+          "value": "ingest-worker",
+          "selected": true
+        },
+        "options": [],
         "hide": 0
       }
     ]
@@ -355,6 +377,111 @@
           "legendFormat": "ERROR 로그 {{application}}"
         }
       ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "└ 드릴다운 · partition별 lag ($consumergroup)",
+      "description": "②에서 특정 consumer group이 밀릴 때 어느 partition인지 좁힌다. 메시지 key가 document_id라 partition은 문서 단위로 묶인다 — 한 partition만 쌓여 있으면 그 partition에 걸린 특정 문서가 반복 실패하는 것이다. 전 partition이 고르게 쌓이면 처리량 부족이다. 상단 Consumer group 드롭다운으로 대상을 바꾼다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "kafka_consumergroup_lag{consumergroup=\"$consumergroup\"}",
+          "legendFormat": "partition {{partition}}"
+        }
+      ]
     }
-  ]
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "name": "재시작 · 배포",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "orange",
+        "expr": "(time() - process_start_time_seconds) < 300",
+        "target": {
+          "refId": "Anno",
+          "expr": "(time() - process_start_time_seconds) < 300"
+        },
+        "step": "5m",
+        "titleFormat": "재시작",
+        "textFormat": "{{job}} {{application}}{{instance}}",
+        "tagKeys": "job,application"
+      }
+    ]
+  },
+  "fieldConfig": {}
 }

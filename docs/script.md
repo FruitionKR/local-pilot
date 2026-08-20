@@ -331,6 +331,15 @@ kafka-exporter는 `compose.infra.yml`이 만드는 네트워크(`fruition-mvp-de
 | ③ | **Latency** | 배포 전과 비슷 | p95·p99가 평소의 3~5배. 트래픽이 없으면 선이 끊기는데 정상이다(rate 분모가 0) |
 | ④ | **Errors** | 0 | 건수가 아니라 **비율**이다. 4xx는 뺀다 — 미로그인 401은 정상 동작이라 신호가 되지 않는다 |
 
+네 신호 아래에는 드릴다운 패널이 하나 더 있다. **partition별 lag**은 ②에서 특정 consumer group이
+밀릴 때 어느 partition인지 좁힌다. 메시지 key가 `document_id`라 partition은 문서 단위로 묶이므로,
+한 partition만 쌓여 있으면 그 partition에 걸린 특정 문서가 반복 실패하는 것이고, 전 partition이
+고르게 쌓이면 처리량 부족이다. 상단 `Consumer group` 드롭다운으로 대상을 바꾼다.
+
+그래프의 세로선은 **프로세스 재시작(배포) 시각**이다. 배포 전후로 지표가 어떻게 달라졌는지 눈으로
+맞출 수 있다. `process_start_time_seconds`로 감지하며, 재시작 후 5분 이내 구간을 표시하므로
+실제 시각과 최대 5분 차이가 날 수 있다.
+
 ④에는 한계가 있다. 여기 잡히는 것은 프로토콜 수준의 **명시적 실패**뿐이다. AI 처리는 202로 즉시 응답한 뒤
 비동기로 실패할 수 있어, 이 그래프가 평평해도 사용자는 결과를 못 받을 수 있다. 그런 **묵시적 실패**는 현재
 ERROR 로그로만 간접 관측된다. 처리 실패율을 직접 세려면 워커에 도메인 지표를 심어야 한다.
@@ -338,6 +347,14 @@ ERROR 로그로만 간접 관측된다. 처리 실패율을 직접 세려면 워
 여기서 이상이 잡히면 JVM 내부를 본다. Grafana → Dashboards → New → Import → ID `4701`(JVM Micrometer) → 데이터소스 `Prometheus`. 힙·GC·스레드를 `application` 단위로 보여준다. 다만 이 대시보드의 Heap used(%)는 로컬에서 의미가 없다 — `-Xmx`를 주지 않아 max heap이 12GB로 잡히므로 사용률이 항상 1%대다. 비율 대신 `JVM Heap` 패널의 톱니 모양을 본다. `Utilisation` 패널도 비어 있는데, Tomcat 스레드 지표에 `server.tomcat.mbeanregistry.enabled=true`가 필요하기 때문이다. 지금 규모에서는 DB 풀이 훨씬 먼저 막히므로 켜지 않았다.
 
 `prometheus.yml`을 고쳤다면 Prometheus를 재시작해야 반영된다(`docker restart fruition-prometheus`). 대시보드 JSON은 30초마다 자동으로 다시 읽으므로 재시작이 필요 없다.
+
+단, `git rebase`나 브랜치 전환처럼 디렉터리를 지웠다 다시 만드는 작업 뒤에는 bind mount가 옛 inode를
+가리켜 컨테이너에서 파일이 보이지 않는다. 대시보드 수정이 반영되지 않으면 이것부터 의심한다.
+
+```sh
+docker exec fruition-grafana ls /var/lib/grafana/dashboards/   # 비어 있으면 마운트가 끊긴 것
+docker compose -f infra/compose.monitoring.yml up -d --force-recreate grafana
+```
 
 데이터소스·대시보드는 기동 시 자동 등록된다(`infra/monitoring/grafana/provisioning/`, `infra/monitoring/grafana/dashboards/`). 대시보드는 파일이 단일 소스라 UI에서 고쳐도 저장되지 않는다 — JSON을 고쳐 커밋한다. 스크레이프 대상은 `infra/monitoring/prometheus.yml`에 있고, 호스트에서 bootRun으로 도는 백엔드를 가리킨다. `compose.containerized.yml`로 백엔드를 컨테이너로 띄웠다면 대상 주소를 바꿔야 한다.
 
