@@ -12,6 +12,7 @@ import { SidebarProfile } from "./SidebarProfile";
 import { SidebarWorkspaceHeader } from "./SidebarWorkspaceHeader";
 import { DocumentSearch } from "@/features/document-search/ui/DocumentSearch";
 import type { SelectableTreeItem } from "../model/types";
+import { canCreateProjectFromView } from "../model/sidebarMenu";
 import { useFileDropZone } from "../lib/useFileDropZone";
 import styles from "./DocumentSidebar.module.css";
 
@@ -173,6 +174,7 @@ export function DocumentSidebar({
             {contextMenu && (
               <ContextMenu
                 contextMenu={contextMenu}
+                canCreateProject={canCreateProjectFromView(activeView)}
                 convertTarget={convertContextTarget}
                 onRenameContextTarget={onRenameContextTarget}
                 onAddProject={onAddProject}

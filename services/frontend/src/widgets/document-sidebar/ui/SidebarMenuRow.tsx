@@ -12,6 +12,7 @@ import {
   SvgIcon,
   type SvgAsset
 } from "@/shared/ui/SvgIcon";
+import { canCreateProjectFromView } from "../model/sidebarMenu";
 import styles from "./DocumentSidebar.module.css";
 
 // Figma 747:5861 — 좌측 홈/그래프/로그/검색, 우측 새 폴더. 활성 항목은 select 아이콘으로 렌더한다.
@@ -68,17 +69,19 @@ export function SidebarMenuRow({
       >
         <SvgIcon src={menuSearchIcon} className={styles["sidebar-menu-icon"]} />
       </button>
-      <button
-        type="button"
-        className={cx(styles["sidebar-menu-item"], styles["sidebar-menu-add"])}
-        aria-label="새 폴더 생성"
-        onClick={(event) => {
-          event.stopPropagation();
-          onAddProject();
-        }}
-      >
-        <SvgIcon src={folderPlusIcon} className={styles["sidebar-menu-icon"]} />
-      </button>
+      {canCreateProjectFromView(activeView) && (
+        <button
+          type="button"
+          className={cx(styles["sidebar-menu-item"], styles["sidebar-menu-add"])}
+          aria-label="새 폴더 생성"
+          onClick={(event) => {
+            event.stopPropagation();
+            onAddProject();
+          }}
+        >
+          <SvgIcon src={folderPlusIcon} className={styles["sidebar-menu-icon"]} />
+        </button>
+      )}
     </nav>
   );
 }
