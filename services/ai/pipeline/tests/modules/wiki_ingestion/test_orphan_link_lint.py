@@ -231,10 +231,15 @@ def test_postgres_lint_reads_active_contribution_logs_and_removes_orphan(
     assert removed == [{**unsupported, "reason": "no_active_support"}]
 
 
-def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
+def test_wiki_maintenance_reserves_embedding_before_commit_and_keeps_result_when_worker_start_fails(
     monkeypatch,
 ) -> None:
     calls = []
+
+    class EmbeddingJob:
+        def start(self, run_id: str, page_ids: list[str]) -> None:
+            calls.append(("embedding", run_id, page_ids))
+            raise RuntimeError("thread start failed")
 
     class Transaction:
         def __enter__(self):
@@ -251,7 +256,15 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
         wiki_maintenance.database,
         "lint_wiki_workspace",
         lambda *_args, **kwargs: (
-            calls.append(("lint", kwargs["write_log"])) or {"workspace_id": "ws-1"}
+            calls.append(("lint", kwargs["write_log"]))
+            or {
+                "workspace_id": "ws-1",
+                "materialized_promotions": [{"page_id": "page-1"}],
+                "merged_promotions": [
+                    {"page_id": "page-2"},
+                    {"page_id": "page-1"},
+                ],
+            }
         ),
     )
     monkeypatch.setattr(
@@ -281,8 +294,15 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
         "apply_lint_object_changes",
         lambda _result: calls.append("objects"),
     )
+    monkeypatch.setattr(
+        wiki_maintenance,
+        "reserve_page_embeddings",
+        lambda connection, page_ids, model: calls.append(
+            ("reserve", connection is transaction, page_ids, model)
+        ),
+    )
 
-    result = wiki_maintenance.PostgresWikiMaintenance().lint(
+    result = wiki_maintenance.PostgresWikiMaintenance(EmbeddingJob()).lint(
         WikiMaintenanceCommand(
             user_id="user-1",
             workspace_id="ws-1",
@@ -300,7 +320,9 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
         ("artifact", "lint-op-1"),
         ("log", [{"reason": "no_active_support"}]),
         "objects",
+        ("reserve", True, ["page-1", "page-2"], "BAAI/bge-m3"),
         "commit",
+        ("embedding", "lint-op-1", ["page-1", "page-2"]),
     ]
 
 
@@ -472,10 +494,18 @@ def test_wiki_maintenance_dry_run_does_not_persist_operation_artifacts(
     monkeypatch,
 ) -> None:
     calls = []
+
+    class EmbeddingJob:
+        def start(self, run_id: str, page_ids: list[str]) -> None:
+            calls.append((run_id, page_ids))
+
     monkeypatch.setattr(
         wiki_maintenance.database,
         "lint_wiki_workspace",
-        lambda *_args, **_kwargs: {"workspace_id": "ws-1"},
+        lambda *_args, **_kwargs: {
+            "workspace_id": "ws-1",
+            "materialized_promotions": [{"page_id": "page-1"}],
+        },
     )
     monkeypatch.setattr(
         wiki_maintenance.database,
@@ -492,7 +522,7 @@ def test_wiki_maintenance_dry_run_does_not_persist_operation_artifacts(
         raising=False,
     )
 
-    wiki_maintenance.PostgresWikiMaintenance().lint(
+    wiki_maintenance.PostgresWikiMaintenance(EmbeddingJob()).lint(
         WikiMaintenanceCommand(
             user_id="user-1",
             workspace_id="ws-1",

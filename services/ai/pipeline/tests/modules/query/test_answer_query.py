@@ -1,6 +1,8 @@
 import unittest
+from dataclasses import replace
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase, _fallback_language
+from app.modules.query.application.query_page_scorer import QueryPageScorer
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
 from app.modules.query.domain.entities import (
     ConversationContext,
@@ -15,6 +17,8 @@ from app.modules.query.domain.entities import (
 )
 from app.modules.query.domain.exceptions import InvalidQuestionError
 from app.modules.query.infrastructure.in_memory_wiki_repository import InMemoryWikiRepository
+from app.modules.query.infrastructure.bm25_searcher import Bm25Searcher
+from app.modules.query.infrastructure.rule_based_query_rewriter import RuleBasedQueryRewriter
 
 
 class ScoreSearch:
@@ -344,6 +348,91 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
 
         self.assertEqual(result.related_pages[0].page.id, "source:semantic")
 
+    def test_hybrid_page_ranking_preserves_target_evidence(self) -> None:
+        pages = [
+            source_page("source:target", "Hybrid Target"),
+            source_page("source:distractor", "Hybrid Distractor"),
+        ]
+        query = "정확한검색어가 뭐야"
+        markdown_by_uri = {
+            "s3://test/source:target.md": (
+                "---\ndocument_id: doc_target\n---\n\n"
+                "정확한검색어 설명하는 target evidence입니다. [B0001]"
+            ),
+            "s3://test/source:distractor.md": (
+                "---\ndocument_id: doc_distractor\n---\n\n"
+                "관련 없는 distractor evidence입니다. [B0002]"
+            ),
+        }
+        scoring_pages = [
+            replace(page, markdown=markdown_by_uri[page.markdown_uri])
+            for page in pages
+        ]
+        text_search = Bm25Searcher()
+        query_rewrite = RuleBasedQueryRewriter().rewrite(query)
+        representations = [
+            "\n".join([page.title, page.summary, page.markdown or ""]).strip()
+            for page in scoring_pages
+        ]
+        self.assertEqual(query_rewrite.retrieval_query, "정확한검색어")
+        self.assertEqual(
+            text_search.score(query_rewrite.retrieval_query, representations),
+            [1.0, 0.0],
+        )
+        page_scorer = QueryPageScorer(
+            embedding_search=ScoreSearch(
+                {
+                    "Hybrid Target": 0.80,
+                    "Hybrid Distractor": 0.95,
+                }
+            ),
+            text_search=text_search,
+        )
+        dense_only_scores = page_scorer.score_pages(
+            query_rewrite,
+            scoring_pages,
+            embedding_weight=1.0,
+        )
+        hybrid_scores = page_scorer.score_pages(
+            query_rewrite,
+            scoring_pages,
+            embedding_weight=0.8,
+        )
+        self.assertGreater(
+            dense_only_scores["source:distractor"],
+            dense_only_scores["source:target"],
+        )
+        self.assertAlmostEqual(hybrid_scores["source:target"], 0.84)
+        self.assertAlmostEqual(hybrid_scores["source:distractor"], 0.76)
+        self.assertGreater(
+            hybrid_scores["source:target"],
+            hybrid_scores["source:distractor"],
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch(
+                {
+                    "Hybrid Target": 0.80,
+                    "Hybrid Distractor": 0.95,
+                }
+            ),
+            text_search=text_search,
+            answer_generator=RecordingAnswerGenerator(),
+            query_rewriter=RuleBasedQueryRewriter(),
+            markdown_reader=FakeMarkdownReader(
+                markdown_by_uri
+            ),
+            source_candidate_limit=1,
+        )
+
+        result = use_case.execute(query, workspace_id="ws_test")
+
+        self.assertEqual(result.related_pages[0].page.id, "source:target")
+        self.assertAlmostEqual(result.related_pages[0].score, 0.84)
+        self.assertEqual(result.evidence_snippets[0].source_document_id, "doc_target")
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0001"])
+        self.assertIn("target evidence", result.evidence_snippets[0].text)
+
     def test_loads_neighbor_page_outside_initial_candidate_pool(self) -> None:
         pages = [
             source_page("source:seed", "Seed Source"),
@@ -391,6 +480,65 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             "concept:neighbor",
             {item.page.id for item in result.related_pages},
         )
+
+    def test_graph_link_limit_counts_only_traversable_relations(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:excluded", "Excluded Concept"),
+            concept_page("concept:allowed", "Allowed Concept"),
+        ]
+        repository = InMemoryWikiRepository(
+            pages,
+            [
+                WikiPageLink(
+                    "source:seed",
+                    "concept:excluded",
+                    "related_evidence",
+                    confidence=0.99,
+                ),
+                WikiPageLink(
+                    "source:seed",
+                    "concept:allowed",
+                    "part_of",
+                    confidence=0.98,
+                ),
+            ],
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=repository,
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 0.98,
+                    "Excluded Concept": 0.99,
+                    "Allowed Concept": 1.0,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:seed.md": "---\ndocument_id: doc_seed\n---\n\nSeed. [B0001]",
+                    "s3://test/concept:excluded.md": "Excluded. [B0002]",
+                    "s3://test/concept:allowed.md": (
+                        "---\nsources: doc_allowed\n---\n\nAllowed evidence. [B0003]"
+                    ),
+                }
+            ),
+            source_candidate_limit=1,
+            concept_candidate_limit=0,
+            candidate_pool_multiplier=1,
+            graph_link_limit=1,
+        )
+
+        result = use_case.execute("allowed evidence", workspace_id="ws_test")
+
+        self.assertIn(
+            "concept:allowed",
+            {item.page.id for item in result.related_pages},
+        )
+        self.assertEqual(result.evidence_snippets[0].source_document_id, "doc_allowed")
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0003"])
+        self.assertIn("[1]", result.answer.content)
 
     def test_expands_bounded_graph_to_configured_depth(self) -> None:
         pages = [
@@ -1725,6 +1873,66 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertNotIn("concept:four", related_ids)
         self.assertEqual(max(item.depth for item in graph_context.nodes), 2)
         self.assertEqual(stop_reason, "max_depth")
+
+    def test_traverses_materialized_lint_relations_and_excludes_non_materialized_links(self) -> None:
+        relation_types = [
+            "source_mentions_concept",
+            "concept_related_to",
+            "part_of",
+            "child_of",
+            "uses_or_depends_on",
+            "contrasts_with",
+            "supports_or_enables",
+        ]
+        pages = [source_page("source:seed", "Seed Source")]
+        links = []
+        for index, relation_type in enumerate(relation_types, start=1):
+            target = concept_page(f"concept:{index}", f"Concept {index}")
+            pages.append(target)
+            links.append(WikiPageLink("source:seed", target.id, relation_type, confidence=0.99))
+        pages.extend(
+            [
+                concept_page("concept:related-evidence", "Related Evidence"),
+                concept_page("concept:unknown", "Unknown Concept"),
+            ]
+        )
+        links.extend(
+            [
+                WikiPageLink("source:seed", "concept:related-evidence", "related_evidence", confidence=0.99),
+                WikiPageLink("source:seed", "concept:unknown", "unknown", confidence=0.99),
+            ]
+        )
+
+        graph_context, paths, _stop_reason = TraverseWikiGraphUseCase().execute(
+            pages_by_id={page.id: page for page in pages},
+            links=links,
+            seed_page_ids=["source:seed"],
+            node_scores={page.id: 1.0 for page in pages},
+        )
+
+        self.assertEqual(
+            {edge.link_type for edge in graph_context.edges},
+            set(relation_types),
+        )
+        self.assertNotIn(
+            ("source:seed", "concept:related-evidence", "related_evidence"),
+            {(edge.from_page_id, edge.to_page_id, edge.link_type) for edge in graph_context.edges},
+        )
+        self.assertNotIn(
+            ("source:seed", "concept:unknown", "unknown"),
+            {(edge.from_page_id, edge.to_page_id, edge.link_type) for edge in graph_context.edges},
+        )
+        self.assertEqual(
+            {item.page.id for item in graph_context.nodes},
+            {"source:seed", *(f"concept:{index}" for index in range(1, 8))},
+        )
+        self.assertFalse(
+            any(
+                excluded_id in path.nodes
+                for path in paths
+                for excluded_id in ("concept:related-evidence", "concept:unknown")
+            )
+        )
 
     def test_reports_no_frontier_when_graph_ends_at_max_depth(self) -> None:
         pages = [

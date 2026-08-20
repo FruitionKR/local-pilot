@@ -76,6 +76,31 @@ class PromotionConceptPageTest(unittest.TestCase):
 
         self.assertEqual(page["title"], "orchid-lease")
 
+    def test_preserves_global_source_refs_for_query_evidence(self) -> None:
+        page = build_promotion_concept_page(
+            {
+                "id": "orchid-lease",
+                "claims": [
+                    {
+                        "id": "claim_001",
+                        "claim": "계약 조건",
+                        "refs": ["document:B0001"],
+                    }
+                ],
+            },
+            {
+                "definition": {
+                    "text": "계약 정의",
+                    "anchor_block_ids": ["document:B0001"],
+                }
+            },
+            allowed_refs={"document:B0001"},
+            source_ref_by_block={"B0001": "document:B0001"},
+        )
+
+        self.assertIn("계약 정의 [document:B0001]", page["markdown"])
+        self.assertIn("claim_001: 계약 조건 [document:B0001]", page["markdown"])
+
 
 if __name__ == "__main__":
     unittest.main()

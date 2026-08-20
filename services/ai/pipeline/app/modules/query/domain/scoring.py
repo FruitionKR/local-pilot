@@ -1,3 +1,16 @@
+TRAVERSABLE_RELATION_TYPES = frozenset(
+    {
+        "source_mentions_concept",
+        "concept_related_to",
+        "part_of",
+        "child_of",
+        "uses_or_depends_on",
+        "contrasts_with",
+        "supports_or_enables",
+    }
+)
+
+
 def hybrid_score(embedding_score: float, text_score: float, embedding_weight: float = 0.8) -> float:
     text_weight = 1.0 - embedding_weight
     return embedding_weight * embedding_score + text_weight * text_score

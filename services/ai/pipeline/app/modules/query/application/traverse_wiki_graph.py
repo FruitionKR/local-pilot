@@ -1,7 +1,11 @@
 from collections import defaultdict, deque
 
 from app.modules.query.domain.entities import GraphContext, RetrievedPage, TraversalEdge, TraversalPath, WikiPage, WikiPageLink
-from app.modules.query.domain.scoring import edge_role, traversal_score
+from app.modules.query.domain.scoring import (
+    TRAVERSABLE_RELATION_TYPES,
+    edge_role,
+    traversal_score,
+)
 
 
 class TraverseWikiGraphUseCase:
@@ -130,9 +134,8 @@ class TraverseWikiGraphUseCase:
 
     def _build_adjacency(self, links: list[WikiPageLink]) -> dict[str, list[WikiPageLink]]:
         adjacency: dict[str, list[WikiPageLink]] = defaultdict(list)
-        allowed = {"source_mentions_concept", "concept_related_to"}
         for link in links:
-            if link.link_type not in allowed:
+            if link.link_type not in TRAVERSABLE_RELATION_TYPES:
                 continue
             adjacency[link.from_page_id].append(link)
             adjacency[link.to_page_id].append(link)

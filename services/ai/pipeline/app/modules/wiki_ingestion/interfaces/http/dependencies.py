@@ -38,6 +38,11 @@ logger = logging.getLogger("fruition.pipeline")
 
 
 @lru_cache(maxsize=1)
+def get_wiki_embedding_job() -> ThreadedWikiEmbeddingJob:
+    return ThreadedWikiEmbeddingJob(logger)
+
+
+@lru_cache(maxsize=1)
 def get_pipeline_run_repository() -> PipelineRunRepositoryPort:
     return PostgresPipelineRunRepository()
 
@@ -47,7 +52,7 @@ def get_pipeline_run_use_case() -> RunPipelineUseCase:
     return RunPipelineUseCase(
         runner=RunLabPipelineRunner(),
         repository=get_pipeline_run_repository(),
-        embedding_job=ThreadedWikiEmbeddingJob(logger),
+        embedding_job=get_wiki_embedding_job(),
     )
 
 
@@ -75,4 +80,4 @@ def get_pipeline_log_reader() -> PipelineLogReaderPort:
 
 @lru_cache(maxsize=1)
 def get_wiki_maintenance() -> WikiMaintenancePort:
-    return PostgresWikiMaintenance()
+    return PostgresWikiMaintenance(get_wiki_embedding_job())

@@ -23,8 +23,11 @@ from app.modules.query.domain.entities import ConversationContext, ConversationM
 from app.modules.query.interfaces.http.dependencies import build_answer_query_use_case
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
-from app.modules.wiki_ingestion.interfaces.http.dependencies import get_wiki_maintenance
-from app.modules.wiki_ingestion.interfaces.http.dependencies import get_restore_wiki_pages_use_case
+from app.modules.wiki_ingestion.interfaces.http.dependencies import (
+    get_restore_wiki_pages_use_case,
+    get_wiki_embedding_job,
+    get_wiki_maintenance,
+)
 from app.modules.wiki_ingestion.interfaces.http.schemas import (
     IngestOperationRestoreIn,
     LintOperationRestoreIn,
@@ -511,6 +514,8 @@ async def consume() -> None:
     database.ensure_ai_schema()
     if COMMAND_TOPIC.endswith("agent.command"):
         database.verify_agent_schema()
+    if COMMAND_TOPIC.endswith("maintenance.command"):
+        get_wiki_embedding_job().start("pending-recovery", [])
     consumer = AIOKafkaConsumer(
         COMMAND_TOPIC,
         bootstrap_servers=BOOTSTRAP_SERVERS,

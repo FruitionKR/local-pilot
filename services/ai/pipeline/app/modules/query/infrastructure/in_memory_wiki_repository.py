@@ -1,5 +1,6 @@
 from app.modules.query.application.ports import WikiRepositoryPort
 from app.modules.query.domain.entities import SemanticQueryEmbedding, WikiPage, WikiPageLink
+from app.modules.query.domain.scoring import TRAVERSABLE_RELATION_TYPES
 
 
 class InMemoryWikiRepository(WikiRepositoryPort):
@@ -33,13 +34,16 @@ class InMemoryWikiRepository(WikiRepositoryPort):
         return [
             link
             for link in self._links
-            if (
-                link.from_page_id in candidate_ids
-                and link.to_page_id not in excluded_ids
-            )
-            or (
-                link.to_page_id in candidate_ids
-                and link.from_page_id not in excluded_ids
+            if link.link_type in TRAVERSABLE_RELATION_TYPES
+            and (
+                (
+                    link.from_page_id in candidate_ids
+                    and link.to_page_id not in excluded_ids
+                )
+                or (
+                    link.to_page_id in candidate_ids
+                    and link.from_page_id not in excluded_ids
+                )
             )
         ][:limit]
 

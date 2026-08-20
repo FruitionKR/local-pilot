@@ -7,6 +7,42 @@ from app.modules.wiki_embedding.domain.entities import WikiPageEmbeddingTarget
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
 
+def reserve_page_embeddings(
+    connection: psycopg.Connection,
+    page_ids: list[str],
+    embedding_model: str,
+) -> None:
+    unique_page_ids = list(dict.fromkeys(page_ids))
+    if not unique_page_ids:
+        return
+    result = connection.execute(
+        """
+        INSERT INTO wiki_page_embeddings (
+            page_id,
+            embedding_model,
+            representation_hash,
+            embedding_vector,
+            embedding_dimension,
+            status,
+            error,
+            created_at,
+            updated_at
+        )
+        SELECT id, %s, '', ARRAY[]::DOUBLE PRECISION[], 0, 'pending', NULL, now(), now()
+        FROM wiki_pages
+        WHERE status = 'active'
+          AND id = ANY(%s)
+        ON CONFLICT (page_id, embedding_model) DO UPDATE SET
+            status = 'pending',
+            error = NULL,
+            updated_at = now()
+        """,
+        (embedding_model, unique_page_ids),
+    )
+    if result.rowcount != len(unique_page_ids):
+        raise RuntimeError("failed to reserve every wiki page embedding")
+
+
 def _lock_active_page(conn: psycopg.Connection, page_id: str, updated_at: datetime) -> bool:
     return conn.execute(
         "SELECT 1 FROM wiki_pages WHERE id = %s AND status = 'active' AND updated_at = %s FOR UPDATE",
@@ -15,6 +51,22 @@ def _lock_active_page(conn: psycopg.Connection, page_id: str, updated_at: dateti
 
 
 class PostgresWikiPageEmbeddingRepository(WikiPageEmbeddingRepositoryPort):
+    def list_retryable_page_ids(self, embedding_model: str) -> list[str]:
+        with database.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT embedding.page_id
+                FROM wiki_page_embeddings embedding
+                JOIN wiki_pages page ON page.id = embedding.page_id
+                WHERE embedding.embedding_model = %s
+                  AND embedding.status IN ('pending', 'failed')
+                  AND page.status = 'active'
+                ORDER BY embedding.updated_at, embedding.page_id
+                """,
+                (embedding_model,),
+            ).fetchall()
+        return [str(row["page_id"]) for row in rows]
+
     def list_active_pages_by_ids(self, page_ids: list[str]) -> list[WikiPageEmbeddingTarget]:
         if not page_ids:
             return []

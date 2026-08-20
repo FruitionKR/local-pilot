@@ -1,5 +1,6 @@
 from app.modules.query.application.ports import WikiRepositoryPort
 from app.modules.query.domain.entities import SemanticQueryEmbedding, WikiEmbeddingUnit, WikiPage, WikiPageLink
+from app.modules.query.domain.scoring import TRAVERSABLE_RELATION_TYPES
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
 
@@ -285,9 +286,9 @@ class PostgresWikiRepository(WikiRepositoryPort):
                 JOIN wiki_pages to_page ON to_page.id = l.to_page_id
                 WHERE from_page.status = 'active'
                   AND to_page.status = 'active'
-                  AND l.link_type <> 'source_related_to'
                   AND from_page.workspace_id = %s
                   AND to_page.workspace_id = %s
+                  AND l.link_type = ANY(%s)
                   AND (
                       (
                           l.from_page_id = ANY(%s)
@@ -304,6 +305,7 @@ class PostgresWikiRepository(WikiRepositoryPort):
                 (
                     workspace_id,
                     workspace_id,
+                    sorted(TRAVERSABLE_RELATION_TYPES),
                     page_ids,
                     excluded_page_ids,
                     page_ids,
