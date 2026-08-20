@@ -12,6 +12,8 @@ export function useMe(options?: { enabled?: boolean }) {
     queryKey: ME_QUERY_KEY,
     queryFn: fetchMe,
     staleTime: ME_STALE_TIME_MS,
+    // 인증 실패는 재시도해도 결과가 같고, 재시도만큼 로그인 화면 이동이 늦어져 즉시 실패 처리한다.
+    retry: false,
     enabled: options?.enabled ?? true
   });
 }
