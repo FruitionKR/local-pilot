@@ -652,12 +652,12 @@ class AnswerQueryUseCase:
         source_scores = self._query_page_scorer.score_pages(
             query_rewrite,
             [page for page in pages if page.is_source],
-            embedding_weight=1.0,
+            embedding_weight=0.8,
         )
         concept_scores = self._query_page_scorer.score_pages(
             query_rewrite,
             [page for page in pages if page.is_concept],
-            embedding_weight=1.0,
+            embedding_weight=0.8,
         )
         self._publish(
             event_publisher,

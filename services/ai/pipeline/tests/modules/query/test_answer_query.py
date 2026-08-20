@@ -1,6 +1,8 @@
 import unittest
+from dataclasses import replace
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase, _fallback_language
+from app.modules.query.application.query_page_scorer import QueryPageScorer
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
 from app.modules.query.domain.entities import (
     ConversationContext,
@@ -15,6 +17,8 @@ from app.modules.query.domain.entities import (
 )
 from app.modules.query.domain.exceptions import InvalidQuestionError
 from app.modules.query.infrastructure.in_memory_wiki_repository import InMemoryWikiRepository
+from app.modules.query.infrastructure.bm25_searcher import Bm25Searcher
+from app.modules.query.infrastructure.rule_based_query_rewriter import RuleBasedQueryRewriter
 
 
 class ScoreSearch:
@@ -343,6 +347,91 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         result = use_case.execute("정확한검색어", workspace_id="ws_test")
 
         self.assertEqual(result.related_pages[0].page.id, "source:semantic")
+
+    def test_hybrid_page_ranking_preserves_target_evidence(self) -> None:
+        pages = [
+            source_page("source:target", "Hybrid Target"),
+            source_page("source:distractor", "Hybrid Distractor"),
+        ]
+        query = "정확한검색어가 뭐야"
+        markdown_by_uri = {
+            "s3://test/source:target.md": (
+                "---\ndocument_id: doc_target\n---\n\n"
+                "정확한검색어 설명하는 target evidence입니다. [B0001]"
+            ),
+            "s3://test/source:distractor.md": (
+                "---\ndocument_id: doc_distractor\n---\n\n"
+                "관련 없는 distractor evidence입니다. [B0002]"
+            ),
+        }
+        scoring_pages = [
+            replace(page, markdown=markdown_by_uri[page.markdown_uri])
+            for page in pages
+        ]
+        text_search = Bm25Searcher()
+        query_rewrite = RuleBasedQueryRewriter().rewrite(query)
+        representations = [
+            "\n".join([page.title, page.summary, page.markdown or ""]).strip()
+            for page in scoring_pages
+        ]
+        self.assertEqual(query_rewrite.retrieval_query, "정확한검색어")
+        self.assertEqual(
+            text_search.score(query_rewrite.retrieval_query, representations),
+            [1.0, 0.0],
+        )
+        page_scorer = QueryPageScorer(
+            embedding_search=ScoreSearch(
+                {
+                    "Hybrid Target": 0.80,
+                    "Hybrid Distractor": 0.95,
+                }
+            ),
+            text_search=text_search,
+        )
+        dense_only_scores = page_scorer.score_pages(
+            query_rewrite,
+            scoring_pages,
+            embedding_weight=1.0,
+        )
+        hybrid_scores = page_scorer.score_pages(
+            query_rewrite,
+            scoring_pages,
+            embedding_weight=0.8,
+        )
+        self.assertGreater(
+            dense_only_scores["source:distractor"],
+            dense_only_scores["source:target"],
+        )
+        self.assertAlmostEqual(hybrid_scores["source:target"], 0.84)
+        self.assertAlmostEqual(hybrid_scores["source:distractor"], 0.76)
+        self.assertGreater(
+            hybrid_scores["source:target"],
+            hybrid_scores["source:distractor"],
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch(
+                {
+                    "Hybrid Target": 0.80,
+                    "Hybrid Distractor": 0.95,
+                }
+            ),
+            text_search=text_search,
+            answer_generator=RecordingAnswerGenerator(),
+            query_rewriter=RuleBasedQueryRewriter(),
+            markdown_reader=FakeMarkdownReader(
+                markdown_by_uri
+            ),
+            source_candidate_limit=1,
+        )
+
+        result = use_case.execute(query, workspace_id="ws_test")
+
+        self.assertEqual(result.related_pages[0].page.id, "source:target")
+        self.assertAlmostEqual(result.related_pages[0].score, 0.84)
+        self.assertEqual(result.evidence_snippets[0].source_document_id, "doc_target")
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0001"])
+        self.assertIn("target evidence", result.evidence_snippets[0].text)
 
     def test_loads_neighbor_page_outside_initial_candidate_pool(self) -> None:
         pages = [
