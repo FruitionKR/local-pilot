@@ -100,6 +100,19 @@ class StoredWikiPageEmbeddingSearchTest(unittest.TestCase):
         self.assertEqual(scores, [0.25])
         self.assertEqual(fallback.calls, [("query", ["Missing document"])])
 
+    def test_default_fallback_reuses_query_embedding_model(self) -> None:
+        embedding_model = FakeEmbeddingModel()
+        search = StoredWikiPageEmbeddingSearch(embedding_model=embedding_model)
+
+        with patch(
+            "app.modules.query.infrastructure.stored_wiki_page_embedding_search.database.connect",
+            return_value=FakeConnection([]),
+        ):
+            scores = search.score("query", ["Missing document"])
+
+        self.assertEqual(scores, [1.0])
+        self.assertEqual(embedding_model.embedded_texts, ["query", "Missing document"])
+
     def test_falls_back_for_invalid_stored_vector(self) -> None:
         document = "Broken vector document"
         document_hash = hashlib.sha256(document.encode("utf-8")).hexdigest()
@@ -124,6 +137,33 @@ class StoredWikiPageEmbeddingSearchTest(unittest.TestCase):
 
         self.assertEqual(scores, [0.25])
         self.assertEqual(fallback.calls, [("query", [document])])
+
+    def test_falls_back_for_non_finite_stored_vector(self) -> None:
+        document = "Non-finite vector document"
+        document_hash = hashlib.sha256(document.encode("utf-8")).hexdigest()
+
+        for invalid_value in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(invalid_value=invalid_value):
+                fallback = FakeFallbackSearch()
+                search = StoredWikiPageEmbeddingSearch(
+                    embedding_model=FakeEmbeddingModel(),
+                    fallback_search=fallback,
+                )
+                with patch(
+                    "app.modules.query.infrastructure.stored_wiki_page_embedding_search.database.connect",
+                    return_value=FakeConnection(
+                        [
+                            {
+                                "representation_hash": document_hash,
+                                "embedding_vector": [invalid_value, 0.0],
+                            }
+                        ]
+                    ),
+                ):
+                    scores = search.score("query", [document])
+
+                self.assertEqual(scores, [0.25])
+                self.assertEqual(fallback.calls, [("query", [document])])
 
     def test_clamps_negative_similarity_to_zero(self) -> None:
         document = "Opposite vector document"
