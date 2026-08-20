@@ -66,7 +66,7 @@ class RestoreDocumentUseCaseTest(unittest.TestCase):
             stages.stages,
             [
                 RestorationStage.PREPARE_CROP_FIRST,
-                RestorationStage.SELECTIVE_REPAIR_WITH_OPENAI,
+                RestorationStage.SELECTIVE_REPAIR_WITH_PROVIDER,
                 RestorationStage.ASSEMBLE_CROP_FIRST,
             ],
         )
@@ -116,7 +116,7 @@ class RestoreDocumentUseCaseTest(unittest.TestCase):
                 RestorationStage.BUILD_PRIMARY_MANIFEST,
                 RestorationStage.AUGMENT_TEXT_CANDIDATES,
                 RestorationStage.ASSEMBLE_DETECTED_MARKDOWN,
-                RestorationStage.SELECTIVE_REPAIR_WITH_OPENAI,
+                RestorationStage.SELECTIVE_REPAIR_WITH_PROVIDER,
                 RestorationStage.ASSEMBLE_MARKDOWN,
             ],
         )

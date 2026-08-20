@@ -10,21 +10,41 @@ from unittest import mock
 from app.modules.document_restoration.infrastructure.crop_first_with_anydoc import (
     assemble,
 )
-from app.modules.document_restoration.infrastructure.selective_repair_with_openai import (
+from app.modules.document_restoration.infrastructure.selective_repair_with_provider import (
+    OUTPUT_SCHEMA,
     call_page,
     clean_previous_results,
     markdown_fragments,
     normalize_replacement,
     page_markdown,
-    response_text,
+    openai_response_text,
     run,
     save_replacements,
     select_candidates,
     valid_replacement,
 )
 
+MODULE = (
+    "app.modules.document_restoration.infrastructure."
+    "selective_repair_with_provider"
+)
 
-class SelectiveRepairWithOpenAITest(unittest.TestCase):
+
+class _FakeResponse:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
+
+
+class SelectiveRepairWithProviderTest(unittest.TestCase):
     def test_selects_all_tables_equations_and_only_damaged_text(self) -> None:
         blocks = [
             {"id": "table", "type": "table_candidate"},
@@ -80,6 +100,15 @@ Second
         self.assertFalse(
             valid_replacement("heading", "## Heading\nUnexpected body")
         )
+        self.assertFalse(
+            valid_replacement(
+                "paragraph",
+                "XQ001QX",
+                ["XQ001QX"],
+                scope="page_body",
+                source_text="긴 원문 본문 " * 20 + "XQ001QX",
+            )
+        )
         self.assertEqual(
             normalize_replacement("equation_candidate", r"\[x_{1}=1\]"),
             "$$\nx_{1}=1\n$$",
@@ -102,7 +131,7 @@ Second
             ]
         }
 
-        self.assertEqual(json.loads(response_text(response)), payload)
+        self.assertEqual(json.loads(openai_response_text(response)), payload)
 
     def test_calls_responses_api_with_images_and_json_schema(self) -> None:
         response_body = {
@@ -120,25 +149,14 @@ Second
             "usage": {"total_tokens": 10},
         }
 
-        class FakeResponse:
-            def __enter__(self) -> "FakeResponse":
-                return self
-
-            def __exit__(self, *args: object) -> None:
-                return None
-
-            def read(self) -> bytes:
-                return json.dumps(response_body).encode("utf-8")
-
         with mock.patch(
             "urllib.request.urlopen",
-            return_value=FakeResponse(),
+            return_value=_FakeResponse(response_body),
         ) as urlopen:
             result, usage = call_page(
-                endpoint="https://api.openai.test/v1/responses",
+                provider="openai",
                 api_key="test-key",
-                model="gpt-5.6-terra",
-                reasoning_effort="low",
+                model="gpt-5-nano",
                 prompt="restore",
                 payload={"blocks": []},
                 images=["data:image/png;base64,AA=="],
@@ -146,8 +164,8 @@ Second
 
         request = urlopen.call_args.args[0]
         body = json.loads(request.data.decode("utf-8"))
-        self.assertEqual(body["model"], "gpt-5.6-terra")
-        self.assertEqual(body["reasoning"], {"effort": "low"})
+        self.assertEqual(body["model"], "gpt-5-nano")
+        self.assertEqual(body["reasoning"], {"effort": "medium"})
         self.assertEqual(body["text"]["format"]["type"], "json_schema")
         self.assertEqual(
             body["input"][1]["content"][1]["type"],
@@ -155,6 +173,72 @@ Second
         )
         self.assertEqual(result, {"results": []})
         self.assertEqual(usage, {"total_tokens": 10})
+
+    def test_calls_gemini_api_with_inline_images_and_json_schema(self) -> None:
+        response_body = {
+            "candidates": [
+                {"content": {"parts": [{"text": '{"results":[]}' }]}}
+            ],
+            "usageMetadata": {"totalTokenCount": 12},
+        }
+        with mock.patch(
+            "urllib.request.urlopen",
+            return_value=_FakeResponse(response_body),
+        ) as urlopen:
+            result, usage = call_page(
+                provider="gemini",
+                api_key="test-key",
+                model="gemini-3.1-flash-lite",
+                prompt="restore",
+                payload={"blocks": []},
+                images=["data:image/png;base64,AA=="],
+            )
+
+        request = urlopen.call_args.args[0]
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertIn("gemini-3.1-flash-lite:generateContent", request.full_url)
+        self.assertEqual(request.get_header("X-goog-api-key"), "test-key")
+        self.assertEqual(
+            body["contents"][0]["parts"][1]["inline_data"],
+            {"mime_type": "image/png", "data": "AA=="},
+        )
+        self.assertEqual(
+            body["generationConfig"]["responseJsonSchema"], OUTPUT_SCHEMA
+        )
+        self.assertEqual(result, {"results": []})
+        self.assertEqual(usage, {"totalTokenCount": 12})
+
+    def test_calls_claude_api_with_base64_images_and_json_schema(self) -> None:
+        response_body = {
+            "content": [{"type": "text", "text": '{"results":[]}'}],
+            "usage": {"input_tokens": 8, "output_tokens": 4},
+        }
+        with mock.patch(
+            "urllib.request.urlopen",
+            return_value=_FakeResponse(response_body),
+        ) as urlopen:
+            result, usage = call_page(
+                provider="claude",
+                api_key="test-key",
+                model="claude-sonnet-5",
+                prompt="restore",
+                payload={"blocks": []},
+                images=["data:image/png;base64,AA=="],
+            )
+
+        request = urlopen.call_args.args[0]
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(request.full_url, "https://api.anthropic.com/v1/messages")
+        self.assertEqual(request.get_header("X-api-key"), "test-key")
+        self.assertEqual(
+            body["messages"][0]["content"][0]["source"],
+            {"type": "base64", "media_type": "image/png", "data": "AA=="},
+        )
+        self.assertEqual(
+            body["output_config"]["format"]["schema"], OUTPUT_SCHEMA
+        )
+        self.assertEqual(result, {"results": []})
+        self.assertEqual(usage, {"input_tokens": 8, "output_tokens": 4})
 
     def test_does_not_expose_responses_api_error_body(self) -> None:
         error = urllib.error.HTTPError(
@@ -168,13 +252,12 @@ Second
 
         with (
             mock.patch("urllib.request.urlopen", side_effect=error),
-            self.assertRaisesRegex(RuntimeError, r"^Responses API HTTP 400$"),
+            self.assertRaisesRegex(RuntimeError, r"^OpenAI Responses API HTTP 400$"),
         ):
             call_page(
-                endpoint="https://api.openai.test/v1/responses",
+                provider="openai",
                 api_key="test-key",
-                model="gpt-5.6-terra",
-                reasoning_effort="low",
+                model="gpt-5-nano",
                 prompt="restore",
                 payload={"blocks": []},
                 images=[],
@@ -195,10 +278,9 @@ Second
                 mock.patch("urllib.request.urlopen", side_effect=error)
             ), self.assertRaises(urllib.error.HTTPError) as raised:
                 call_page(
-                    endpoint="https://api.openai.test/v1/responses",
+                    provider="openai",
                     api_key="test-key",
-                    model="gpt-5.6-terra",
-                    reasoning_effort="low",
+                    model="gpt-5-nano",
                     prompt="restore",
                     payload={"blocks": []},
                     images=[],
@@ -250,18 +332,15 @@ Second
                 manifest_file=manifest_file,
                 detected_markdown=detected_markdown,
                 output_dir=output_dir,
-                endpoint="https://api.openai.test/v1/responses",
-                model="gpt-5.6-luna",
-                reasoning_effort="medium",
+                provider="openai",
+                model="gpt-5-nano",
                 max_workers=1,
             )
 
             with mock.patch.dict(
                 os.environ,
-                {"DOCUMENT_REPAIR_OPENAI_API_KEY": "", "OPENAI_API_KEY": ""},
-            ), mock.patch(
-                "app.modules.document_restoration.infrastructure.selective_repair_with_openai.call_page"
-            ) as call_page_mock:
+                {"OPENAI_API_KEY": ""},
+            ), mock.patch(f"{MODULE}.call_page") as call_page_mock:
                 summary = run(args)
 
             self.assertEqual(summary["calls"], 0)
@@ -274,7 +353,7 @@ Second
                 output_file.read_text(encoding="utf-8"),
             )
 
-    def test_uses_baseline_when_retryable_openai_errors_exhaust_fallback(self) -> None:
+    def test_uses_only_selected_provider_key_and_keeps_baseline_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output_dir = Path(temp_dir)
             manifest_file = output_dir / "manifest.json"
@@ -299,30 +378,38 @@ Second
                 manifest_file=manifest_file,
                 detected_markdown=detected_markdown,
                 output_dir=output_dir,
-                endpoint="https://api.openai.test/v1/responses",
-                model="gpt-5.6-luna",
-                reasoning_effort="medium",
+                provider="gemini",
+                model="gemini-3.1-flash-lite",
                 max_workers=1,
             )
             error = urllib.error.HTTPError(
-                "https://api.openai.test/v1/responses", 429, "Retry", {}, None
+                "https://gemini.test", 429, "Retry", {}, None
             )
 
             with mock.patch.dict(
-                os.environ, {"DOCUMENT_REPAIR_OPENAI_API_KEY": "test-key"}
+                os.environ,
+                {
+                    "OPENAI_API_KEY": "openai-key",
+                    "GEMINI_API_KEY": "gemini-key",
+                    "ANTHROPIC_API_KEY": "claude-key",
+                },
+                clear=True,
             ), mock.patch(
-                "app.modules.document_restoration.infrastructure.selective_repair_with_openai.render_page",
+                f"{MODULE}.render_page",
                 return_value="page",
             ), mock.patch(
-                "app.modules.document_restoration.infrastructure.selective_repair_with_openai.block_image",
+                f"{MODULE}.block_image",
                 return_value="crop",
             ), mock.patch(
-                "app.modules.document_restoration.infrastructure.selective_repair_with_openai.call_page",
+                f"{MODULE}.call_page",
                 side_effect=error,
             ) as call_page_mock:
                 summary = run(args)
 
             self.assertEqual(call_page_mock.call_count, 2)
+            for call in call_page_mock.call_args_list:
+                self.assertEqual(call.kwargs["provider"], "gemini")
+                self.assertEqual(call.kwargs["api_key"], "gemini-key")
             self.assertEqual(summary["pages"][0]["failed"], 1)
             self.assertEqual(summary["pages"][0]["batch_error"], "HTTPError")
 
@@ -348,6 +435,7 @@ Second
                         }
                     ]
                 },
+                "openai",
             )
 
             self.assertEqual(counts, {"replace": 0, "keep": 0, "rejected": 1})

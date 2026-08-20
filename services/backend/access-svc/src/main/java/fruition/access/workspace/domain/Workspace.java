@@ -7,8 +7,8 @@ import java.time.Instant;
 @Table(name = "workspaces")
 public class Workspace {
 
-    private static final String DEFAULT_AI_PROVIDER = "openai";
-    private static final String DEFAULT_AI_MODEL = "gpt-5-nano";
+    private static final String DEFAULT_AI_PROVIDER = "gemini";
+    private static final String DEFAULT_AI_MODEL = "gemini-3.1-flash-lite";
 
     @Id
     private String id;

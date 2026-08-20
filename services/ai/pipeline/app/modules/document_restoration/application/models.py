@@ -24,9 +24,8 @@ class RestoreDocumentCommand:
     vision_model: str = "qwen2.5vl:7b"
     max_vision_attempts: int = 3
     docling_command: str = "docling"
-    selective_endpoint: str = "https://api.openai.com/v1/responses"
-    selective_model: str = "gpt-5.6-luna"
-    selective_reasoning_effort: str = "medium"
+    selective_provider: str = "gemini"
+    selective_model: str = "gemini-3.1-flash-lite"
     selective_max_workers: int = 16
     anydoc_command: str = "anydoc"
     heron_command: str = "raw-special-regions"

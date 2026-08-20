@@ -1,9 +1,19 @@
 import base64
+import importlib.util
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from app import process_pdf
+PIPELINE_ROOT = Path(__file__).resolve().parents[1] / "pipeline"
+sys.path.insert(0, str(PIPELINE_ROOT))
+SPEC = importlib.util.spec_from_file_location(
+    "converter_app", Path(__file__).with_name("app.py")
+)
+assert SPEC is not None and SPEC.loader is not None
+converter_app = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(converter_app)
+process_pdf = converter_app.process_pdf
 
 
 class ConverterCropFirstBoundaryTest(unittest.TestCase):
@@ -50,14 +60,29 @@ class ConverterCropFirstBoundaryTest(unittest.TestCase):
                 "![figure](../layout/crop_first/assets/figures/region.png)\n",
                 encoding="utf-8",
             )
+            (output_dir / "final" / "selective_repair_summary.json").write_text(
+                '{"provider":"gemini","calls":1}', encoding="utf-8"
+            )
 
-        with mock.patch("app.missing_commands", return_value=[]):
-            with mock.patch("app.run_to_file", side_effect=fake_run_to_file):
-                with mock.patch("app.run", side_effect=fake_run) as restoration:
+        with mock.patch.object(converter_app, "missing_commands", return_value=[]):
+            with mock.patch.object(
+                converter_app, "run_to_file", side_effect=fake_run_to_file
+            ):
+                with mock.patch.object(
+                    converter_app, "run", side_effect=fake_run
+                ) as restoration:
                     result = process_pdf(b"pdf")
 
         command = restoration.call_args.args[0]
         self.assertEqual(command[command.index("--mode") + 1], "crop-first")
+        self.assertEqual(
+            command[command.index("--selective-provider") + 1], "gemini"
+        )
+        self.assertEqual(
+            command[command.index("--selective-model") + 1],
+            "gemini-3.1-flash-lite",
+        )
+        self.assertEqual(result["repair_summary"]["provider"], "gemini")
         self.assertFalse(asset_paths[0].exists())
         marker = "data:image/png;base64,"
         self.assertIn(marker, result["markdown"])

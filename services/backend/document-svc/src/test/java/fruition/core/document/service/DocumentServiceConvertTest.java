@@ -24,6 +24,7 @@ import fruition.shared.idempotency.IdempotencyService;
 import fruition.shared.util.StorageProperties;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.authz.WorkspaceAccessGuard;
+import fruition.core.authz.WorkspaceAiModelClient;
 import io.minio.GetObjectResponse;
 import io.minio.MinioClient;
 import okhttp3.Headers;
@@ -94,6 +95,7 @@ class DocumentServiceConvertTest {
     @Mock fruition.core.aihistory.service.OperationRecorder operationRecorder;
     @Mock fruition.core.aihistory.service.IngestOperationStarter ingestOperationStarter;
     @Mock fruition.core.aihistory.service.AgentApplyOperationStore applyOperationStore;
+    @Mock WorkspaceAiModelClient workspaceAiModelClient;
 
     DocumentService documentService;
 
@@ -112,7 +114,8 @@ class DocumentServiceConvertTest {
                 new ObjectMapper().findAndRegisterModules(),
                 applyOperationStore,
                 operationRecorder,
-                ingestOperationStarter);
+                ingestOperationStarter,
+                workspaceAiModelClient);
         // 변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.
         lenient().when(storageProps.getBucket()).thenReturn("fruition-storage");
         // 단위 테스트에서는 transactionTemplate이 콜백을 그대로 실행하게 한다.
@@ -127,6 +130,9 @@ class DocumentServiceConvertTest {
         lenient().doCallRealMethod().when(idempotencyService).validateKey(any());
         lenient().doCallRealMethod().when(idempotencyService).requestHash(any(String[].class));
         lenient().when(idempotencyService.currentExecutionId()).thenReturn(Optional.empty());
+        lenient().when(workspaceAiModelClient.get(WORKSPACE_ID))
+                .thenReturn(new WorkspaceAiModelClient.AiModelSelection(
+                        "gemini", "gemini-3.1-flash-lite"));
     }
 
     private Document sourcePdf() {
@@ -265,7 +271,9 @@ class DocumentServiceConvertTest {
         when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
                 Headers.of(), "fruition-storage", "us-east-1",
                 source.getSourceUri(), new ByteArrayInputStream(pdfBytes)));
-        when(converterClient.convertPdf("보고서.pdf", pdfBytes)).thenReturn("# 변환된 본문\n");
+        when(converterClient.convertPdf(
+                "보고서.pdf", pdfBytes, "gemini", "gemini-3.1-flash-lite"))
+                .thenReturn("# 변환된 본문\n");
         when(postgresDocumentEditStore.save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
                 anyString(), any()))
@@ -314,7 +322,9 @@ class DocumentServiceConvertTest {
         when(minioClient.getObject(any())).thenAnswer(invocation -> new GetObjectResponse(
                 Headers.of(), "fruition-storage", "us-east-1", source.getSourceUri(),
                 new ByteArrayInputStream(pdfBytes)));
-        when(converterClient.convertPdf("보고서.pdf", pdfBytes)).thenReturn(markdown);
+        when(converterClient.convertPdf(
+                "보고서.pdf", pdfBytes, "gemini", "gemini-3.1-flash-lite"))
+                .thenReturn(markdown);
         Instant updatedAt = Instant.parse("2026-08-14T00:00:00Z");
         PostgresDocumentEditSaveResult first = new PostgresDocumentEditSaveResult(
                 1, "", "", 2, hash, updatedAt, USER_ID, true, false);
@@ -350,7 +360,7 @@ class DocumentServiceConvertTest {
         when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
                 Headers.of(), "fruition-storage", "us-east-1",
                 source.getSourceUri(), new ByteArrayInputStream(new byte[]{1})));
-        when(converterClient.convertPdf(anyString(), any()))
+        when(converterClient.convertPdf(anyString(), any(), anyString(), anyString()))
                 .thenThrow(new DocumentConvertException("변환기 호출이 실패했습니다. status=422"));
 
         documentService.doConvert(7L, "doc_placeholder", SOURCE_DOCUMENT_ID);

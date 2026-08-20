@@ -128,14 +128,13 @@ class SubprocessDocumentRestorationStagesTest(unittest.TestCase):
         self.assertEqual(args[args.index("--max-attempts") + 1], "2")
         self.assertTrue(Path(args[args.index("--prompt-dir") + 1]).is_dir())
 
-    def test_selective_repair_stage_passes_openai_configuration(self) -> None:
+    def test_selective_repair_stage_passes_provider_configuration(self) -> None:
         command = RestoreDocumentCommand(
             pdf_file=Path("paper.pdf"),
             output_dir=Path("output"),
             document_slug="paper",
-            selective_endpoint="https://example.test/v1/responses",
-            selective_model="vision-model",
-            selective_reasoning_effort="low",
+            selective_provider="gemini",
+            selective_model="gemini-3.1-flash-lite",
             selective_max_workers=8,
         )
         prepared = PreparedRestoration(
@@ -147,21 +146,20 @@ class SubprocessDocumentRestorationStagesTest(unittest.TestCase):
 
         with mock.patch("subprocess.run") as run:
             SubprocessDocumentRestorationStages().run_stage(
-                RestorationStage.SELECTIVE_REPAIR_WITH_OPENAI,
+                RestorationStage.SELECTIVE_REPAIR_WITH_PROVIDER,
                 command,
                 prepared,
             )
 
         args = run.call_args.args[0]
         self.assertIn(
-            "app.modules.document_restoration.infrastructure.selective_repair_with_openai",
+            "app.modules.document_restoration.infrastructure.selective_repair_with_provider",
             args,
         )
+        self.assertEqual(args[args.index("--provider") + 1], "gemini")
         self.assertEqual(
-            args[args.index("--endpoint") + 1],
-            "https://example.test/v1/responses",
+            args[args.index("--model") + 1], "gemini-3.1-flash-lite"
         )
-        self.assertEqual(args[args.index("--model") + 1], "vision-model")
         self.assertEqual(args[args.index("--max-workers") + 1], "8")
 
     def test_detected_markdown_ignores_stale_recovery_results(self) -> None:
