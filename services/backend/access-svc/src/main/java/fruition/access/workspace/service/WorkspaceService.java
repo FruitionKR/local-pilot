@@ -143,7 +143,6 @@ public class WorkspaceService {
                 WorkspaceRole.OWNER
         );
         workspaceMemberRepository.save(owner);
-        authzProjectionStore.put(workspaceId, userId, WorkspaceRole.OWNER);
         // 초기 노트는 편의 기능이라 best-effort. document-svc가 방금 만든 워크스페이스를
         // 볼 수 있도록 이 트랜잭션이 커밋된 뒤에 호출한다(커밋 전엔 FK 위반).
         runAfterCommit(() -> documentInternalClient.createInitialNote(workspaceId, userId));
