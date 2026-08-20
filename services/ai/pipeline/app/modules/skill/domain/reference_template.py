@@ -3,7 +3,7 @@ import re
 
 HEADING_PATTERN = re.compile(r"^ {0,3}#{1,6}\s+\S")
 LIST_ITEM_PATTERN = re.compile(r"^(\s*)((?:[-+*]|\d+[.)]))\s+(?:(\[[ xX]\])\s+)?\S")
-TABLE_SEPARATOR_PATTERN = re.compile(r"^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$")
+TABLE_SEPARATOR_PATTERN = re.compile(r"^\s*\|?(?:\s*:?-+:?\s*\|)*\s*:?-+:?\s*\|?\s*$")
 FIXED_TEMPLATE_START = "# 고정 출력 템플릿\n\n```markdown\n"
 FIXED_TEMPLATE_END = "\n```"
 
@@ -95,9 +95,18 @@ def extract_markdown_structure(markdown: str) -> str:
                 prefix += " [ ]"
             structure.append(f"{prefix} [item]")
             continue
-        if index + 1 < len(lines) and "|" in line and TABLE_SEPARATOR_PATTERN.match(lines[index + 1]):
+        if (
+            index + 1 < len(lines)
+            and "|" in line
+            and len(_split_unescaped_pipes(lines[index + 1])) > 1
+            and TABLE_SEPARATOR_PATTERN.match(lines[index + 1])
+        ):
+            header_columns = _table_column_count(line)
+            separator_columns = _table_column_count(lines[index + 1])
+            if header_columns < 1 or header_columns != separator_columns:
+                continue
             structure.extend((line.rstrip(), lines[index + 1].rstrip()))
-            table_columns = _table_column_count(lines[index + 1])
+            table_columns = separator_columns
             table_body_start = index + 2
             header = line.strip()
             table_outer_pipes = _table_outer_pipes(header)

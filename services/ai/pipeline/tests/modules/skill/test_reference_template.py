@@ -4,6 +4,29 @@ from app.modules.skill.domain.reference_template import extract_markdown_structu
 
 
 class ReferenceTemplateTest(unittest.TestCase):
+    def test_preserves_single_column_table_with_outer_pipes(self) -> None:
+        markdown = "| 상태 |\n| --- |\n| 완료 |\n"
+
+        self.assertEqual(
+            extract_markdown_structure(markdown),
+            "| 상태 |\n| --- |\n|  |",
+        )
+
+    def test_ignores_pipe_prose_followed_by_horizontal_rule(self) -> None:
+        markdown = "일반 문장 | 부연 설명\n---\n"
+
+        self.assertEqual(extract_markdown_structure(markdown), "")
+
+    def test_ignores_empty_pipe_line_followed_by_horizontal_rule(self) -> None:
+        markdown = "|\n---\n"
+
+        self.assertEqual(extract_markdown_structure(markdown), "")
+
+    def test_ignores_table_with_mismatched_column_counts(self) -> None:
+        markdown = "| 상태 |\n| --- | --- |\n"
+
+        self.assertEqual(extract_markdown_structure(markdown), "")
+
     def test_preserves_table_body_topology_without_cell_content(self) -> None:
         markdown = (
             "# 보고서\n"
