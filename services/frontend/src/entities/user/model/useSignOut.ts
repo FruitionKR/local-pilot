@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { clearSessionCache } from "@/entities/chat";
 import { logout } from "@/entities/user/api/auth";
 import { clearAuth } from "@/shared/lib/auth";
@@ -12,15 +13,18 @@ import { clearAuth } from "@/shared/lib/auth";
  */
 export function useSignOut() {
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const signOut = useCallback(
     async (options?: { callLogout?: boolean }) => {
       if (options?.callLogout) await logout().catch(() => undefined);
       clearSessionCache();
+      // 사용자 범위 react-query 캐시(me·workspaces 등)를 비워 다음 로그인에 이전 사용자 데이터가 남지 않게 한다.
+      queryClient.clear();
       clearAuth();
       router.replace("/login");
     },
-    [router]
+    [queryClient, router]
   );
 
   return { signOut };

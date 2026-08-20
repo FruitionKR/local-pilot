@@ -24,7 +24,7 @@ type AuthFlowValue = {
   setSignupDraft: (draft: SetStateAction<SignupDraft | null>) => void;
   isCurrentSignupVerificationRequest: (requestId: string) => boolean;
   passwordResetDraft: PasswordResetDraft | null;
-  setPasswordResetDraft: (draft: PasswordResetDraft | null) => void;
+  setPasswordResetDraft: (draft: SetStateAction<PasswordResetDraft | null>) => void;
 };
 
 const AuthFlowContext = createContext<AuthFlowValue | null>(null);

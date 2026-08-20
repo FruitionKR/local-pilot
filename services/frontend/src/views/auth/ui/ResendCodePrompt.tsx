@@ -10,7 +10,7 @@ type ResendCodePromptProps = {
 export function ResendCodePrompt({ disabled, isResending, onResend }: ResendCodePromptProps) {
   return (
     <p className="auth-prompt">
-      인증번호가 오지 않았나요 ?
+      인증번호가 오지 않았나요?
       <button disabled={disabled} onClick={onResend} type="button">
         {isResending ? "재요청 중" : "재요청하기"}
       </button>

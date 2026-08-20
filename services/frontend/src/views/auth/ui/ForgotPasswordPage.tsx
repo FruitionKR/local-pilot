@@ -26,12 +26,10 @@ export default function ForgotPasswordPage() {
     purpose: "password_reset",
     setErrorMessage,
     onSuccess: ({ verificationId, expiresAt }) => {
-      if (!passwordResetDraft) return;
-      setPasswordResetDraft({
-        ...passwordResetDraft,
-        verificationId,
-        expiresAt
-      });
+      // 응답 도착 시점의 초안에만 병합한다. 이전으로 돌아가 초안이 지워졌으면 되살리지 않는다.
+      setPasswordResetDraft((current) =>
+        current ? { ...current, verificationId, expiresAt } : current
+      );
       setVerificationCode("");
     }
   });

@@ -27,13 +27,12 @@ export default function SignupVerificationPage() {
     purpose: "signup",
     setErrorMessage,
     onSuccess: ({ verificationId, expiresAt }) => {
-      if (!draft) return;
-      setSignupDraft({
-        ...draft,
-        verificationId,
-        expiresAt,
-        verificationRequestError: undefined
-      });
+      // 응답 도착 시점의 초안에만 병합한다. 이탈 등으로 초안이 사라졌으면 되살리지 않는다.
+      setSignupDraft((current) =>
+        current
+          ? { ...current, verificationId, expiresAt, verificationRequestError: undefined }
+          : current
+      );
       setVerificationCode("");
     }
   });
