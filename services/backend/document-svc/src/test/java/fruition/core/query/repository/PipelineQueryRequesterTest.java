@@ -1,0 +1,100 @@
+package fruition.core.query.repository;
+
+import com.sun.net.httpserver.HttpServer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class PipelineQueryRequesterTest {
+
+    private HttpServer server;
+    private final AtomicReference<String> capturedBody = new AtomicReference<>();
+    private final AtomicReference<String> responseBody = new AtomicReference<>(minimalPipelineResponseJson());
+
+    @BeforeEach
+    void setUp() throws IOException {
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.createContext("/query", exchange -> {
+            capturedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] body = responseBody.get().getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+    }
+
+    @AfterEach
+    void tearDown() {
+        server.stop(0);
+    }
+
+    private PipelineQueryRequester requester() {
+        String endpoint = "http://localhost:" + server.getAddress().getPort() + "/query";
+        return new PipelineQueryRequester(
+                new fruition.shared.http.PipelineClientFactory("test-internal-callback"), endpoint, 5);
+    }
+
+    @Test
+    void query_withoutRequestId_omitsRunFieldsFromRequestBody() {
+        requester().query("ws_abc123", "질문");
+
+        assertThat(capturedBody.get())
+                .contains("\"workspace_id\":\"ws_abc123\"")
+                .contains("\"question\":\"질문\"")
+                .contains("\"provider\":\"openai\"")
+                .contains("\"model\":\"gpt-5-nano\"")
+                .contains("\"allow_web_search\":false")
+                .doesNotContain("request_id")
+                .doesNotContain("log_callback_url");
+    }
+
+    @Test
+    void query_sendsAllowWebSearchAsBoolean() {
+        requester().query("ws_abc123", "질문", "gemini", "gemini-3.1-flash-lite", true);
+
+        assertThat(capturedBody.get())
+                .contains("\"provider\":\"gemini\"", "\"model\":\"gemini-3.1-flash-lite\"")
+                .contains("\"allow_web_search\":true");
+    }
+
+    @Test
+    void query_sendsRecentMessagesInChronologicalOrder() {
+        requester().query("ws_abc123", "후속 질문", "openai", "gpt-5-nano", false,
+                List.of(new PipelineQueryRequester.RecentMessage("user", "이전 질문"),
+                        new PipelineQueryRequester.RecentMessage("assistant", "이전 답변")));
+
+        assertThat(capturedBody.get())
+                .contains("\"recent_messages\":[{\"role\":\"user\",\"content\":\"이전 질문\"},"
+                        + "{\"role\":\"assistant\",\"content\":\"이전 답변\"}]");
+    }
+
+    @Test
+    void query_serializes4000CharRecentMessagesWithoutExceedingSchemaLimit() {
+        String userContent = "u".repeat(4000);
+        String assistantContent = "a".repeat(4000);
+
+        requester().query("ws_abc123", "후속 질문", "openai", "gpt-5-nano", false,
+                List.of(new PipelineQueryRequester.RecentMessage("user", userContent),
+                        new PipelineQueryRequester.RecentMessage("assistant", assistantContent)));
+
+        assertThat(capturedBody.get())
+                .contains("\"content\":\"" + userContent + "\"")
+                .contains("\"content\":\"" + assistantContent + "\"")
+                .doesNotContain("u".repeat(4001), "a".repeat(4001));
+    }
+
+    private static String minimalPipelineResponseJson() {
+        return "{\"answer\":\"답변\",\"related_pages\":[],\"evidence_snippets\":[],"
+                + "\"graph_context\":{\"nodes\":[],\"edges\":[]},\"traversal_paths\":[]}";
+    }
+}

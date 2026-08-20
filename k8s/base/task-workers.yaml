@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-task-worker
+  namespace: fruition
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: query-task-worker
+  template:
+    metadata:
+      labels:
+        app: query-task-worker
+    spec:
+      containers:
+        - name: query-task-worker
+          image: fruition-mvp-dev-pipeline-api:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.workers.task_worker"]
+          envFrom:
+            - configMapRef: {name: fruition-config}
+            - secretRef: {name: fruition-secret}
+          env:
+            - {name: AI_COMMAND_TOPIC, value: ai.query.command}
+            - {name: AI_COMMAND_CONSUMER_GROUP, value: query-task-worker}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-task-worker
+  namespace: fruition
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-task-worker
+  template:
+    metadata:
+      labels:
+        app: agent-task-worker
+    spec:
+      containers:
+        - name: agent-task-worker
+          image: fruition-mvp-dev-pipeline-api:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.workers.task_worker"]
+          envFrom:
+            - configMapRef: {name: fruition-config}
+            - secretRef: {name: fruition-secret}
+          env:
+            - {name: AI_COMMAND_TOPIC, value: ai.agent.command}
+            - {name: AI_COMMAND_CONSUMER_GROUP, value: agent-task-worker}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maintenance-task-worker
+  namespace: fruition
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: maintenance-task-worker
+  template:
+    metadata:
+      labels:
+        app: maintenance-task-worker
+    spec:
+      containers:
+        - name: maintenance-task-worker
+          image: fruition-mvp-dev-pipeline-api:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.workers.task_worker"]
+          envFrom:
+            - configMapRef: {name: fruition-config}
+            - secretRef: {name: fruition-secret}
+          env:
+            - {name: AI_COMMAND_TOPIC, value: ai.maintenance.command}
+            - {name: AI_COMMAND_CONSUMER_GROUP, value: maintenance-task-worker}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}

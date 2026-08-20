@@ -1,0 +1,4 @@
+interface:
+  display_name: "사용자 스토리 정합성 개선"
+  short_description: "코드와 대조해 사용자 스토리 한 섹션을 정확히 정리합니다"
+  default_prompt: "$refine-user-story를 사용해 워크스페이스 사용자 스토리를 코드와 대조하고 승인 후 정리해 주세요."

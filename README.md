@@ -111,7 +111,7 @@ MVP는 Spring Boot 백엔드, PostgreSQL AppDB, S3 호환 Object Storage, 컨테
 
 현재 로컬 개발 인프라는 PostgreSQL과 MinIO를 기준으로 시작합니다. PDF 변환은 별도 converter 컨테이너에서 `pdfinfo`, `pdffonts`, `ocrmypdf`, `tesseract`, `ghostscript`, `markitdown[pdf]` 조합으로 처리하며, DOCX/PPTX/XLSX 등은 데모 필요에 따라 확장합니다.
 
-상세 아키텍처와 ERD는 [Fruition_MVP_Architecture.md](./docs/Fruition_MVP_Architecture.md)를 기준으로 관리합니다.
+상세 아키텍처는 [docs/architecture.md](./docs/architecture.md), 데이터 모델은 [docs/data-model.md](./docs/data-model.md)를 기준으로 관리합니다.
 
 ## 저작권
 

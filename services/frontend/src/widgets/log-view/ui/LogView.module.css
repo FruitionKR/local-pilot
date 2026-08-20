@@ -1,0 +1,261 @@
+/* 로그 화면 (Figma 747:6105). rail "로그" 뷰. */
+.logs {
+  position: absolute;
+  inset: 0 0 0 var(--sidebar-width, 320px);
+  z-index: 1;
+  overflow: auto;
+  padding: 40px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+:global(.workspace.is-sidebar-collapsed) .logs {
+  left: 0;
+}
+
+.logs-inner {
+  max-width: 1520px;
+  margin: 0 auto;
+}
+
+.logs-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 26px;
+}
+
+.logs-header h2 {
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.logs-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.logs-message {
+  margin: 0;
+  padding: 16px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* 작업 1건 카드 (Figma 754:10436: bg secondary/800, radius 12) */
+.card {
+  /* 카드 세로 리듬과 diff 격자를 한 곳에서 잡는다 */
+  --log-pad-x: 24px;
+  --log-gutter: 56px;
+
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 59px;
+  padding: 20px var(--log-pad-x);
+}
+
+.card-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.32px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.card-description {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--subdued);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.24px;
+}
+
+.card-description > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-status {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  background: var(--soft);
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.card-status.is-failed {
+  color: #ff8f87;
+  background: #3a1f1d;
+}
+
+.target-document-button {
+  flex: 0 1 auto;
+  overflow: hidden;
+  padding: 4px 8px;
+  color: var(--ink);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.target-document-button:hover {
+  border-color: var(--subdued);
+}
+
+.rollback-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  color: #e2e2e2;
+  background: var(--soft);
+  border: 1px solid var(--subdued);
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.rollback-button:hover:not(:disabled),
+.rollback-button:focus-visible {
+  background: #3f3f3f;
+}
+
+.rollback-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.rollback-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.card-notice {
+  margin: 0;
+  padding: 0 var(--log-pad-x) 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 20px;
+}
+
+/* 변경 리소스 1건 */
+.change {
+  display: flex;
+  flex-direction: column;
+}
+
+.change-heading {
+  margin: 0;
+  padding: 10px var(--log-pad-x);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.28px;
+}
+
+.change-notice {
+  margin: 0;
+  padding: 0 var(--log-pad-x) 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hunk {
+  display: flex;
+  flex-direction: column;
+}
+
+.hunk + .hunk {
+  margin-top: 8px;
+}
+
+/* Figma diff 행: 단일 줄번호 gutter + +/- 아이콘과 본문 */
+.diff-line {
+  display: grid;
+  grid-template-columns: var(--log-gutter) minmax(0, 1fr);
+  align-items: stretch;
+  min-height: 33px;
+  font-size: 14px;
+  line-height: 1.2;
+  letter-spacing: -0.28px;
+}
+
+.diff-gutter {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px 8px var(--log-pad-x);
+  color: var(--subdued);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.diff-content {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px var(--log-pad-x) 8px 8px;
+  color: var(--ink);
+  font-weight: 600;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.diff-line.is-add .diff-gutter {
+  background: rgba(33, 178, 115, 0.3);
+}
+
+.diff-line.is-add .diff-content {
+  background: rgba(33, 178, 115, 0.14);
+}
+
+.diff-line.is-delete .diff-gutter {
+  background: rgba(240, 68, 82, 0.3);
+}
+
+.diff-line.is-delete .diff-content {
+  background: rgba(240, 68, 82, 0.14);
+}

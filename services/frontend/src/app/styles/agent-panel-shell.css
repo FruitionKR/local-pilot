@@ -1,0 +1,40 @@
+/* agent-panel 레이아웃 앵커. .agent-panel은 source-preview의 :has 등에서 참조하는 전역 클래스라
+   CSS Module(pure selector 규칙)에 둘 수 없어 app 레이어 전역으로 둔다. 내부 시각 클래스는 AgentChat.module.css. */
+.agent-panel {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 9;
+  width: 360px;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 48px 1fr auto auto;
+  overflow: hidden;
+  color: #f0f0f0;
+  background: #0a0a0a;
+  border-left: 1px solid #4f4f4f;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.agent-panel.is-markdown-reviewing {
+  inset: 0;
+  z-index: 20;
+  width: 100%;
+  display: block;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 1300px) {
+  .agent-panel {
+    width: 330px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .agent-panel {
+    width: 300px;
+  }
+}

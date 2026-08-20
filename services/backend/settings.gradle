@@ -1,0 +1,5 @@
+rootProject.name = 'fruition-services'
+
+include 'java-shared'
+include 'access-svc'
+include 'document-svc'

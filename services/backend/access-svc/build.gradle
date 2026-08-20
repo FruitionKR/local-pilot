@@ -1,0 +1,61 @@
+// 로그인·OAuth·세션·워크스페이스 담당 boot 앱 (포트 8081).
+plugins {
+	id 'org.springframework.boot'
+}
+
+dependencies {
+	implementation project(':java-shared')
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
+	implementation 'org.springframework.session:spring-session-jdbc'
+	// 다중 인스턴스 공유 store: OAuth 교환 코드
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	runtimeOnly 'org.postgresql:postgresql'
+	// access_db 스키마는 access-svc가 자체 Flyway migration으로 소유한다 (MSA DB 분리).
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-database-postgresql'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	// api-specs/access-svc/openapi.yaml 스냅샷 생성·비교
+	testImplementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:postgresql'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	// 운영 기본값을 두지 않는 설정이라 테스트에서만 고정값을 준다.
+	environment('INTERNAL_CALLBACK_TOKEN', 'test-internal-callback')
+	// OpenAPI 스냅샷 위치. rootDir은 services/backend이므로 두 단계 위가 저장소 루트다.
+	// 스냅샷 파일을 input으로 선언한다. systemProperty는 경로 문자열이라, 이것이 없으면
+	// api-specs/access-svc/openapi.yaml을 손으로 고쳐도 태스크가 UP-TO-DATE로 판정돼 비교가 다시 돌지 않는다.
+	inputs.file(file("$rootDir/../../api-specs/access-svc/openapi.yaml")).withPropertyName('openApiSnapshot')
+	systemProperty 'openapi.snapshot.path', file("$rootDir/../../api-specs/access-svc/openapi.yaml").absolutePath
+	// Gradle은 -D를 테스트 JVM으로 자동 전달하지 않는다 — 갱신 플래그를 명시적으로 넘긴다.
+	systemProperty 'updateOpenApiSnapshot', System.getProperty('updateOpenApiSnapshot') ?: 'false'
+}
+
+tasks.named('bootRun') {
+	doFirst {
+		environment('SPRING_PROFILES_ACTIVE', System.getenv('SPRING_PROFILES_ACTIVE') ?: 'local')
+		environment('SERVER_PORT', System.getenv('SERVER_PORT') ?: '8081')
+		def envFile = file("$projectDir/../../../infra/.env")
+		// Docker 빌드처럼 상위 경로가 없는 환경에서는 경로가 디렉터리로 정규화될 수 있어 isFile로 가드한다.
+		if (envFile.isFile()) {
+			envFile.readLines().each { line ->
+				if (line && !line.startsWith('#') && line.contains('=')) {
+					def parts = line.split('=', 2)
+					environment(parts[0].trim(), parts[1].trim())
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: access-svc
+  namespace: fruition
+  labels:
+    app: access-svc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: access-svc
+  template:
+    metadata:
+      labels:
+        app: access-svc
+    spec:
+      containers:
+        - name: access-svc
+          # 로컬 빌드 이미지 (kind load docker-image로 주입)
+          image: fruition-access-svc:dev
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: fruition-config
+            - secretRef:
+                name: fruition-secret
+          # flyway migration은 document-svc가 소유 — access-svc는 schema가 준비될 때까지 재시작될 수 있다.
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1024Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: access-svc
+  namespace: fruition
+spec:
+  # 클러스터 내부에서는 http://access-svc:8081, 호스트에서는 http://localhost:30081
+  type: NodePort
+  selector:
+    app: access-svc
+  ports:
+    - port: 8081
+      targetPort: 8081
+      nodePort: 30081

@@ -1,8 +1,0 @@
-fastapi
-uvicorn[standard]
-python-multipart
-
-# MVP starts with PDF conversion only.
-# Extend later as needed, for example:
-#   markitdown[pdf,docx,pptx,xlsx]
-markitdown[pdf]

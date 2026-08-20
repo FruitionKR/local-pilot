@@ -1,4 +1,0 @@
-# Optional embedding dependencies
-# Install this only when enabling BGE-M3 embedding search/generation.
--r requirements.txt
-sentence-transformers>=3.0

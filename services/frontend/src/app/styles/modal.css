@@ -1,0 +1,91 @@
+/* 공통 오버레이 모달 (Figma 512:10792, 513:10878) */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.modal-card {
+  width: 400px;
+  max-width: calc(100vw - 48px);
+  padding: 24px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.modal-card .modal-icon {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 14px;
+  color: #f04452;
+}
+
+.modal-card h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.modal-card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.modal-confirm-button {
+  width: 100%;
+  margin-top: 20px;
+  padding: 10px 0;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--yellow);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modal-confirm-button:hover {
+  background: var(--line-soft);
+}
+
+/* 삭제 확인 등 취소/실행 2버튼 액션 줄 */
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.modal-actions button {
+  flex: 1;
+  padding: 10px 0;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modal-cancel-button {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.modal-cancel-button:hover {
+  background: var(--line-soft);
+}
+
+.modal-delete-button {
+  background: #f04452;
+  color: #fff;
+}
+
+.modal-delete-button:hover {
+  filter: brightness(1.05);
+}
