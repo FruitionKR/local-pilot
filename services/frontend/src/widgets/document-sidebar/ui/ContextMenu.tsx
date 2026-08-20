@@ -1,4 +1,5 @@
 import type { ContextMenuState } from "@/entities/tree";
+import { createPortal } from "react-dom";
 import styles from "./DocumentSidebar.module.css";
 
 export function ContextMenu({
@@ -19,7 +20,8 @@ export function ContextMenu({
   onConvertContextTarget: () => void;
   onDeleteContextTarget: () => void;
 }) {
-  return (
+  // 사이드바의 overflow와 스태킹 컨텍스트에 갇히지 않도록 viewport 좌표 그대로 body에 렌더한다.
+  return createPortal(
     <div
       className={styles["folder-context-menu"]}
       style={{ left: contextMenu.x, top: contextMenu.y }}
@@ -34,6 +36,7 @@ export function ContextMenu({
         </button>
       )}
       <button type="button" className={styles.danger} onClick={onDeleteContextTarget}>삭제</button>
-    </div>
+    </div>,
+    document.body
   );
 }

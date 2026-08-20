@@ -14,6 +14,7 @@
     "test:wiki-reflect": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/wikiReflectState.test.mjs",
     "test:operation-log-query": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/operationLogQuery.test.mjs",
     "test:operation-log-page": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/operationLogPage.test.mjs",
+    "test:document-sidebar": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/documentSidebar.test.mjs",
     "test:workspace-layout": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/workspaceLayout.test.mjs"
   },
   "dependencies": {
