@@ -1,8 +1,8 @@
 import hashlib
+import math
 
 from app.modules.query.application.ports import EmbeddingSearchPort
 from app.modules.query.domain.entities import SemanticQueryEmbedding
-from app.modules.query.infrastructure.bge_m3_embedding_search import BgeM3EmbeddingSearch
 from app.modules.wiki_embedding.infrastructure.bge_m3_embedding_model import BgeM3EmbeddingModel
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
@@ -14,9 +14,7 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
         fallback_search: EmbeddingSearchPort | None = None,
     ) -> None:
         self._embedding_model = embedding_model or BgeM3EmbeddingModel()
-        self._fallback_search = fallback_search or BgeM3EmbeddingSearch(
-            model_name=self._embedding_model.model_name,
-        )
+        self._fallback_search = fallback_search
 
     def embed_query(self, query: str) -> SemanticQueryEmbedding:
         return SemanticQueryEmbedding(
@@ -44,7 +42,14 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
             scores[index] = self._dot(query_vector, document_vector)
 
         if missing_documents:
-            fallback_scores = self._fallback_search.score(query, missing_documents)
+            fallback_scores = (
+                self._fallback_search.score(query, missing_documents)
+                if self._fallback_search is not None
+                else [
+                    self._dot(query_vector, vector)
+                    for vector in self._embedding_model.embed(missing_documents)
+                ]
+            )
             for index, fallback_score in zip(missing_indexes, fallback_scores):
                 scores[index] = fallback_score
 
@@ -87,9 +92,12 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
         vector = []
         for part in parts:
             try:
-                vector.append(float(part))
+                value = float(part)
             except (TypeError, ValueError):
                 return []
+            if not math.isfinite(value):
+                return []
+            vector.append(value)
         return vector
 
     def _hash(self, text: str) -> str:
