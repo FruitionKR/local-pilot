@@ -1,10 +1,15 @@
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.modules.wiki_ingestion.application.models import PipelineRunCommand
 from run_lab import (
+    PipelineConfigurationError,
     _prepare_api_client,
+    load_api_client,
     parse_args,
     pipeline_command_from_cli_args,
     resolve_api_defaults,
@@ -149,3 +154,13 @@ def test_run_pipeline_manifest_preserves_log_callback_url(tmp_path: Path) -> Non
 
     assert manifest["log_callback_url"] == "https://example.test/logs"
     assert "result_callback_url" not in manifest
+
+
+def test_load_api_client_missing_api_key_raises_configuration_error() -> None:
+    # SystemExit은 worker의 except Exception을 통과해 프로세스를 죽이므로
+    # 설정 결함은 일반 예외로 던져야 한다.
+    command = pipeline_command_from_cli_args(_args())
+
+    with patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(PipelineConfigurationError):
+            load_api_client(command)

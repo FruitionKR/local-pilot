@@ -79,6 +79,15 @@ from app.core.llm_env import (
 )
 
 
+class PipelineConfigurationError(ValueError):
+    """실행 전 설정 결함(API 키·모델 누락).
+
+    SystemExit은 worker의 `except Exception`을 통과해 프로세스를 죽이고
+    Kafka 재전달 crash loop를 만들므로, 일반 예외로 던져 run 실패로 기록되게 한다.
+    CLI 경로는 main()에서 SystemExit으로 변환한다.
+    """
+
+
 @dataclass(frozen=True)
 class PipelinePrompts:
     semantic: str
@@ -190,9 +199,9 @@ def load_api_client(args: PipelineRunCommand) -> ChatCompletionsJsonClient:
     api_key_env = provider_api_key_env(args.provider)
     api_key = os.environ.get(api_key_env)
     if not api_key:
-        raise SystemExit(f"Missing API key. Set {api_key_env}")
+        raise PipelineConfigurationError(f"Missing API key. Set {api_key_env}")
     if not args.model:
-        raise SystemExit("Missing model. Pass --model")
+        raise PipelineConfigurationError("Missing model. Pass --model")
     return ChatCompletionsJsonClient(
         ChatClientConfig(
             api_key=api_key,
@@ -1279,7 +1288,11 @@ def pipeline_command_from_cli_args(args: argparse.Namespace) -> PipelineRunComma
 
 def main() -> None:
     command = pipeline_command_from_cli_args(parse_args())
-    manifest = run_pipeline(command)
+    try:
+        manifest = run_pipeline(command)
+    except PipelineConfigurationError as exc:
+        # CLI에서는 기존처럼 traceback 없이 메시지만 남기고 종료한다.
+        raise SystemExit(str(exc)) from exc
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
 
 
