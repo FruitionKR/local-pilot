@@ -535,7 +535,8 @@ class AgentWorker:
             if operation.status != "succeeded":
                 continue
             response = results.get(operation.id, {})
-            if not self._verify_operation(context, operation, response):
+            resolved_arguments = _resolve_operation_references(operation.arguments, results)
+            if not self._verify_operation(context, operation, response, resolved_arguments):
                 self._repository.mark_operation(
                     operation.id,
                     ("succeeded",),
@@ -549,6 +550,7 @@ class AgentWorker:
         context: AgentRunContext,
         operation: AgentPlanOperation,
         response: dict[str, object],
+        resolved_arguments: dict[str, object] | None = None,
     ) -> bool:
         target_id = str(response.get("id") or operation.target_id or "")
         if not target_id:
@@ -569,11 +571,17 @@ class AgentWorker:
             current = self._read_tool(context, "get_document_metadata", {"document_id": target_id})
             return _response_name(current) == _response_name(response)
         expected_name = _response_name(response)
-        if operation.tool_name == "create_document":
-            parent_id = operation.destination_parent_id
-            expected_name = operation.arguments.get("display_name")
-            if isinstance(expected_name, str):
-                expected_name = expected_name.removesuffix(".md")
+        if operation.tool_name in {"create_folder", "create_document"}:
+            destination_key = "parent_folder_id" if operation.tool_name == "create_folder" else "folder_id"
+            parent_id = (
+                resolved_arguments.get(destination_key)
+                if resolved_arguments is not None
+                else operation.destination_parent_id
+            )
+            if operation.tool_name == "create_document":
+                expected_name = operation.arguments.get("display_name")
+                if isinstance(expected_name, str):
+                    expected_name = expected_name.removesuffix(".md")
         else:
             parent_id = (
                 response.get("parent_folder_id")

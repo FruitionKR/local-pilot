@@ -2,7 +2,8 @@
 
 [API 문서](../README.md) / [document-svc](README.md)
 
-Skill 작성·게시·설정과 참조 문서 읽기 API다.
+Skill 작성·게시·설정 Gateway와 내부 참조 문서 읽기 API다. 공개 요청은 Backend가 권한과
+workspace AI 모델을 확인한 뒤 ai-svc 내부 HTTP로 전달한다.
 
 - API 수: 8
 
@@ -264,7 +265,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills
   ],
   "description": "string",
   "instructions_markdown": "string",
-  "issues": "string",
+  "issues": [],
   "name": "string",
   "question": "string",
   "scope_type": "string",
@@ -331,7 +332,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
   ],
   "description": "string",
   "instructions_markdown": "string",
-  "issues": "string",
+  "issues": [],
   "name": "string",
   "question": "string",
   "scope_type": "string",
@@ -419,7 +420,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
   ],
   "description": "string",
   "instructions_markdown": "string",
-  "issues": "string",
+  "issues": [],
   "name": "string",
   "question": "string",
   "scope_type": "string",
@@ -486,7 +487,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
   ],
   "description": "string",
   "instructions_markdown": "string",
-  "issues": "string",
+  "issues": [],
   "name": "string",
   "question": "string",
   "scope_type": "string",
@@ -734,9 +735,11 @@ Skill의 정의를 수정합니다.
 
 ```json
 {
+  "allowed_tools": [],
+  "capabilities": [],
   "description": "string",
   "instructions_markdown": "string",
-  "issues": "string",
+  "issues": [],
   "name": "string",
   "question": "string",
   "scope_type": "string",
@@ -795,9 +798,11 @@ curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skil
 
 ```json
 {
+  "allowed_tools": [],
+  "capabilities": [],
   "description": "string",
   "instructions_markdown": "string",
-  "issues": "string",
+  "issues": [],
   "name": "string",
   "question": "string",
   "scope_type": "string",

@@ -73,6 +73,51 @@ runtime_unregister() {
   fi
 }
 
+runtime_descendant_pids() {
+  local pid="$1"
+  local child_pid
+
+  while IFS= read -r child_pid; do
+    [[ -n "$child_pid" ]] || continue
+    printf '%s\n' "$child_pid"
+    runtime_descendant_pids "$child_pid"
+  done < <(ps -axo pid=,ppid= | awk -v parent="$pid" '$2 == parent { print $1 }')
+}
+
+runtime_terminate_tree() {
+  local pid="$1"
+  local process_pid
+  local -a process_pids remaining_pids
+
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  process_pids=("$pid")
+  while IFS= read -r process_pid; do
+    [[ -n "$process_pid" ]] && process_pids+=("$process_pid")
+  done < <(runtime_descendant_pids "$pid")
+
+  kill -TERM "${process_pids[@]}" >/dev/null 2>&1 || true
+  for _ in $(seq 1 50); do
+    remaining_pids=()
+    for process_pid in "${process_pids[@]}"; do
+      kill -0 "$process_pid" >/dev/null 2>&1 && remaining_pids+=("$process_pid")
+    done
+    [[ ${#remaining_pids[@]} -eq 0 ]] && return 0
+    sleep 0.2
+  done
+
+  kill -KILL "${remaining_pids[@]}" >/dev/null 2>&1 || true
+  for _ in $(seq 1 10); do
+    for process_pid in "${remaining_pids[@]}"; do
+      if kill -0 "$process_pid" >/dev/null 2>&1; then
+        sleep 0.1
+        continue 2
+      fi
+    done
+    return 0
+  done
+  return 1
+}
+
 runtime_stop() {
   local name="$1"
   local owner_script="$2"
@@ -88,16 +133,11 @@ runtime_stop() {
 
   read -r pid < "$file"
   printf '[%s] %s supervisor를 종료합니다: PID %s\n' "$prefix" "$label" "$pid"
-  kill -TERM "$pid"
+  if runtime_terminate_tree "$pid"; then
+    rm -f "$file"
+    return 0
+  fi
 
-  for _ in $(seq 1 10); do
-    if ! kill -0 "$pid" >/dev/null 2>&1; then
-      rm -f "$file"
-      return 0
-    fi
-    sleep 1
-  done
-
-  printf '[%s] ERROR: %s supervisor가 종료되지 않았습니다: PID %s\n' "$prefix" "$label" "$pid" >&2
+  printf '[%s] ERROR: %s 프로세스 트리가 종료되지 않았습니다: PID %s\n' "$prefix" "$label" "$pid" >&2
   return 1
 }

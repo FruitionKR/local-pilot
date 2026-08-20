@@ -5,6 +5,7 @@ import {
   selectActiveIngestDocuments
 } from "../src/features/wiki-ingest/model/wikiReflectState.ts";
 import { formatLintProgressLabel } from "../src/features/wiki-ingest/model/activeLintOperation.ts";
+import { getWikiWorkPollInterval } from "../src/features/wiki-ingest/model/wikiWorkPolling.ts";
 
 function makeDocument(overrides) {
   return {
@@ -69,7 +70,11 @@ test("stalled 문서는 반영 요청을 다시 받지 않는다", () => {
 });
 
 test("진행 중인 lint 로그가 있으면 진행 라벨을 만든다", () => {
-  assert.equal(formatLintProgressLabel(makeLog({}), false), "위키 다듬기 진행 중");
+  assert.equal(
+    formatLintProgressLabel(makeLog({ created_at: "2026-08-17T00:00:00Z" }), false,
+      Date.parse("2026-08-17T00:04:20Z")),
+    "위키 다듬기 · 4분째 실행 중"
+  );
 });
 
 test("로그가 아직 안 보여도 방금 보낸 요청은 진행 중으로 표시한다", () => {
@@ -78,4 +83,9 @@ test("로그가 아직 안 보여도 방금 보낸 요청은 진행 중으로 �
 
 test("진행 중인 lint가 없으면 라벨이 없다", () => {
   assert.equal(formatLintProgressLabel(null, false), null);
+});
+
+test("활성 작업이 없어도 저빈도 polling을 유지한다", () => {
+  assert.equal(getWikiWorkPollInterval(false), 15_000);
+  assert.equal(getWikiWorkPollInterval(true), 3_000);
 });

@@ -26,10 +26,12 @@ public class IngestOperationStarter {
     }
 
     @Transactional
-    public String start(String workspaceId, String userId, String documentId) {
+    public String start(String workspaceId, String userId, String documentId,
+                        String targetDisplayName, Instant startedAt) {
         String operationId = "op_" + randomSuffix();
         operationLogRepository.save(OperationLog.processing(
-                operationId, workspaceId, userId, OperationType.ingest, documentId, Instant.now()));
+                operationId, workspaceId, userId, OperationType.ingest, documentId,
+                targetDisplayName, startedAt));
         return operationId;
     }
 

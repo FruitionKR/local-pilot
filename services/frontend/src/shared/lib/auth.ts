@@ -1,10 +1,20 @@
-// 임시 로그인 흐름용 토큰/워크스페이스 선택 저장 헬퍼.
-// 정식 인증 화면 도입 시 교체 대상.
-// 알려진 트레이드오프: 토큰을 localStorage에 저장하므로 XSS 발생 시 탈취 가능.
-// 정식 도입 시 백엔드와 협의해 httpOnly 쿠키 방식으로 전환한다.
+// access token은 페이지 수명 동안 메모리에만 보관한다.
+// refresh token은 백엔드가 발급하는 HttpOnly 쿠키에 있어 JavaScript에서 읽을 수 없다.
 const ACCESS_TOKEN_STORAGE_KEY = "fruition.access_token";
 const REFRESH_TOKEN_STORAGE_KEY = "fruition.refresh_token";
 const WORKSPACE_STORAGE_KEY = "fruition.workspace_id";
+const AUTH_REFRESH_LOCK_NAME = "fruition.auth.refresh";
+const PUBLIC_AUTH_PATHS = new Set([
+  "/",
+  "/forgot-password",
+  "/login",
+  "/oauth/callback",
+  "/reset-password",
+  "/signup",
+  "/signup/verify"
+]);
+
+let accessToken: string | null = null;
 
 function readStorage(key: string): string | null {
   if (typeof window === "undefined") return null;
@@ -12,22 +22,35 @@ function readStorage(key: string): string | null {
 }
 
 export function getAccessToken(): string | null {
-  return readStorage(ACCESS_TOKEN_STORAGE_KEY);
+  removeLegacyStoredTokens();
+  return accessToken;
 }
 
-export function getRefreshToken(): string | null {
-  return readStorage(REFRESH_TOKEN_STORAGE_KEY);
-}
-
-export function saveTokens(accessToken: string, refreshToken: string) {
-  window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
-  window.localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+export function saveAccessToken(token: string) {
+  removeLegacyStoredTokens();
+  accessToken = token;
 }
 
 export function clearAuth() {
+  accessToken = null;
+  removeLegacyStoredTokens();
+  window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+}
+
+export function isPublicAuthPath(pathname: string): boolean {
+  return PUBLIC_AUTH_PATHS.has(pathname);
+}
+
+/** 같은 origin의 여러 탭이 refresh 쿠키를 동시에 회전하지 않도록 직렬화한다. */
+export async function withAuthRefreshLock<T>(refresh: () => Promise<T>): Promise<T> {
+  if (typeof navigator === "undefined" || !navigator.locks) return refresh();
+  return await navigator.locks.request(AUTH_REFRESH_LOCK_NAME, refresh);
+}
+
+function removeLegacyStoredTokens() {
+  if (typeof window === "undefined") return;
   window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
   window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
-  window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
 }
 
 export function getSelectedWorkspaceId(): string | null {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { canShowAgentPanel, isAgentPanelVisible } from "../src/widgets/workspace/lib/workspaceLayout.ts";
+import { focusGraphNode } from "../src/widgets/workspace/model/focusGraphNode.ts";
 
 test("그래프 뷰에서도 채팅 패널을 띄운다", () => {
   assert.equal(canShowAgentPanel("graph"), true);
@@ -25,4 +26,18 @@ test("로그·규칙·설정 뷰는 채팅 패널을 렌더하지 않는다", ()
 
 test("그래프에서 패널을 닫으면 접힘으로 본다(그래프가 우측까지 확장되고 알림이 우측에 붙는다)", () => {
   assert.equal(isAgentPanelVisible("graph", false), false);
+});
+
+test("그래프 노드 클릭은 문서 선택을 유지하고 그래프 포커스만 바꾼다", () => {
+  const selection = {
+    focusedGraphNodeId: "concept-before",
+    selectedTreeItemId: "tree-document",
+    selectedPreviewTarget: { pageId: null, title: "열어 둔 문서", pageType: null },
+    selectedDocumentId: "document-1"
+  };
+
+  assert.deepEqual(focusGraphNode(selection, "concept-after"), {
+    ...selection,
+    focusedGraphNodeId: "concept-after"
+  });
 });

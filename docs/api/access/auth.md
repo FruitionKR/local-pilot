@@ -13,12 +13,12 @@
 | [`POST /api/auth/email-availability`](#summary-post-api-auth-email-availability) | 회원가입 전에 이메일로 신규 가입할 수 있는지 빠르게 확인합니다. OAuth 계정을 포함해 이미 등록된 이메일은 `available: false`를 반환합니다. |
 | [`POST /api/auth/email-verifications`](#summary-post-api-auth-email-verifications) | 회원가입/비밀번호 재설정을 위한 인증번호를 발급합니다. |
 | [`POST /api/auth/email-verifications/{verification_id}/confirm`](#summary-post-api-auth-email-verifications-verification-id-confirm) | 인증번호를 검증하고 1회용 verification_token을 발급합니다. |
-| [`POST /api/auth/login`](#summary-post-api-auth-login) | 이메일/비밀번호를 검증하고 access/refresh token을 발급합니다. |
-| [`POST /api/auth/logout`](#summary-post-api-auth-logout) | refresh token을 폐기합니다. |
+| [`POST /api/auth/login`](#summary-post-api-auth-login) | 이메일/비밀번호를 검증하고 access token과 HttpOnly refresh 쿠키를 발급합니다. |
+| [`POST /api/auth/logout`](#summary-post-api-auth-logout) | HttpOnly refresh 쿠키를 폐기하고 제거합니다. |
 | [`GET /api/auth/me`](#summary-get-api-auth-me) | access token으로 인증된 사용자의 프로필을 반환합니다. |
-| [`POST /api/auth/oauth/exchange`](#summary-post-api-auth-oauth-exchange) | OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 교환합니다. |
+| [`POST /api/auth/oauth/exchange`](#summary-post-api-auth-oauth-exchange) | OAuth code를 access token과 HttpOnly refresh 쿠키로 교환합니다. |
 | [`POST /api/auth/password-reset`](#summary-post-api-auth-password-reset) | verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 세션을 폐기합니다. |
-| [`POST /api/auth/refresh`](#summary-post-api-auth-refresh) | refresh token을 검증하고 access/refresh token을 새로 발급합니다. 기존 refresh token은 폐기됩니다. |
+| [`POST /api/auth/refresh`](#summary-post-api-auth-refresh) | HttpOnly refresh 쿠키를 검증하고 access token과 refresh 쿠키를 회전합니다. |
 | [`POST /api/auth/signup`](#summary-post-api-auth-signup) | 이메일/비밀번호로 신규 사용자를 생성합니다. |
 
 ## 한눈에 보기
@@ -345,7 +345,7 @@ curl -X POST "$ACCESS/api/auth/email-verifications/<value>/confirm" \
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 이메일/비밀번호를 검증하고 access/refresh token을 발급합니다. |
+| 목적 | 이메일/비밀번호를 검증하고 access token과 HttpOnly refresh 쿠키를 발급합니다. |
 | 입력 | **Body** — `LoginRequest` |
 | 출력 | `200` 로그인 성공 — `LoginResponse` |
 | 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
@@ -363,7 +363,7 @@ curl -X POST "$ACCESS/api/auth/email-verifications/<value>/confirm" \
 
 #### 2. 목적
 
-이메일/비밀번호를 검증하고 access/refresh token을 발급합니다.
+이메일/비밀번호를 검증하고 access token과 HttpOnly refresh 쿠키를 발급합니다.
 
 #### 3. Auth 필요 여부
 
@@ -392,10 +392,11 @@ curl -X POST "$ACCESS/api/auth/email-verifications/<value>/confirm" \
 {
   "access_token": "string",
   "expires_in": 900,
-  "refresh_token": "EXAMPLE-refresh-token-not-a-real-value-0000",
   "token_type": "Bearer"
 }
 ```
+
+- 응답의 `Set-Cookie`가 `fruition_refresh_token`을 `HttpOnly; SameSite=Strict`로 저장한다.
 
 #### 6. Error response
 
@@ -426,6 +427,7 @@ curl -X POST "$ACCESS/api/auth/email-verifications/<value>/confirm" \
 ```bash
 curl -X POST "$ACCESS/api/auth/login" \
   -H 'Content-Type: application/json' \
+  -c cookies.txt \
   --data '{"email":"user@example.com","password":"stringst"}'
 ```
 
@@ -433,7 +435,6 @@ curl -X POST "$ACCESS/api/auth/login" \
 {
   "access_token": "string",
   "expires_in": 900,
-  "refresh_token": "EXAMPLE-refresh-token-not-a-real-value-0000",
   "token_type": "Bearer"
 }
 ```
@@ -452,11 +453,11 @@ curl -X POST "$ACCESS/api/auth/login" \
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | refresh token을 폐기합니다. |
-| 입력 | **Body** — `RefreshRequest` |
+| 목적 | HttpOnly refresh 쿠키를 폐기하고 제거합니다. |
+| 입력 | **Cookie** — `fruition_refresh_token`(선택) |
 | 출력 | `204` 로그아웃 성공 |
 | 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
-| 주요 오류 | `401` 유효하지 않거나 만료된 refresh token — `ErrorResponse` |
+| 주요 오류 | 없음 |
 
 <details>
 <summary>상세 계약 보기</summary>
@@ -470,7 +471,7 @@ curl -X POST "$ACCESS/api/auth/login" \
 
 #### 2. 목적
 
-refresh token을 폐기합니다.
+HttpOnly refresh 쿠키를 폐기하고 제거합니다.
 
 #### 3. Auth 필요 여부
 
@@ -479,15 +480,8 @@ refresh token을 폐기합니다.
 
 #### 4. Request body
 
-- Parameters: 없음
-
-- Content-Type: `application/json` (`RefreshRequest`)
-
-```json
-{
-  "refresh_token": "EXAMPLE-refresh-token-not-a-real-value-0000"
-}
-```
+- Body: 없음
+- Cookie: `fruition_refresh_token`(선택). 없거나 이미 만료돼도 로그아웃은 멱등하게 성공한다.
 
 #### 5. Response body
 
@@ -496,18 +490,7 @@ refresh token을 폐기합니다.
 
 #### 6. Error response
 
-| HTTP 상태 | 설명 | 응답 스키마 |
-|---|---|---|
-| `401` | 유효하지 않거나 만료된 refresh token | `ErrorResponse` |
-
-```json
-{
-  "error": {
-    "code": "INVALID_REQUEST",
-    "message": "요청 형식이 올바르지 않습니다."
-  }
-}
-```
+- 없음
 
 #### 7. Pagination / filtering
 
@@ -522,13 +505,7 @@ refresh token을 폐기합니다.
 
 ```bash
 curl -X POST "$ACCESS/api/auth/logout" \
-  -H 'Content-Type: application/json' \
-  --data '{"refresh_token":"EXAMPLE-refresh-token-not-a-real-value-0000"}'
-```
-
-```json
-{
-}
+  -b cookies.txt
 ```
 
 #### 10. 구현 파일
@@ -637,7 +614,7 @@ curl -X GET "$ACCESS/api/auth/me" \
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 교환합니다. |
+| 목적 | OAuth 로그인 성공 후 발급된 1회용 code를 access token과 HttpOnly refresh 쿠키로 교환합니다. |
 | 입력 | **Body** — `OAuthExchangeRequest` |
 | 출력 | `200` 교환 성공 — `LoginResponse` |
 | 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
@@ -655,7 +632,7 @@ curl -X GET "$ACCESS/api/auth/me" \
 
 #### 2. 목적
 
-OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 교환합니다.
+OAuth 로그인 성공 후 발급된 1회용 code를 access token과 HttpOnly refresh 쿠키로 교환합니다.
 
 #### 3. Auth 필요 여부
 
@@ -683,10 +660,11 @@ OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 
 {
   "access_token": "string",
   "expires_in": 900,
-  "refresh_token": "EXAMPLE-refresh-token-not-a-real-value-0000",
   "token_type": "Bearer"
 }
 ```
+
+- 응답의 `Set-Cookie`가 `fruition_refresh_token`을 `HttpOnly; SameSite=Strict`로 저장한다.
 
 #### 6. Error response
 
@@ -717,6 +695,7 @@ OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 
 ```bash
 curl -X POST "$ACCESS/api/auth/oauth/exchange" \
   -H 'Content-Type: application/json' \
+  -c cookies.txt \
   --data '{"code":"<value>"}'
 ```
 
@@ -724,7 +703,6 @@ curl -X POST "$ACCESS/api/auth/oauth/exchange" \
 {
   "access_token": "string",
   "expires_in": 900,
-  "refresh_token": "EXAMPLE-refresh-token-not-a-real-value-0000",
   "token_type": "Bearer"
 }
 ```
@@ -844,8 +822,8 @@ curl -X POST "$ACCESS/api/auth/password-reset" \
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | refresh token을 검증하고 access/refresh token을 새로 발급합니다. 기존 refresh token은 폐기됩니다. |
-| 입력 | **Body** — `RefreshRequest` |
+| 목적 | HttpOnly refresh 쿠키를 검증하고 access token과 refresh 쿠키를 회전합니다. |
+| 입력 | **Cookie** — `fruition_refresh_token` |
 | 출력 | `200` 재발급 성공 — `LoginResponse` |
 | 조건 | 인증 불필요<br>인증 없이 호출할 수 있다.<br>공개 API이므로 별도의 사용자 권한 검증이 없다. |
 | 주요 오류 | `401` 유효하지 않거나 만료된 refresh token — `ErrorResponse` |
@@ -862,7 +840,7 @@ curl -X POST "$ACCESS/api/auth/password-reset" \
 
 #### 2. 목적
 
-refresh token을 검증하고 access/refresh token을 새로 발급합니다. 기존 refresh token은 폐기됩니다.
+HttpOnly refresh 쿠키를 검증하고 access token과 refresh 쿠키를 회전합니다.
 
 #### 3. Auth 필요 여부
 
@@ -871,15 +849,8 @@ refresh token을 검증하고 access/refresh token을 새로 발급합니다. �
 
 #### 4. Request body
 
-- Parameters: 없음
-
-- Content-Type: `application/json` (`RefreshRequest`)
-
-```json
-{
-  "refresh_token": "EXAMPLE-refresh-token-not-a-real-value-0000"
-}
-```
+- Body: 없음
+- Cookie: `fruition_refresh_token`(필수)
 
 #### 5. Response body
 
@@ -890,10 +861,11 @@ refresh token을 검증하고 access/refresh token을 새로 발급합니다. �
 {
   "access_token": "string",
   "expires_in": 900,
-  "refresh_token": "EXAMPLE-refresh-token-not-a-real-value-0000",
   "token_type": "Bearer"
 }
 ```
+
+- 응답의 `Set-Cookie`가 기존 refresh 쿠키를 회전한 값으로 교체한다.
 
 #### 6. Error response
 
@@ -923,15 +895,13 @@ refresh token을 검증하고 access/refresh token을 새로 발급합니다. �
 
 ```bash
 curl -X POST "$ACCESS/api/auth/refresh" \
-  -H 'Content-Type: application/json' \
-  --data '{"refresh_token":"EXAMPLE-refresh-token-not-a-real-value-0000"}'
+  -b cookies.txt -c cookies.txt
 ```
 
 ```json
 {
   "access_token": "string",
   "expires_in": 900,
-  "refresh_token": "EXAMPLE-refresh-token-not-a-real-value-0000",
   "token_type": "Bearer"
 }
 ```

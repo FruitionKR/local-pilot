@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { fileIcon, plusIcon, SvgIcon } from "@/shared/ui/SvgIcon";
-import { isWikiReflectEligible } from "../model/wikiReflectState";
+import { getWikiReflectLabel, isWikiReflectEligible } from "../model/wikiReflectState";
 import styles from "./WikiIngestModal.module.css";
 import type { DocumentItemResponse } from "@/entities/document";
 
@@ -33,6 +33,10 @@ export function WikiIngestModal({
         : eligibleDocuments,
     [eligibleDocuments, normalizedQuery]
   );
+  const selectedDocuments = useMemo(
+    () => eligibleDocuments.filter((document) => selectedIds.has(document.id)),
+    [eligibleDocuments, selectedIds]
+  );
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -57,9 +61,8 @@ export function WikiIngestModal({
   }
 
   function handleSubmit() {
-    const targets = eligibleDocuments.filter((document) => selectedIds.has(document.id));
-    if (targets.length === 0) return;
-    onSubmit(targets);
+    if (selectedDocuments.length === 0) return;
+    onSubmit(selectedDocuments);
     onClose();
   }
 
@@ -104,6 +107,9 @@ export function WikiIngestModal({
                   <span className={styles["ingest-result-label"]} title={document.filename}>
                     {document.filename}
                   </span>
+                  <span className={styles["ingest-result-state"]}>
+                    {getWikiReflectLabel(document)}
+                  </span>
                 </label>
               ))}
             </div>
@@ -111,11 +117,11 @@ export function WikiIngestModal({
         </div>
 
         <div className={styles["ingest-footer"]}>
-          <span className={styles["ingest-count"]}>{selectedIds.size}개 선택됨</span>
+          <span className={styles["ingest-count"]}>{selectedDocuments.length}개 선택됨</span>
           <button
             type="button"
             className={styles["ingest-submit"]}
-            disabled={selectedIds.size === 0}
+            disabled={selectedDocuments.length === 0}
             onClick={handleSubmit}
           >
             위키에 반영

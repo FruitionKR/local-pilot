@@ -54,7 +54,9 @@ public class WorkspaceAiModelSettingsController {
             @AuthenticationPrincipal String userId,
             @PathVariable("workspace_id") String workspaceId) {
         accessGuard.requireMember(workspaceId, userId);
-        return ResponseEntity.ok(new SettingsResponse(client.get(workspaceId)));
+        // MEMBER에게는 read-only UI를 보여줄 수 있도록 변경 가능 여부(OWNER)를 함께 내려준다.
+        boolean canUpdate = accessGuard.isOwner(workspaceId, userId);
+        return ResponseEntity.ok(new SettingsResponse(client.get(workspaceId), canUpdate));
     }
 
     @Operation(
@@ -85,8 +87,9 @@ public class WorkspaceAiModelSettingsController {
         }
         AiModelCatalog.AiModel selected = catalog.resolve(
                 request.ingestLint().provider(), request.ingestLint().model());
+        // 여기까지 왔으면 호출자는 OWNER이므로 can_update는 항상 true다.
         return ResponseEntity.ok(new SettingsResponse(
-                client.update(workspaceId, selected.provider(), selected.model())));
+                client.update(workspaceId, selected.provider(), selected.model()), true));
     }
 
     @Schema(description = "AI 모델 설정 변경 요청")
@@ -113,5 +116,9 @@ public class WorkspaceAiModelSettingsController {
     public record SettingsResponse(
             @JsonProperty("ingest_lint")
             @Schema(description = "ingest·lint에 쓰는 provider/model 조합")
-            WorkspaceAiModelClient.AiModelSelection ingestLint) {}
+            WorkspaceAiModelClient.AiModelSelection ingestLint,
+
+            @JsonProperty("can_update")
+            @Schema(description = "호출자가 이 설정을 변경할 수 있는지(워크스페이스 OWNER 여부)", example = "true")
+            boolean canUpdate) {}
 }

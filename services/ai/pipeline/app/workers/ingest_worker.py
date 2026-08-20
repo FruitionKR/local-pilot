@@ -24,6 +24,7 @@ import os
 import signal
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+from pydantic import ValidationError
 
 from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_ingestion_repository as database,
@@ -51,29 +52,45 @@ TERMINAL_STATUSES = {"succeeded", "failed", "notify_pending"}
 MAX_POLL_INTERVAL_MS = int(os.environ.get("INGEST_MAX_POLL_INTERVAL_MS", "1800000"))
 
 
+class UnprocessableIngestCommand(ValueError):
+    """다시 읽어도 성공할 수 없는 command.
+
+    형식이 맞지 않아 payload를 만들지 못한 경우다. 재시도하면 같은 지점에서 다시 실패해
+    offset이 전진하지 않고 파티션 전체가 막히므로, 실패로 확정하고 넘어간다.
+    (예: 배포 전환기에 남은 구 형식 command)
+    """
+
+
 def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
     if not command.get("user_id") or not command.get("workspace_id"):
-        raise ValueError("ingest command requires user_id and workspace_id")
+        raise UnprocessableIngestCommand("ingest command requires user_id and workspace_id")
     if not str(command.get("provider") or "").strip() or not str(command.get("model") or "").strip():
-        raise ValueError("ingest command requires provider and model")
-    common = {
-        "document_id": command["document_id"],
-        "user_id": command.get("user_id"),
-        "workspace_id": command.get("workspace_id"),
-        "operation_id": command.get("operation_id"),
-        "source_revision": command.get("source_revision"),
-        "source_content_hash": command.get("source_content_hash"),
-        "model": str(command["model"]).strip(),
-        "provider": str(command.get("provider") or "").strip(),
-        "wait": True,
-    }
-    if command.get("kind") == "chat_wiki":
-        return ChatWikiRunIn(
-            **common,
-            selection_mode=command.get("selection_mode") or "full",
-            input_markdown=command.get("input_markdown"),
-        )
-    return PipelineRunIn(**common)
+        raise UnprocessableIngestCommand("ingest command requires provider and model")
+    try:
+        common = {
+            "document_id": command["document_id"],
+            "user_id": command.get("user_id"),
+            "workspace_id": command.get("workspace_id"),
+            "operation_id": command.get("operation_id"),
+            "source_revision": command.get("source_revision"),
+            "source_content_hash": command.get("source_content_hash"),
+            "model": str(command["model"]).strip(),
+            "provider": str(command.get("provider") or "").strip(),
+            "wait": True,
+        }
+        if command.get("kind") == "chat_wiki":
+            return ChatWikiRunIn(
+                **common,
+                selection_mode=command.get("selection_mode") or "partial",
+                input_markdown=command.get("input_markdown"),
+                input_blocks=command.get("input_blocks") or [],
+            )
+        return PipelineRunIn(**common)
+    except (ValidationError, KeyError) as exc:
+        # KeyError는 command에 필수 키가 없는 경우다. 둘 다 재시도로는 못 고친다.
+        raise UnprocessableIngestCommand(
+            f"ingest command payload is invalid (kind={command.get('kind')}): {exc!r}"
+        ) from exc
 
 
 def _result_payload(command: dict, manifest: dict | None, status: str, error: str | None = None) -> dict:
@@ -192,6 +209,23 @@ async def consume() -> None:
                         # 실행은 스레드로 넘겨 이벤트 루프(heartbeat)를 비워 둔다.
                         result = await asyncio.to_thread(_handle, message.value)
                         event = _result_event(message.value, result)
+                    except UnprocessableIngestCommand as exc:
+                        # 재시도해도 같은 지점에서 실패한다. 실패로 확정하고 offset을 전진시켜
+                        # 이 command 하나가 파티션 전체를 막지 않게 한다.
+                        run_id = message.value.get("run_id") if isinstance(message.value, dict) else None
+                        logger.error("[ingest command 폐기] run_id=%s error=%s", run_id, exc)
+                        if run_id:
+                            try:
+                                # 이미 등록된 run이면 실패로 남긴다(미등록이면 아무 일도 하지 않는다).
+                                get_pipeline_run_repository().fail(run_id, str(exc))
+                            except Exception:
+                                logger.exception("[ingest command 폐기] run 실패 기록 실패 run_id=%s", run_id)
+                        event = _event(
+                            message.value,
+                            "failed",
+                            payload=_result_payload(message.value, None, "failed", str(exc)),
+                            error=str(exc)[:1000],
+                        )
                     except Exception as exc:
                         logger.exception(
                             "[ingest 실행 실패] run_id=%s",

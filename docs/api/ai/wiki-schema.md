@@ -2,7 +2,8 @@
 
 [API 문서](../README.md) / [ai-svc](README.md)
 
-Wiki 스키마 관리 내부 API다.
+Wiki 스키마 관리 내부 API다. 공개 Gateway 계약은
+[`document-svc Wiki Schema API`](../document/wiki-schema.md)이며 Backend가 네 개 endpoint를 내부 HTTP로 중계한다.
 
 - API 수: 4
 
@@ -81,14 +82,17 @@ Wiki 스키마 관리 내부 API다.
       "category": "string",
       "reason": "string",
       "section": "string",
-      "severity": "string",
+      "severity": "blocked",
       "text": "string"
     }
   ],
   "name": "string",
   "preview_markdown": "string",
   "raw_markdown": "string",
-  "schema_version": "string"
+  "schema_version": "string",
+  "status": "active",
+  "user_id": "string",
+  "workspace_id": "string"
 }
 ```
 
@@ -155,14 +159,17 @@ curl -X GET "$PIPELINE/wiki-schema/active?workspace_id=<value>&user_id=<value>" 
       "category": "string",
       "reason": "string",
       "section": "string",
-      "severity": "string",
+      "severity": "blocked",
       "text": "string"
     }
   ],
   "name": "string",
   "preview_markdown": "string",
   "raw_markdown": "string",
-  "schema_version": "string"
+  "schema_version": "string",
+  "status": "active",
+  "user_id": "string",
+  "workspace_id": "string"
 }
 ```
 
@@ -247,14 +254,17 @@ Wiki 스키마 초안을 생성합니다.
         "category": "string",
         "reason": "string",
         "section": "string",
-        "severity": "string",
+        "severity": "blocked",
         "text": "string"
       }
     ],
     "name": "string",
     "preview_markdown": "string",
     "raw_markdown": "string",
-    "schema_version": "string"
+    "schema_version": "string",
+    "status": "draft",
+    "user_id": "string",
+    "workspace_id": "string"
   }
 }
 ```
@@ -325,14 +335,17 @@ curl -X POST "$PIPELINE/wiki-schema/drafts" \
         "category": "string",
         "reason": "string",
         "section": "string",
-        "severity": "string",
+        "severity": "blocked",
         "text": "string"
       }
     ],
     "name": "string",
     "preview_markdown": "string",
     "raw_markdown": "string",
-    "schema_version": "string"
+    "schema_version": "string",
+    "status": "draft",
+    "user_id": "string",
+    "workspace_id": "string"
   }
 }
 ```
@@ -568,7 +581,10 @@ Wiki 스키마 초안을 활성화합니다.
   "name": "string",
   "preview_markdown": "string",
   "raw_markdown": "string",
-  "schema_version": "string"
+  "schema_version": "string",
+  "status": "active",
+  "user_id": "string",
+  "workspace_id": "string"
 }
 ```
 
@@ -642,7 +658,10 @@ curl -X POST "$PIPELINE/wiki-schema/<value>/activate" \
   "name": "string",
   "preview_markdown": "string",
   "raw_markdown": "string",
-  "schema_version": "string"
+  "schema_version": "string",
+  "status": "active",
+  "user_id": "string",
+  "workspace_id": "string"
 }
 ```
 

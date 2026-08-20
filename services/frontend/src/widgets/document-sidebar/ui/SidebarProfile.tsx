@@ -1,22 +1,19 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { clearSessionCache } from "@/entities/chat";
-import { fetchMe } from "@/entities/user";
-import { NotificationsPanel } from "@/features/document-notifications";
+import { fetchMe, logout } from "@/entities/user";
 import { SettingsModal } from "@/features/user-settings";
 import { clearAuth } from "@/shared/lib/auth";
 import { cx } from "@/shared/lib/classNames";
 import { profileToggleIcon, SvgIcon, userCircleIcon } from "@/shared/ui/SvgIcon";
 import styles from "./DocumentSidebar.module.css";
-import type { Project } from "@/entities/tree";
 
-/** 사이드바 하단 프로필 푸터 (Figma 747:6648): 화살표 클릭 시 Wiki 관리/설정/로그아웃 메뉴를 연다. */
-export function SidebarProfile({ projects }: { projects: Project[] }) {
+/** 사이드바 하단 프로필 푸터 (Figma 747:6648): 화살표 클릭 시 설정/로그아웃 메뉴를 연다. */
+export function SidebarProfile() {
   const router = useRouter();
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const rootRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -54,7 +51,8 @@ export function SidebarProfile({ projects }: { projects: Project[] }) {
     };
   }, [isMenuOpen]);
 
-  function handleLogout() {
+  async function handleLogout() {
+    await logout().catch(() => undefined);
     clearSessionCache();
     clearAuth();
     router.push("/login");
@@ -93,31 +91,18 @@ export function SidebarProfile({ projects }: { projects: Project[] }) {
             role="menuitem"
             onClick={() => {
               setIsMenuOpen(false);
-              setIsNotificationsOpen(true);
-            }}
-          >
-            Wiki 관리
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setIsMenuOpen(false);
               setIsSettingsOpen(true);
             }}
           >
             설정
           </button>
-          <button type="button" role="menuitem" onClick={handleLogout}>
+          <button type="button" role="menuitem" onClick={() => void handleLogout()}>
             로그아웃
           </button>
         </div>
       )}
 
       {isSettingsOpen && <SettingsModal onClose={() => setIsSettingsOpen(false)} />}
-      {isNotificationsOpen && (
-        <NotificationsPanel projects={projects} onClose={() => setIsNotificationsOpen(false)} />
-      )}
     </footer>
   );
 }

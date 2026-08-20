@@ -3,7 +3,6 @@ import { isFileItem } from "@/entities/tree";
 import type { DropTarget, TreeItem } from "@/entities/tree";
 import { InlineEditInput } from "./InlineEditInput";
 import { TreeNodeIcon } from "./TreeNodeIcon";
-import { TreeNodeStatus } from "./TreeNodeStatus";
 import type { TreeInteractionProps } from "../model/types";
 import { useTreeNodeDragDrop } from "../lib/useTreeNodeDragDrop";
 import styles from "./DocumentSidebar.module.css";
@@ -91,7 +90,6 @@ export function TreeNode({
         className={cx(
           styles["tree-row"],
           item.active && styles["is-active"],
-          selectedItemId === item.id && styles["is-selected"],
           draggedItemId === item.id && styles["is-dragging"],
           isFileDropTarget && styles["is-file-drop-target"],
           item.type === "folder" ? styles["is-folder"] : styles["is-note"],
@@ -125,13 +123,6 @@ export function TreeNode({
         ) : (
           <>
             <span>{item.label}</span>
-            <TreeNodeStatus
-              status={item.status}
-              processingState={item.processingState}
-              processingStage={item.processingStage}
-              errorMessage={item.errorMessage}
-              uploadedAt={item.uploadedAt}
-            />
             {fileTypeBadge(item) && <small className={styles["tree-type-badge"]}>{fileTypeBadge(item)}</small>}
             {isFileDropTarget && <small className={styles["tree-drop-hint"]}>여기에 추가</small>}
           </>

@@ -323,7 +323,7 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/doc
           "content": "string",
           "new_line": 10,
           "old_line": 10,
-          "type": "string"
+          "type": "CONTEXT"
         }
       ],
       "new_lines": 5,
@@ -389,7 +389,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
           "content": "string",
           "new_line": 10,
           "old_line": 10,
-          "type": "string"
+          "type": "CONTEXT"
         }
       ],
       "new_lines": 5,

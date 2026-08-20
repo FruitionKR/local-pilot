@@ -17,6 +17,7 @@ export type DocumentUploadResponse = {
 export type DocumentItemResponse = DocumentUploadResponse & {
   extracted_text_uri?: string;
   processed_at?: string;
+  processing_started_at?: string;
   updated_at?: string;
   error_message?: string;
   processing_state?: DocumentProcessingState;

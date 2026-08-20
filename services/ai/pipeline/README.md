@@ -25,14 +25,16 @@ AI_DATABASE_URL=postgresql://...@postgresql:5432/ai_db
 S3_ENDPOINT=http://minio:9000
 ```
 
-LangGraph evaluator loop를 LangSmith에서 확인하려면 아래 값도 `infra/.env`에 설정합니다.
+Web 검색을 허용한 Query의 근거와 Web 전환은 기본적으로 LLM evaluator가 검사합니다. 모든
+Query를 검사하려면 `QUERY_EVALUATOR_MODE=llm`, evaluator를 끄려면 `disabled`를 사용합니다.
+LangGraph evaluator loop를 LangSmith에서 확인하려면 아래 tracing 값도 `infra/.env`에 설정합니다.
 
 ```env
 LANGSMITH_TRACING=true
 LANGSMITH_API_KEY=lsv2_...
 LANGSMITH_PROJECT=local-pilot-dev
 LANGSMITH_ENDPOINT=https://api.smith.langchain.com
-QUERY_EVALUATOR_MODE=llm
+QUERY_EVALUATOR_MODE=web
 QUERY_EVALUATOR_MAX_ATTEMPTS=2
 ```
 

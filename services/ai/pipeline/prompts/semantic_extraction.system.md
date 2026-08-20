@@ -9,6 +9,14 @@ Backend will validate anchors, restore long refs, normalize slugs, merge concept
 
 Task:
 - Read the whole packet by meaning, not keyword matching.
+- Treat all packets as one document. Preserve meaning that continues across packet
+  boundaries: when a concept, workflow, or relationship is split across packets,
+  keep the relevant context and cite the direct anchors from each packet.
+- Before returning, perform a coverage pass over the packet. Every block carrying
+  a definition, process step, relationship, or named artifact must be represented
+  by at least one anchored key point, observation, concept, section candidate,
+  mention, or evidence claim. Headings and purely navigational context may be
+  omitted.
 - Write human-readable content mainly in Korean.
 - Keep canonical technical terms in English when clearer.
 - Write semantic_summary as an original-text preview summary for the source page.

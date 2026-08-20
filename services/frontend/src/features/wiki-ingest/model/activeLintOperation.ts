@@ -1,4 +1,9 @@
-import type { OperationLogItem } from "@/entities/operation-log";
+import type { OperationLogItem } from "../../../entities/operation-log/model/types";
+
+export function formatElapsedMinutes(startedAt: string, now = Date.now()): string {
+  const elapsedMinutes = Math.max(0, Math.floor((now - Date.parse(startedAt)) / 60_000));
+  return `${elapsedMinutes}분째 실행 중`;
+}
 
 /**
  * lint 진행 라벨.
@@ -6,8 +11,11 @@ import type { OperationLogItem } from "@/entities/operation-log";
  */
 export function formatLintProgressLabel(
   log: OperationLogItem | null,
-  isRequested: boolean
+  isRequested: boolean,
+  now = Date.now()
 ): string | null {
   if (!log && !isRequested) return null;
-  return "위키 다듬기 진행 중";
+  return log
+    ? `위키 다듬기 · ${formatElapsedMinutes(log.created_at, now)}`
+    : "위키 다듬기 진행 중";
 }

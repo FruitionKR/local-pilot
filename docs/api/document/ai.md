@@ -2,7 +2,8 @@
 
 [API 문서](../README.md) / [document-svc](README.md)
 
-사용자용 AI 모델 설정과 AI 작업·변환·ingest API다.
+사용자용 AI 모델 설정과 AI 작업·변환·ingest Gateway API다. 모델 설정은 access-svc,
+변환은 converter, ingest·Wiki 복구는 Kafka를 통해 각 소유 서비스에 전달한다.
 
 - API 수: 9
 
@@ -158,9 +159,11 @@ ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와
 
 - HTTP `200`: 조회 성공
 - Content-Type: `*/*` (`SettingsResponse`)
+- `can_update`: 호출자가 이 설정을 변경할 수 있는지(워크스페이스 OWNER 여부). MEMBER는 `false`를 받고 UI는 읽기 전용으로 표시한다.
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -192,7 +195,6 @@ ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와
 
 - 인증된 사용자만 호출할 수 있다.
 - path의 `workspace_id`에 대한 활성 멤버십을 검증한다.
-- 워크스페이스 OWNER 권한이 필요하다.
 
 #### 9. 예시 요청/응답
 
@@ -203,6 +205,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -273,6 +276,7 @@ ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있�
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -325,6 +329,7 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 ```json
 {
+  "can_update": true,
   "ingest_lint": {
     "model": "gpt-5-nano",
     "provider": "openai"
@@ -346,7 +351,7 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 최신순으로 반환합니다. 로그 테이블만 읽으며 diff를 계산하지 않습니다. |
+| 목적 | 최신순으로 반환합니다. 일반 목록에서는 진행 중 상태를 제외하고, `status=processing` 명시 조회는 활성 작업 탐지에 사용합니다. 로그 테이블만 읽으며 diff를 계산하지 않습니다. |
 | 입력 | **Path** — `workspace_id`: `string`<br>**Query** — `type`(선택): `string`, `status`(선택): `string`, `cursor`(선택): `string`, `size`(선택): `integer` |
 | 출력 | `200` 조회 성공 — `OperationLogListResponse` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>페이지네이션: `cursor`, `size`<br>필터링: `type`, `status`, `cursor`, `size`<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
@@ -364,7 +369,9 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 #### 2. 목적
 
-최신순으로 반환합니다. 문서 편집은 실제 변경에 성공한 작업만 포함하며, 로그 테이블만 읽고 diff를 계산하지 않습니다.
+최신순으로 반환합니다. 문서 편집은 실제 변경에 성공한 작업만 포함합니다. `status`를 생략한 일반 로그 목록은 `processing`·`applying`·`notify_pending`·`rebuilding` 작업을 제외하며, `status=processing`을 명시하면 활성 Ingest·Lint 탐지에 사용할 수 있습니다. 필터는 페이지네이션 전에 DB query에서 적용하고, 로그 테이블만 읽으며 diff를 계산하지 않습니다.
+
+`target_display_name`은 작업 시작 시점 snapshot이다. Ingest 로그 제목과 원본 문서 표시는 현재 문서 이름을 다시 조회하지 않고 이 값을 사용한다.
 
 #### 3. Auth 필요 여부
 
@@ -400,7 +407,8 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
       "restored_from": "string",
       "status": "succeeded",
       "summary": "string",
-      "target_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
+      "target_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+      "target_display_name": "설계문서"
     }
   ],
   "next_cursor": "string"
@@ -451,7 +459,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
       "restored_from": "string",
       "status": "succeeded",
       "summary": "string",
-      "target_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
+      "target_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+      "target_display_name": "설계문서"
     }
   ],
   "next_cursor": "string"
@@ -492,6 +501,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 
 그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다.
 
+`changes[].resource_display_name`은 변경 시점 snapshot이다. Lint는 workspace 작업 operation 하나를 유지하면서 실제로 수정한 Wiki 페이지를 `resource_type=wiki_page` child entry로 반환하며, 이후 페이지 rename/delete에도 이 이름은 유지된다.
+
 #### 3. Auth 필요 여부
 
 - 필요
@@ -530,7 +541,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
               "content": "string",
               "new_line": 10,
               "old_line": 10,
-              "type": "string"
+              "type": "CONTEXT"
             }
           ],
           "new_lines": 5,
@@ -540,7 +551,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
         }
       ],
       "id": 1,
-      "resource_id": "string"
+      "resource_id": "string",
+      "resource_display_name": "Wiki 페이지 제목"
     }
   ],
   "completed_at": "2026-08-14T10:00:00Z",
@@ -571,7 +583,9 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
   },
   "restored_from": "string",
   "status": "succeeded",
-  "summary": "string"
+  "summary": "string",
+  "target_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+  "target_display_name": "설계문서"
 }
 ```
 
@@ -626,7 +640,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
               "content": "string",
               "new_line": 10,
               "old_line": 10,
-              "type": "string"
+              "type": "CONTEXT"
             }
           ],
           "new_lines": 5,
@@ -636,7 +650,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
         }
       ],
       "id": 1,
-      "resource_id": "string"
+      "resource_id": "string",
+      "resource_display_name": "Wiki 페이지 제목"
     }
   ],
   "completed_at": "2026-08-14T10:00:00Z",
@@ -667,7 +682,9 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
   },
   "restored_from": "string",
   "status": "succeeded",
-  "summary": "string"
+  "summary": "string",
+  "target_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+  "target_display_name": "설계문서"
 }
 ```
 
@@ -728,6 +745,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 #### 5. Response body
 
 - HTTP `200`: 문서 편집 복구 즉시 완료
+- HTTP `202`: Wiki 복구 작업이 대기열에 등록됨
 - Content-Type: `*/*` (`RestoreExecuteResponse`)
 
 ```json

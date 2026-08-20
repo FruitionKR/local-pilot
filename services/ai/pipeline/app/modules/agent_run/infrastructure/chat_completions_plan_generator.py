@@ -49,8 +49,10 @@ class ChatCompletionsPlanGenerator:
             else ALLOWED_PLAN_TOOLS.intersection(allowed_tools)
         )
         artifact_tools = {artifact.purpose for artifact in content_artifacts}
-        if artifact_tools:
+        if allowed_tools is None and artifact_tools:
             allowed_plan_tools = allowed_plan_tools.intersection(artifact_tools)
+        elif allowed_tools is not None:
+            allowed_plan_tools -= {"create_document", "apply_document_edit"} - artifact_tools
         payload = {
             "plan_id": plan_id,
             "instruction": instruction,
@@ -189,6 +191,7 @@ def _validate_plan_against_hierarchy(
     content_artifacts: tuple[ContentArtifactReference, ...],
 ) -> None:
     items = {str(item.get("id")): item for item in hierarchy if item.get("id") is not None}
+    operations = {operation.id: operation for operation in plan.operations}
     operation_ids = {operation.id for operation in plan.operations}
     required_arguments = {
         "create_folder": {"name", "parent_folder_id"},
@@ -230,7 +233,12 @@ def _validate_plan_against_hierarchy(
             id_key = "folder_id" if operation.target_type == "folder" else "document_id"
             if operation.arguments.get(id_key) != operation.target_id:
                 raise ValueError("Agent plan target id must match the tool arguments.")
-            if operation.arguments.get("base_version") != operation.base_version:
+            argument_base_version = operation.arguments.get("base_version")
+            if argument_base_version != operation.base_version and not _valid_base_version_reference(
+                operation,
+                argument_base_version,
+                operations,
+            ):
                 raise ValueError("Agent plan base_version must match the tool arguments.")
         destination_key = {
             "create_folder": "parent_folder_id",
@@ -240,6 +248,15 @@ def _validate_plan_against_hierarchy(
         }.get(operation.tool_name)
         if destination_key:
             destination = operation.arguments.get(destination_key)
+            if (
+                operation.tool_name in {"create_folder", "create_document"}
+                and isinstance(destination, dict)
+                and (
+                    operation.destination_parent_id is not None
+                    or not _valid_create_destination_reference(operation, destination, operations)
+                )
+            ):
+                raise ValueError("Agent plan destination must match the tool arguments.")
             if not isinstance(destination, dict) and destination != operation.destination_parent_id:
                 raise ValueError("Agent plan destination must match the tool arguments.")
             if isinstance(destination, str):
@@ -314,3 +331,36 @@ def _operation_references(value: object) -> set[str]:
     if isinstance(value, list):
         return set().union(*(_operation_references(item) for item in value), set())
     return set()
+
+
+def _valid_create_destination_reference(
+    operation: AgentPlanOperation,
+    value: dict[str, object],
+    operations: dict[str, AgentPlanOperation],
+) -> bool:
+    if set(value) != {"$operation_result", "field"} or value.get("field") != "id":
+        return False
+    dependency_id = value.get("$operation_result")
+    dependency = operations.get(dependency_id) if isinstance(dependency_id, str) else None
+    return (
+        dependency is not None
+        and dependency.tool_name == "create_folder"
+        and dependency.id in operation.depends_on
+    )
+
+
+def _valid_base_version_reference(
+    operation: AgentPlanOperation,
+    value: object,
+    operations: dict[str, AgentPlanOperation],
+) -> bool:
+    if not isinstance(value, dict) or set(value) != {"$operation_result", "field"}:
+        return False
+    dependency_id = value.get("$operation_result")
+    dependency = operations.get(dependency_id) if isinstance(dependency_id, str) else None
+    return (
+        value.get("field") == "current_version"
+        and dependency is not None
+        and dependency.id in operation.depends_on
+        and dependency.target_id == operation.target_id
+    )

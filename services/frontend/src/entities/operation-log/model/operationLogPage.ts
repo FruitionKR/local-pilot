@@ -61,6 +61,16 @@ export function appendLogPage(
   return added.length ? [...previous, ...added] : previous;
 }
 
+/** 최신 첫 페이지를 갱신하되 사용자가 이미 불러온 이전 페이지는 뒤에 보존한다. */
+export function mergeRefreshedLogPage(
+  previous: OperationLogItem[],
+  refreshed: OperationLogItem[]
+): OperationLogItem[] {
+  const refreshedIds = new Set(refreshed.map((item) => item.operation_id));
+  const retained = previous.filter((item) => !refreshedIds.has(item.operation_id));
+  return [...refreshed, ...retained];
+}
+
 /**
  * 목록에서 상세로 띄울 작업 하나를 고른다.
  * 이미 고른 작업이 목록에 남아 있으면 유지하고, 없으면 가장 최근 작업을 고른다.

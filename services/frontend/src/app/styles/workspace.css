@@ -140,3 +140,51 @@
 .workspace.is-sidebar-collapsed .blank-view {
   left: 0;
 }
+
+/* 콘텐츠 영역 상단 배너. 좌우 inset은 사이드바 접힘·agent-panel 개폐 상태를 따라간다
+   (agent-panel 폭 360/330/300은 agent-panel-shell.css와 동일). */
+.workspace-api-error {
+  position: fixed;
+  top: 16px;
+  left: calc(var(--sidebar-width, 320px) + 16px);
+  right: calc(360px + 16px);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  color: #ffd0cc;
+  background: #321917;
+  border: 1px solid #7a3530;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.workspace.is-sidebar-collapsed .workspace-api-error {
+  left: 16px;
+}
+
+.workspace.is-agent-collapsed .workspace-api-error {
+  right: 16px;
+}
+
+@media (max-width: 1300px) {
+  .workspace-api-error {
+    right: calc(330px + 16px);
+  }
+}
+
+@media (max-width: 1080px) {
+  .workspace-api-error {
+    right: calc(300px + 16px);
+  }
+}
+
+.workspace-api-error button {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  color: #fff;
+  background: #71302c;
+  border-radius: 6px;
+}

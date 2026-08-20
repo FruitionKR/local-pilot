@@ -10,12 +10,16 @@
     "test:markdown": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/markdown*.test.mjs",
     "test:user-preferences": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/userPreferences.test.mjs",
     "test:ai-model": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/aiModelSelection.test.mjs",
+    "test:chat-thread": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/chatThreadMessages.test.mjs",
     "test:active-wiki-work": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/activeWikiWork.test.mjs",
     "test:wiki-reflect": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/wikiReflectState.test.mjs",
     "test:operation-log-query": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/operationLogQuery.test.mjs",
     "test:operation-log-page": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/operationLogPage.test.mjs",
     "test:document-sidebar": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/documentSidebar.test.mjs",
-    "test:workspace-layout": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/workspaceLayout.test.mjs"
+    "test:workspace-layout": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/workspaceLayout.test.mjs",
+    "test:failed-documents-notice": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/failedDocumentsNotice.test.mjs",
+    "test:errors": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/errors.test.mjs",
+    "test:auth-storage": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/authStorage.test.mjs"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.1",
