@@ -68,6 +68,7 @@ cd services/ai/pipeline
 | `scripts/back-up.sh` / `back-down.sh` | 공용 인프라와 호스트 백엔드를 시작하거나 백엔드만 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
 | `scripts/back-test.sh` | Java 21을 찾아 백엔드 Gradle 테스트를 실행한다. 인자가 없으면 CI와 같은 세 모듈 테스트를 실행한다. | 서비스를 시작하거나 종료하지 않는다. |
 | `scripts/ai-up.sh` / `ai-down.sh` | 백엔드 기동 후 AI image 하나로 Pipeline API와 워커 전체를 시작하거나 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
+| `scripts/ai-e2e.sh` | 배포용 Compose 조합을 빌드하고 converter·ingest·query·agent·lint를 Gemini로 실제 실행한다. | 전체 컨테이너와 DB 볼륨을 유지해 결과를 재확인할 수 있다. |
 
 전체 로컬 환경을 시작한다.
 
@@ -156,6 +157,36 @@ PDF→Markdown 변환기(markitdown, :8010).
 ```sh
 docker compose -f infra/compose.converter.yml up -d
 curl http://localhost:8010/health
+```
+
+실제 PDF를 Gemini로 변환하는 Docker E2E는 공용 스크립트로 실행한다. 스크립트는
+`infra/.env`의 `GEMINI_API_KEY`를 사용해 이미지를 다시 빌드하고, health 확인 후
+Markdown과 복원 summary를 저장소의 `.tmp/converter-e2e/`에 저장한다. 출력 경로를
+명시하면 그 위치를 사용한다. 별도 worktree의 env 파일을
+사용하려면 `CONVERTER_ENV_FILE`을 지정한다.
+
+```sh
+./scripts/converter-e2e.sh /path/to/input.pdf [/path/to/output.md]
+```
+
+converter뿐 아니라 컨테이너형 백엔드와 모든 AI worker를 함께 검증하려면 통합 E2E를 실행한다.
+이 명령은 로컬 고정 이메일 인증번호로 격리된 계정·워크스페이스를 생성하고 실제
+스마트팜 문서 4개를 누적 ingest한 뒤 query·agent·lint 완료까지 기다리고 promotion 결과도
+기록한다. 결과는 `.tmp/ai-e2e/<실행 ID>/`에 남으며
+기존 개발 DB를 마이그레이션하거나 지우지 않도록 `fruition-ai-e2e` Compose project의
+별도 볼륨을 쓴다. 고정 컨테이너 이름 충돌을 막기 위해 기존 개발 컨테이너는 내리지만
+그 볼륨은 보존하며, E2E 컨테이너와 볼륨도 후속 점검을 위해 유지한다.
+
+```sh
+./scripts/ai-e2e.sh /path/to/input.pdf
+```
+
+다른 env 또는 결과 디렉터리를 쓰려면 `AI_E2E_ENV_FILE`, `AI_E2E_OUTPUT_DIR`을 지정한다.
+
+검증 후 converter를 종료한다.
+
+```sh
+docker compose --env-file infra/.env -f infra/compose.converter.yml down
 ```
 
 pipeline-api(:8000)와 워커(ingest/query/agent/maintenance task worker, edit-event-consumer). 백엔드 기동 후 실행(스키마 순서 보장).
