@@ -403,6 +403,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             "1. [item]\n"
             "| 담당자 | 기한 |\n"
             "| --- | --- |\n"
+            "|  |  |\n"
             "```",
             instructions,
         )
@@ -1432,7 +1433,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(payload["reference_mode"], "fixed-template")
         self.assertEqual(
             reference["markdown_structure"],
-            "# 회의록\n- [item]\n1. [item]\n| 담당자 | 기한 |\n| --- | --- |",
+            "# 회의록\n- [item]\n1. [item]\n| 담당자 | 기한 |\n| --- | --- |\n|  |  |",
         )
         self.assertNotIn("민감한 프로젝트 이름", client.user_prompt)
         self.assertNotIn("고객 이름과 계약 금액", client.user_prompt)
