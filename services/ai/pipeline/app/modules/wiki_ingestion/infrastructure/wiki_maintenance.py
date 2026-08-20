@@ -15,7 +15,10 @@ from app.modules.wiki_ingestion.application.models import (
     WikiMaintenanceCommand,
     WikiMaintenanceConfigurationError,
 )
-from app.modules.wiki_ingestion.application.ports import WikiMaintenancePort
+from app.modules.wiki_ingestion.application.ports import (
+    WikiEmbeddingJobPort,
+    WikiMaintenancePort,
+)
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 from app.modules.wiki_ingestion.infrastructure.object_storage import delete_object
 from app.modules.wiki_ingestion.infrastructure.promotion_concept_page import (
@@ -25,6 +28,9 @@ from app.modules.wiki_ingestion.infrastructure.promotion_concept_page import (
 
 
 class PostgresWikiMaintenance(WikiMaintenancePort):
+    def __init__(self, embedding_job: WikiEmbeddingJobPort | None = None) -> None:
+        self._embedding_job = embedding_job
+
     def lint(self, command: WikiMaintenanceCommand) -> dict[str, Any]:
         if not command.dry_run and not str(command.operation_id or "").strip():
             raise WikiMaintenanceConfigurationError(
@@ -92,6 +98,16 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
                     for key in written_object_keys:
                         delete_object(key)
                     raise
+        page_ids = list(
+            dict.fromkeys(
+                str(promotion["page_id"])
+                for promotion_type in ("materialized_promotions", "merged_promotions")
+                for promotion in result.get(promotion_type, [])
+                if isinstance(promotion, dict) and promotion.get("page_id")
+            )
+        )
+        if not command.dry_run and self._embedding_job is not None and page_ids:
+            self._embedding_job.start(str(command.operation_id), page_ids)
         return result
 
     def _build_promotion_page_generator(

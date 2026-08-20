@@ -75,4 +75,4 @@ def get_pipeline_log_reader() -> PipelineLogReaderPort:
 
 @lru_cache(maxsize=1)
 def get_wiki_maintenance() -> WikiMaintenancePort:
-    return PostgresWikiMaintenance()
+    return PostgresWikiMaintenance(ThreadedWikiEmbeddingJob(logger))
