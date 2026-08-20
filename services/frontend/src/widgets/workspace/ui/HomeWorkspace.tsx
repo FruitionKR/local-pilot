@@ -309,6 +309,7 @@ export function HomeWorkspace() {
         editing={projectTree.editing}
         contextMenu={projectTree.contextMenu}
         convertContextTarget={projectTree.convertContextTarget}
+        canRenameContextTarget={projectTree.canRenameContextTarget}
         uploadInputRef={upload.uploadInputRef}
         activeView={activeView}
         graphActions={{

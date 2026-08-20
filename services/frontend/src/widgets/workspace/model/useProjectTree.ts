@@ -165,7 +165,8 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
       setEditing({ projectId: contextMenu.projectId, itemId: null, label: project.title });
     } else {
       const item = findTreeItem(project.items, contextMenu.itemId);
-      if (!item || item.generated) return;
+      // PDF 원본은 편집 불가 문서라 이름 변경을 허용하지 않는다.
+      if (!item || item.generated || item.mimeType === "application/pdf") return;
       setEditing({ projectId: contextMenu.projectId, itemId: contextMenu.itemId, label: item.label });
     }
     setContextMenu(null);
@@ -188,6 +189,9 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
   const contextMenuItem = contextMenu?.itemId && contextMenuProject
     ? findTreeItem(contextMenuProject.items, contextMenu.itemId)
     : null;
+  // PDF 원본은 편집 불가 문서라 컨텍스트 메뉴에서 이름 변경을 숨긴다.
+  const canRenameContextTarget = contextMenuItem?.mimeType !== "application/pdf";
+
   const convertContextTarget = contextMenuItem?.documentId && contextMenuItem.mimeType === "application/pdf"
     ? {
       // 원본이 아직 처리 중이면 변환을 시작할 수 없어 비활성화한다.
@@ -358,6 +362,7 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     openProjectMenu,
     renameContextTarget,
     takeMarkdownTargetFromContext,
+    canRenameContextTarget,
     convertContextTarget,
     convertContextTargetToMarkdown,
     deleteContextTarget,

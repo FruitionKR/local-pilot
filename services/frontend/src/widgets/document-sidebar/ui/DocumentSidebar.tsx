@@ -25,6 +25,7 @@ export function DocumentSidebar({
   editing,
   contextMenu,
   convertContextTarget,
+  canRenameContextTarget,
   uploadInputRef,
   activeView,
   graphActions,
@@ -61,6 +62,8 @@ export function DocumentSidebar({
   editing: EditingState | null;
   contextMenu: ContextMenuState | null;
   convertContextTarget: { isDisabled: boolean } | null;
+  /** PDF 원본은 편집 불가 문서라 이름 변경 메뉴를 숨긴다. */
+  canRenameContextTarget: boolean;
   uploadInputRef: RefObject<HTMLInputElement | null>;
   activeView: RailView;
   /** 그래프 뷰에서 문서 트리 대신 보여줄 위키 액션. */
@@ -176,6 +179,7 @@ export function DocumentSidebar({
                 contextMenu={contextMenu}
                 canCreateProject={canCreateProjectFromView(activeView)}
                 convertTarget={convertContextTarget}
+                canRenameTarget={canRenameContextTarget}
                 onRenameContextTarget={onRenameContextTarget}
                 onAddProject={onAddProject}
                 onAddMarkdownFromContext={onAddMarkdownFromContext}

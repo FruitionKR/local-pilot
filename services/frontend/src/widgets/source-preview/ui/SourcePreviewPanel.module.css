@@ -177,6 +177,19 @@
   padding-top: 80px;
 }
 
+/* PDF는 편집 chrome 없이 뷰어가 콘텐츠 영역 전체를 채운다. */
+.source-preview-document.is-pdf {
+  padding-top: 0;
+  align-items: stretch;
+}
+
+.source-preview-pdf-frame {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 0;
+}
+
 .source-preview-heading {
   width: 100%;
   flex: 0 0 auto;

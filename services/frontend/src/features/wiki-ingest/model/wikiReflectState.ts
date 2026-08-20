@@ -50,6 +50,8 @@ export function selectActiveIngestDocuments(
 }
 
 export function isWikiReflectEligible(document: DocumentItemResponse): boolean {
+  // PDF 원본은 편집 불가 문서라 ingest 대상에서 제외한다.
+  if (document.mime_type === "application/pdf") return false;
   const state = getWikiReflectState(document);
   return state !== "processing" && state !== "up-to-date";
 }

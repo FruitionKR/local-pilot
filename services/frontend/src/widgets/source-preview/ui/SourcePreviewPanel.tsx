@@ -102,6 +102,8 @@ export function SourcePreviewPanel({
   const selectedBlockHighlights = useMemo(() => sourceBlockHighlights ?? [], [sourceBlockHighlights]);
   const isMarkdownFile = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
   const isPdfOrOther = !pageId && !!documentId && !isMarkdownFile;
+  // PDF는 편집 불가 문서라 제목·본문 chrome 없이 뷰어가 콘텐츠 영역 전체를 채운다.
+  const isPdfFile = isPdfOrOther && /\.pdf$/i.test(title);
   const visibleTitle = isMarkdownFile ? getMarkdownDocumentTitle(title) : title;
   const saveStatusLabel = SAVE_STATUS_LABELS[noteSaveStatus];
   const editableNote = useMemo(() => {
@@ -350,6 +352,8 @@ export function SourcePreviewPanel({
               <SvgIcon src={sideboxIcon} className={styles["source-preview-tab-icon"]} />
             </button>
           )}
+          {/* PDF 원본은 ingest·편집 대상이 아니라 문서 옵션(위키에 반영 등)을 숨긴다. */}
+          {!isPdfFile && (
           <div className={styles["source-preview-options"]} ref={optionsRef}>
             <button
               type="button"
@@ -416,10 +420,24 @@ export function SourcePreviewPanel({
               </div>
             )}
           </div>
+          )}
           </div>
         </div>
       </header>
-      <div className={styles["source-preview-document"]}>
+      <div className={cx(styles["source-preview-document"], isPdfFile && styles["is-pdf"])}>
+        {isPdfFile ? (
+          <>
+            {isLoading && <p>문서를 불러오는 중입니다.</p>}
+            {errorMessage && <p>{errorMessage}</p>}
+            {!isLoading && !errorMessage && rawDocumentUrl && (
+              <iframe
+                src={rawDocumentUrl}
+                title={title}
+                className={styles["source-preview-pdf-frame"]}
+              />
+            )}
+          </>
+        ) : (
         <div className={styles["source-preview-content"]}>
         <header className={styles["source-preview-heading"]}>
           {isMarkdownFile ? (
@@ -512,6 +530,7 @@ export function SourcePreviewPanel({
         )}
         {!pageId && !documentId && <p>연결된 Wiki page가 없는 항목입니다.</p>}
         </div>
+        )}
       </div>
       {isHistoryOpen && isMarkdownFile && documentId && (
         <HistoryPanel
