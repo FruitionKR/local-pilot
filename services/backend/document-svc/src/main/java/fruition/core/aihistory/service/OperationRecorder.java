@@ -57,7 +57,8 @@ public class OperationRecorder {
 
     /** PostgreSQL version link와 같은 트랜잭션에서 AI 편집 완료 감사와 변경분을 기록한다. */
     public void recordDocumentEdit(String operationId, String workspaceId, String userId,
-                                   String documentId, long beforeVersion, long afterVersion,
+                                   String documentId, String resourceDisplayName,
+                                   long beforeVersion, long afterVersion,
                                    String beforeMarkdown, String afterMarkdown, Instant now) {
         OperationLog operation = operationLogRepository.findById(operationId)
                 .orElseGet(() -> OperationLog.completed(
@@ -75,7 +76,7 @@ public class OperationRecorder {
                     documentId, beforeVersion, beforeMarkdown, afterVersion, afterMarkdown);
             operationChangeRepository.save(new OperationChange(
                     operationId, ResourceType.document, documentId,
-                    beforeVersion, afterVersion, ChangeType.updated,
+                    resourceDisplayName, beforeVersion, afterVersion, ChangeType.updated,
                     null, lines.additions(), lines.deletions()));
         }
     }

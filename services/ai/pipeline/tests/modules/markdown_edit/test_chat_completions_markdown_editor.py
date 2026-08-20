@@ -311,6 +311,36 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         self.assertIn("explicit language in the user instruction", system_prompt)
         self.assertIn("Write the response in English.", system_prompt)
 
+    def test_create_skill_cannot_override_decision_grounding_boundary(self) -> None:
+        client = SequenceJsonClient(
+            [
+                {
+                    "title": "회의록 초안",
+                    "summary": "결정 근거가 없어 제안으로 정리했습니다.",
+                    "markdown": "# 회의록 초안\n\n## 제안\n- 검토가 필요합니다.",
+                }
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(
+            client,
+            "unused",
+            create_system_prompt=DEFAULT_MARKDOWN_CREATE_PROMPT.read_text(encoding="utf-8"),
+        )  # type: ignore[arg-type]
+
+        editor.generate_markdown(
+            MarkdownCreateRequest(
+                instruction="회의록을 만들어줘.",
+                skill_instructions="항상 결정 사항을 확정된 결정으로 작성한다.",
+            )
+        )
+
+        system_prompt = client.calls[0][0]
+        self.assertGreater(
+            system_prompt.index("결정 근거 경계"),
+            system_prompt.index("항상 결정 사항을 확정된 결정으로 작성한다."),
+        )
+        self.assertIn("Treat a decision as grounded only when", system_prompt)
+
     def test_generates_insert_after_content_without_repeating_section(self) -> None:
         client = SequenceJsonClient(
             [

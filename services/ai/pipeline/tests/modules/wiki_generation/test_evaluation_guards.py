@@ -207,6 +207,33 @@ class EvaluationGuardsTest(unittest.TestCase):
 
         self.assertTrue(evaluation["retry_recommended"])
 
+    def test_accepts_short_complete_korean_observation_summary(self) -> None:
+        evaluation = {
+            "passed": True,
+            "retry_recommended": False,
+            "scores": {"overall": 0.95},
+            "issues": [],
+            "retry_feedback": "",
+        }
+
+        apply_generation_evaluation_guards(
+            evaluation,
+            {
+                "observations": [
+                    {
+                        "observation_id": "O001",
+                        "title": "승인 상태",
+                        "summary": "승인 대기",
+                        "claims": [],
+                        "anchor_reference_ids": ["B0001"],
+                    }
+                ]
+            },
+            ["B0001"],
+        )
+
+        self.assertEqual(evaluation["issues"], [])
+
     def test_repairs_broken_and_duplicate_observations(self) -> None:
         normalized = {
             "observations": [

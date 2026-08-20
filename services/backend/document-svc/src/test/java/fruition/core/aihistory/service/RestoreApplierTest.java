@@ -1,5 +1,6 @@
 package fruition.core.aihistory.service;
 
+import fruition.core.aihistory.domain.OperationChange;
 import fruition.core.aihistory.domain.OperationLog;
 import fruition.core.aihistory.dto.PageRestorePlan;
 import fruition.core.aihistory.dto.RestorePlan;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
@@ -78,6 +80,9 @@ class RestoreApplierTest {
         applier.apply(restore, plan, Set.of(), expected, T);
 
         verify(operationLogRepository).save(restore);
+        ArgumentCaptor<OperationChange> captor = ArgumentCaptor.forClass(OperationChange.class);
+        verify(operationChangeRepository).save(captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getResourceDisplayName()).isEqualTo("제목");
     }
 
     @Test

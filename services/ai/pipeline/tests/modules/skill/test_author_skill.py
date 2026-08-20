@@ -373,8 +373,9 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             FixedReferenceReader(
                 "# 8월 제품 회의\n\n"
                 "## 참석자\n\n"
-                "- 재형\n"
-                "- 철수\n\n"
+                "- [x] 재형\n"
+                "- [X] 철수\n\n"
+                "- [ ] 미정\n\n"
                 "## 안건\n\n"
                 "1. 로그인 속도 개선\n\n"
                 "| 담당자 | 기한 |\n"
@@ -397,12 +398,14 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             "```markdown\n"
             "# 8월 제품 회의\n"
             "## 참석자\n"
-            "- [item]\n"
-            "- [item]\n"
+            "- [ ] [item]\n"
+            "- [ ] [item]\n"
+            "- [ ] [item]\n"
             "## 안건\n"
             "1. [item]\n"
             "| 담당자 | 기한 |\n"
             "| --- | --- |\n"
+            "|  |  |\n"
             "```",
             instructions,
         )
@@ -1432,7 +1435,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(payload["reference_mode"], "fixed-template")
         self.assertEqual(
             reference["markdown_structure"],
-            "# 회의록\n- [item]\n1. [item]\n| 담당자 | 기한 |\n| --- | --- |",
+            "# 회의록\n- [item]\n1. [item]\n| 담당자 | 기한 |\n| --- | --- |\n|  |  |",
         )
         self.assertNotIn("민감한 프로젝트 이름", client.user_prompt)
         self.assertNotIn("고객 이름과 계약 금액", client.user_prompt)

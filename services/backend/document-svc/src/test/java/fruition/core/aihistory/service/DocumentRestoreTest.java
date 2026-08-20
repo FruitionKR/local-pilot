@@ -71,7 +71,7 @@ class DocumentRestoreTest {
         planner = new DocumentRestorePlanner(operationChangeRepository, documentRepository,
                 editStateInitializer, editStateRepository);
         applier = new DocumentRestoreApplier(
-                documentService, contentVersionRepository, operationChangeRepository);
+                documentService, contentVersionRepository, documentRepository, operationChangeRepository);
     }
 
     @Nested
@@ -186,6 +186,7 @@ class DocumentRestoreTest {
         @Test
         @DisplayName("restored 변경내역을 남긴다")
         void recordsRestoredChange() {
+            givenDocument(99, 6);
             givenVersion(5, "# 원래 문단");
             when(documentService.saveContentInCurrentTransaction(any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn(new DocumentContentSaveResponse(DOCUMENT, 7, "sha256:old", NOW, true));
@@ -197,6 +198,7 @@ class DocumentRestoreTest {
             OperationChange change = captor.getValue();
             assertThat(change.getResourceType()).isEqualTo(ResourceType.document);
             assertThat(change.getChangeType()).isEqualTo(ChangeType.restored);
+            assertThat(change.getResourceDisplayName()).isEqualTo("문서 이름");
             assertThat(change.getBeforeRevision()).isEqualTo(6L);
             assertThat(change.getAfterRevision()).isEqualTo(7L);
         }
@@ -252,14 +254,22 @@ class DocumentRestoreTest {
     }
 
     private void givenDocument(long lifecycleVersion, long editRevision) {
-        Document document = mock(Document.class);
+        Document document = document();
         when(document.getCurrentVersion()).thenReturn(lifecycleVersion);
         when(document.getDocumentRole()).thenReturn(DocumentRole.EDITABLE);
         when(document.getSourceUri()).thenReturn("sources/documents/" + DOCUMENT + "/original");
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(DOCUMENT, WORKSPACE))
                 .thenReturn(Optional.of(document));
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(DOCUMENT, WORKSPACE))
+                .thenReturn(Optional.of(document));
         when(editStateRepository.findById(DOCUMENT)).thenReturn(Optional.of(
                 new DocumentEditState(DOCUMENT, "# 현재 문단", "sha256:current", editRevision)));
+    }
+
+    private Document document() {
+        Document document = mock(Document.class);
+        when(document.getDisplayName()).thenReturn("문서 이름");
+        return document;
     }
 
     private void givenVersion(long version, String markdown) {

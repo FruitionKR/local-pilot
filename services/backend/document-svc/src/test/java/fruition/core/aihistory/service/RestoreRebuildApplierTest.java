@@ -63,9 +63,13 @@ class RestoreRebuildApplierTest {
     void setUp() {
         applier = new RestoreRebuildApplier(operationLogRepository, operationChangeRepository,
                 wikiStateRequester, versionRepository, lineCounter, new ObjectMapper());
-        when(wikiStateRequester.lookup(List.of(PAGE_ID), WORKSPACE_ID)).thenReturn(List.of(
-                new PipelineWikiStateRequester.WikiPageSnapshot(
-                        PAGE_ID, "concept", "제목", "title", WORKSPACE_ID, "active")));
+        when(wikiStateRequester.lookup(any(), anyString())).thenAnswer(invocation -> {
+            List<String> pageIds = invocation.getArgument(0);
+            return pageIds.stream()
+                    .map(pageId -> new PipelineWikiStateRequester.WikiPageSnapshot(
+                            pageId, "concept", "제목", "title", WORKSPACE_ID, "active"))
+                    .toList();
+        });
         when(lineCounter.count(anyString(), any(), any(), org.mockito.ArgumentMatchers.anyLong(), anyString()))
                 .thenReturn(new LineCounter.LineCount(null, null));
     }
@@ -95,6 +99,7 @@ class RestoreRebuildApplierTest {
         ArgumentCaptor<OperationChange> captor = ArgumentCaptor.forClass(OperationChange.class);
         verify(operationChangeRepository).save(captor.capture());
         assertThat(captor.getValue().getChangeType()).isEqualTo(ChangeType.rebuilt);
+        assertThat(captor.getValue().getResourceDisplayName()).isEqualTo("제목");
         assertThat(captor.getValue().getBeforeRevision()).isEqualTo(4L);
         assertThat(captor.getValue().getAfterRevision()).isEqualTo(5L);
     }
@@ -104,6 +109,8 @@ class RestoreRebuildApplierTest {
     void recordsFailureWithoutTouchingContent() {
         OperationLog operation = givenOperation(manifest(PageRestorePlan.rebuild(PAGE_ID, keptOf(2))));
         givenPreviousRevision(4, "sha256:old");
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID)).thenReturn(List.of(
+                change(ResourceType.wiki_page, PAGE_ID, "제목", ChangeType.delegated)));
         OperationResultRequest request = new OperationResultRequest(
                 OPERATION_ID, "restore", "partially_succeeded", WORKSPACE_ID, USER_ID, "doc_A",
                 "재조립 실패 1건", List.of(),
@@ -116,6 +123,7 @@ class RestoreRebuildApplierTest {
         assertThat(captor.getValue().getChangeType()).isEqualTo(ChangeType.rebuild_failed);
         assertThat(captor.getValue().getChangeSummary()).isEqualTo("contribution_missing");
         assertThat(captor.getValue().getAfterRevision()).isNull();
+        assertThat(captor.getValue().getResourceDisplayName()).isEqualTo("제목");
         verify(versionRepository, never()).save(any());
         assertThat(response.status()).isEqualTo("partially_succeeded");
         assertThat(operation.getStatus()).isEqualTo(OperationStatus.partially_succeeded);
@@ -231,6 +239,22 @@ class RestoreRebuildApplierTest {
                         org.assertj.core.groups.Tuple.tuple(ResourceType.relation_link, ChangeType.link_removed),
                         org.assertj.core.groups.Tuple.tuple(ResourceType.relation_link, ChangeType.link_restored));
         assertThat(captor.getAllValues().get(1).getResourceId()).isEqualTo("C3|related|C9");
+    }
+
+    @Test
+    @DisplayName("callback만으로 삭제를 기록해도 표시 이름을 보존한다")
+    void recordsDisplayNameForCallbackOnlyDeletion() {
+        givenOperation(manifest(PageRestorePlan.delete(PAGE_ID)));
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "lint_restore", "succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                null, List.of(), List.of(), List.of(PAGE_ID), null, List.of());
+
+        applier.apply(OPERATION_ID, request, List.of(), "hash", NOW);
+
+        ArgumentCaptor<OperationChange> captor = ArgumentCaptor.forClass(OperationChange.class);
+        verify(operationChangeRepository).save(captor.capture());
+        assertThat(captor.getValue().getChangeType()).isEqualTo(ChangeType.deleted);
+        assertThat(captor.getValue().getResourceDisplayName()).isEqualTo("제목");
     }
 
     @Test
@@ -404,6 +428,12 @@ class RestoreRebuildApplierTest {
     private OperationChange change(ResourceType resourceType, String resourceId, ChangeType changeType) {
         return new OperationChange(OPERATION_ID, resourceType, resourceId,
                 null, null, changeType, null, null, null);
+    }
+
+    private OperationChange change(ResourceType resourceType, String resourceId,
+                                   String displayName, ChangeType changeType) {
+        return new OperationChange(OPERATION_ID, resourceType, resourceId,
+                displayName, null, null, changeType, null, null, null);
     }
 
     private OperationResultRequest request() {

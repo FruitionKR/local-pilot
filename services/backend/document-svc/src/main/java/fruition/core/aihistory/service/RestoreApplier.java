@@ -67,9 +67,12 @@ public class RestoreApplier {
         for (String pageId : pageIds) {
             versionRepository.lockPage(pageId);
         }
-        Set<String> existingPageIds = wikiStateRequester.lookup(pageIds, restore.getWorkspaceId()).stream()
-                .map(PipelineWikiStateRequester.WikiPageSnapshot::id)
-                .collect(java.util.stream.Collectors.toSet());
+        Map<String, String> pageTitles = new LinkedHashMap<>();
+        for (PipelineWikiStateRequester.WikiPageSnapshot page
+                : wikiStateRequester.lookup(pageIds, restore.getWorkspaceId())) {
+            pageTitles.put(page.id(), page.title());
+        }
+        Set<String> existingPageIds = pageTitles.keySet();
         if (!existingPageIds.containsAll(pageIds)) {
             throw new InvalidRestoreRequestException("Wiki 페이지를 찾을 수 없습니다.");
         }
@@ -85,9 +88,9 @@ public class RestoreApplier {
 
         for (PageRestorePlan page : plan.pages()) {
             switch (page.action()) {
-                case restore -> restorePage(restore, page, now);
-                case delete -> deletePage(restore, page, now);
-                case rebuild -> delegate(restore, page);
+                case restore -> restorePage(restore, page, pageTitles.get(page.pageId()), now);
+                case delete -> deletePage(restore, page, pageTitles.get(page.pageId()), now);
+                case rebuild -> delegate(restore, page, pageTitles.get(page.pageId()));
             }
         }
 
@@ -133,7 +136,8 @@ public class RestoreApplier {
     }
 
     /** 되돌릴 revision의 본문과 object key를 재사용해 새 revision으로 쌓는다. */
-    private void restorePage(OperationLog restore, PageRestorePlan page, Instant now) {
+    private void restorePage(OperationLog restore, PageRestorePlan page,
+                             String resourceDisplayName, Instant now) {
         String pageId = page.pageId();
         WikiPageVersion target = versionRepository
                 .findById(new WikiPageVersionId(pageId, page.targetRevision()))
@@ -150,7 +154,7 @@ public class RestoreApplier {
 
         operationChangeRepository.save(new OperationChange(
                 restore.getOperationId(), ResourceType.wiki_page, pageId,
-                maxRevision, revision, ChangeType.restored,
+                resourceDisplayName, maxRevision, revision, ChangeType.restored,
                 "revision " + page.targetRevision() + " 내용으로 되돌렸습니다.", null, null));
     }
 
@@ -160,22 +164,23 @@ public class RestoreApplier {
      * <p>{@code wiki_pages}와 링크 테이블은 llmPipeline 소유라 건드리지 않는다. 조립 지시서의
      * {@code deleted_pages}로 알려주면 llmPipeline이 링크와 임베딩을 정리한다.
      */
-    private void deletePage(OperationLog restore, PageRestorePlan page, Instant now) {
+    private void deletePage(OperationLog restore, PageRestorePlan page,
+                            String resourceDisplayName, Instant now) {
         String pageId = page.pageId();
         long maxRevision = versionRepository.findMaxRevision(pageId);
 
         operationChangeRepository.save(new OperationChange(
                 restore.getOperationId(), ResourceType.wiki_page, pageId,
-                maxRevision == 0 ? null : maxRevision, null, ChangeType.deleted,
+                resourceDisplayName, maxRevision == 0 ? null : maxRevision, null, ChangeType.deleted,
                 "받치는 기여가 남지 않아 삭제했습니다.", null, null));
     }
 
     /** 본문을 건드리지 않고 llmPipeline에 맡겼다는 기록만 남긴다. */
-    private void delegate(OperationLog restore, PageRestorePlan page) {
+    private void delegate(OperationLog restore, PageRestorePlan page, String resourceDisplayName) {
         long maxRevision = versionRepository.findMaxRevision(page.pageId());
         operationChangeRepository.save(new OperationChange(
                 restore.getOperationId(), ResourceType.wiki_page, page.pageId(),
-                maxRevision == 0 ? null : maxRevision, null, ChangeType.delegated,
+                resourceDisplayName, maxRevision == 0 ? null : maxRevision, null, ChangeType.delegated,
                 "남은 기여 " + page.contributionCount() + "개로 재작성을 맡겼습니다.", null, null));
     }
 }

@@ -487,7 +487,7 @@ class DocumentEditingSchemaIntegrationTest {
             }
             return invocation.callRealMethod();
         }).when(operationRecorder).recordDocumentEdit(
-                anyString(), anyString(), anyString(), anyString(), anyLong(), anyLong(),
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyLong(), anyLong(),
                 anyString(), anyString(), any(Instant.class));
 
         DocumentContentSaveResponse response = new TransactionTemplate(transactionManager)
