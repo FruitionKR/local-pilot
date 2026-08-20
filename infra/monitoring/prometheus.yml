@@ -21,3 +21,11 @@ scrape_configs:
   - job_name: kafka
     static_configs:
       - targets: ["kafka-exporter:9308"]
+
+  # AI pipeline API(FastAPI). 컨테이너 포트가 127.0.0.1에만 publish돼 있어
+  # host.docker.internal로는 닿지 않는다 — infra 네트워크에서 이름으로 붙는다.
+  - job_name: pipeline-api
+    static_configs:
+      - targets: ["pipeline-api:8000"]
+        labels:
+          service: pipeline-api

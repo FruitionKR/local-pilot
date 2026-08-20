@@ -308,6 +308,7 @@ docker compose -f infra/compose.monitoring.yml up -d
 | Prometheus | http://localhost:9090 | 15초마다 백엔드 관리 포트와 kafka-exporter를 긁는다 |
 | Grafana | http://localhost:3001 | 초기 계정 `admin` / `admin` |
 | kafka-exporter | (내부 전용 :9308) | 브로커에 직접 물어 consumer group별 lag을 낸다 |
+| pipeline-api | http://localhost:8000/metrics | FastAPI 요청 지표. Prometheus는 infra 네트워크에서 컨테이너 이름으로 긁는다 |
 
 kafka-exporter는 `compose.infra.yml`이 만드는 네트워크(`fruition-mvp-dev_default`)에 붙으므로 **인프라가 먼저 떠 있어야 한다**. Kafka의 EXTERNAL 리스너는 `localhost:9092`로 광고돼 컨테이너에서 쓸 수 없어 INTERNAL(`kafka:19092`)로 접속한다.
 
