@@ -75,7 +75,10 @@ public class SecurityConfig {
                 .httpBasic(httpBasic -> httpBasic.disable())
                 // deny-by-default: 공개 경로만 명시하고 나머지는 전부 인증을 요구한다.
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health").permitAll()
+                        // actuator는 management.server.port로 분리돼 있고 이 필터 체인은 두 포트에
+                        // 모두 걸린다. 업무 포트에는 엔드포인트가 매핑되지 않아(404) 여기서 열어도
+                        // 공개 범위는 관리 포트로 한정된다.
+                        .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
                         .requestMatchers("/api/auth/me", "/api/auth/me/**").authenticated()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()

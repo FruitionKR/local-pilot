@@ -14,6 +14,8 @@ metadata:
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/certificate-arn: "REPLACE_ME_ACM_CERT_ARN"
     alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
+    # actuator는 관리 포트로 분리돼 있다. 트래픽 포트(8080/8081)에는 /actuator가 없다.
+    alb.ingress.kubernetes.io/healthcheck-port: "8082"
     alb.ingress.kubernetes.io/group.name: fruition
 spec:
   ingressClassName: alb

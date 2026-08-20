@@ -87,6 +87,12 @@ PDF 변환기 `markitdown`은 선택 서비스이므로 `dev-up.sh`에 포함되
 docker compose -f infra/compose.converter.yml up -d
 ```
 
+지표 확인용 Prometheus·Grafana도 선택 스택이다. 자세한 절차는 3-6을 본다.
+
+```sh
+docker compose -f infra/compose.monitoring.yml up -d
+```
+
 up 스크립트는 `.runtime/`에 supervisor PID를 등록한다. down 스크립트는 등록된 supervisor만 종료하며, 같은 포트를 사용하는 다른 프로젝트 프로세스는 종료하지 않는다. 이미 다른 프로세스가 필요한 포트를 사용 중이면 up 스크립트는 즉시 실패한다.
 
 ## 3. 상세 구동 순서
@@ -134,9 +140,13 @@ cd services/backend
 
 확인.
 
+actuator는 업무 포트와 분리된 관리 포트에 있다(document 8082, access 8083).
+ALB Ingress가 업무 포트만 라우팅하므로 `/actuator/prometheus`가 외부에 노출되지 않는다.
+
 ```sh
-curl http://localhost:8080/actuator/health   # document-svc {"status":"UP"}
-curl http://localhost:8081/actuator/health   # access-svc  {"status":"UP"}
+curl http://localhost:8082/actuator/health   # document-svc {"status":"UP"}
+curl http://localhost:8083/actuator/health   # access-svc  {"status":"UP"}
+curl http://localhost:8082/actuator/prometheus   # Prometheus 스크레이프용 지표
 ```
 
 ### 3-3. ai-svc (converter → pipeline-api·워커)
@@ -285,6 +295,34 @@ grep -iE "error|exception" logs/*.log   # 에러만 확인
 
 워커 로그 수집만 따로 제어하려면 `./scripts/logs-up.sh [start|stop|status]`를 쓴다. 수집을 시작할 때 `workers.log`가 100MB를 넘었으면 `workers.log.1`로 밀고 새로 쌓는다(수집 중에는 회전하지 않는다).
 
+### 3-6. 모니터링 (선택)
+
+백엔드 지표를 그래프로 보는 스택이다. 업무 기능과 무관하므로 `dev-up.sh`는 띄우지 않는다.
+
+```sh
+docker compose -f infra/compose.monitoring.yml up -d
+```
+
+| 대상 | 주소 | 비고 |
+|---|---|---|
+| Prometheus | http://localhost:9090 | 15초마다 백엔드 관리 포트를 긁는다 |
+| Grafana | http://localhost:3001 | 초기 계정 `admin` / `admin` |
+
+동작 원리는 세 단계다. 백엔드가 `/actuator/prometheus`에 지표를 텍스트로 내걸고, Prometheus가 주기적으로 긁어 시계열로 쌓고, Grafana가 그것을 조회해 그린다. 세 프로세스는 HTTP로만 연결돼 있어 서로를 모른다.
+
+확인 순서.
+
+1. http://localhost:9090/targets — `document-svc`와 `access-svc`가 모두 UP이어야 한다. DOWN이면 백엔드가 떠 있는지, 관리 포트(8082·8083)가 열렸는지 본다.
+2. Grafana 접속 → Dashboards → New → Import → ID `4701`(JVM Micrometer) 입력 → 데이터소스 `Prometheus` 선택.
+
+데이터소스는 기동 시 자동 등록된다(`infra/monitoring/grafana/provisioning/`). 스크레이프 대상은 `infra/monitoring/prometheus.yml`에 있고, 호스트에서 bootRun으로 도는 백엔드를 가리킨다. `compose.containerized.yml`로 백엔드를 컨테이너로 띄웠다면 대상 주소를 바꿔야 한다.
+
+종료는 다음과 같다. 볼륨을 지우지 않으면 수집한 지표와 대시보드가 남는다.
+
+```sh
+docker compose -f infra/compose.monitoring.yml down
+```
+
 ## 4. 데모 시나리오
 
 1. 로그인 — `http://localhost:3000` 접속, 이메일 가입/로그인. 인증 코드는 `infra/.env`의 `AUTH_EMAIL_DEV_FIXED_CODE` 값 입력. (OAuth 키 설정 시 소셜 로그인도 가능)
@@ -307,6 +345,12 @@ converter 종료.
 
 ```sh
 docker compose -f infra/compose.converter.yml down
+```
+
+모니터링 종료.
+
+```sh
+docker compose -f infra/compose.monitoring.yml down
 ```
 
 데이터까지 초기화(DB·MinIO·pipeline 산출물과 이 project의 orphan 볼륨 삭제, 재현 환경 초기화 시에만).
