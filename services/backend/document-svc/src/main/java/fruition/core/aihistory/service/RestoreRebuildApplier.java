@@ -79,7 +79,7 @@ public class RestoreRebuildApplier {
         Map<String, String> pageTitles = pageTitles(operationId);
         validateDeletedPages(request, plan);
         Map<String, PipelineWikiStateRequester.WikiPageSnapshot> pageSnapshots = pageSnapshots(
-                operation, loaded);
+                operation, loaded, request.deletedPagesOrEmpty());
         pageSnapshots.forEach((pageId, page) -> pageTitles.putIfAbsent(pageId, page.title()));
         for (RebuiltPage page : loaded) {
             applyPage(operation, page, targetCounts, pageSnapshots.get(page.pageId()), now);
@@ -285,8 +285,11 @@ public class RestoreRebuildApplier {
     }
 
     private Map<String, PipelineWikiStateRequester.WikiPageSnapshot> pageSnapshots(
-            OperationLog operation, List<RebuiltPage> loaded) {
-        List<String> pageIds = loaded.stream().map(RebuiltPage::pageId).distinct().toList();
+            OperationLog operation, List<RebuiltPage> loaded, List<String> deletedPageIds) {
+        List<String> pageIds = java.util.stream.Stream.concat(
+                        loaded.stream().map(RebuiltPage::pageId), deletedPageIds.stream())
+                .distinct()
+                .toList();
         Map<String, PipelineWikiStateRequester.WikiPageSnapshot> snapshots = new LinkedHashMap<>();
         for (PipelineWikiStateRequester.WikiPageSnapshot page
                 : wikiStateRequester.lookup(pageIds, operation.getWorkspaceId())) {

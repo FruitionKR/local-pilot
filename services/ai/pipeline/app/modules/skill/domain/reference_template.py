@@ -92,7 +92,7 @@ def extract_markdown_structure(markdown: str) -> str:
             indent, marker, checkbox = list_item.groups()
             prefix = f"{indent}{marker}"
             if checkbox:
-                prefix += f" {checkbox}"
+                prefix += " [ ]"
             structure.append(f"{prefix} [item]")
             continue
         if index + 1 < len(lines) and "|" in line and TABLE_SEPARATOR_PATTERN.match(lines[index + 1]):

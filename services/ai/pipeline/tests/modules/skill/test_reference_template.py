@@ -95,7 +95,7 @@ class ReferenceTemplateTest(unittest.TestCase):
             "|  |  |",
         )
 
-    def test_preserves_checkbox_state_and_ordinary_list_structure(self) -> None:
+    def test_normalizes_checkbox_state_and_preserves_ordinary_list_structure(self) -> None:
         markdown = (
             "  - [ ] pending\n"
             "   - [x] done\n"
@@ -107,8 +107,8 @@ class ReferenceTemplateTest(unittest.TestCase):
         self.assertEqual(
             extract_markdown_structure(markdown),
             "  - [ ] [item]\n"
-            "   - [x] [item]\n"
-            "\t* [X] [item]\n"
+            "   - [ ] [item]\n"
+            "\t* [ ] [item]\n"
             "- [item]\n"
             "1. [item]",
         )

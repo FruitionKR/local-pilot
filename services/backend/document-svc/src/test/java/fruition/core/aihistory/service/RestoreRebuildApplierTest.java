@@ -63,9 +63,13 @@ class RestoreRebuildApplierTest {
     void setUp() {
         applier = new RestoreRebuildApplier(operationLogRepository, operationChangeRepository,
                 wikiStateRequester, versionRepository, lineCounter, new ObjectMapper());
-        when(wikiStateRequester.lookup(List.of(PAGE_ID), WORKSPACE_ID)).thenReturn(List.of(
-                new PipelineWikiStateRequester.WikiPageSnapshot(
-                        PAGE_ID, "concept", "제목", "title", WORKSPACE_ID, "active")));
+        when(wikiStateRequester.lookup(any(), anyString())).thenAnswer(invocation -> {
+            List<String> pageIds = invocation.getArgument(0);
+            return pageIds.stream()
+                    .map(pageId -> new PipelineWikiStateRequester.WikiPageSnapshot(
+                            pageId, "concept", "제목", "title", WORKSPACE_ID, "active"))
+                    .toList();
+        });
         when(lineCounter.count(anyString(), any(), any(), org.mockito.ArgumentMatchers.anyLong(), anyString()))
                 .thenReturn(new LineCounter.LineCount(null, null));
     }
@@ -235,6 +239,22 @@ class RestoreRebuildApplierTest {
                         org.assertj.core.groups.Tuple.tuple(ResourceType.relation_link, ChangeType.link_removed),
                         org.assertj.core.groups.Tuple.tuple(ResourceType.relation_link, ChangeType.link_restored));
         assertThat(captor.getAllValues().get(1).getResourceId()).isEqualTo("C3|related|C9");
+    }
+
+    @Test
+    @DisplayName("callback만으로 삭제를 기록해도 표시 이름을 보존한다")
+    void recordsDisplayNameForCallbackOnlyDeletion() {
+        givenOperation(manifest(PageRestorePlan.delete(PAGE_ID)));
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "lint_restore", "succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                null, List.of(), List.of(), List.of(PAGE_ID), null, List.of());
+
+        applier.apply(OPERATION_ID, request, List.of(), "hash", NOW);
+
+        ArgumentCaptor<OperationChange> captor = ArgumentCaptor.forClass(OperationChange.class);
+        verify(operationChangeRepository).save(captor.capture());
+        assertThat(captor.getValue().getChangeType()).isEqualTo(ChangeType.deleted);
+        assertThat(captor.getValue().getResourceDisplayName()).isEqualTo("제목");
     }
 
     @Test
