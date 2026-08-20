@@ -100,6 +100,9 @@ jobs:
       - name: Run workspace layout tests
         run: npm run test:workspace-layout
 
+      - name: Run document sidebar tests
+        run: npm run test:document-sidebar
+
       - name: Run active Wiki work tests
         run: npm run test:active-wiki-work
 

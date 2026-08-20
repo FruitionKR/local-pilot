@@ -4,6 +4,7 @@ import styles from "./DocumentSidebar.module.css";
 
 export function ContextMenu({
   contextMenu,
+  canCreateProject,
   convertTarget,
   onRenameContextTarget,
   onAddProject,
@@ -12,6 +13,8 @@ export function ContextMenu({
   onDeleteContextTarget
 }: {
   contextMenu: ContextMenuState;
+  /** 새 폴더 생성은 뷰 정책(canCreateProjectFromView)을 따른다. */
+  canCreateProject: boolean;
   /** PDF 원본 문서일 때만 값이 있고, 처리 중이면 isDisabled로 비활성화한다. */
   convertTarget: { isDisabled: boolean } | null;
   onRenameContextTarget: () => void;
@@ -27,7 +30,9 @@ export function ContextMenu({
       style={{ left: contextMenu.x, top: contextMenu.y }}
       onClick={(event) => event.stopPropagation()}
     >
-      <button type="button" onClick={onAddProject}>새 폴더</button>
+      {canCreateProject && (
+        <button type="button" onClick={onAddProject}>새 폴더</button>
+      )}
       <button type="button" onClick={onAddMarkdownFromContext}>새 노트</button>
       <button type="button" onClick={onRenameContextTarget}>이름 변경</button>
       {convertTarget && (
