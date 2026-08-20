@@ -28,6 +28,9 @@ html[data-document-font="serif"] {
 html,
 body {
   height: 100%;
+  /* 앱은 100vh 고정 레이아웃이라 뷰포트 자체가 스크롤될 일이 없다.
+     macOS 트랙패드 관성/체이닝으로 화면 전체가 튕겨 빈 배경이 보이는 것을 막는다. */
+  overscroll-behavior: none;
 }
 
 body {
