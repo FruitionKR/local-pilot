@@ -143,6 +143,32 @@ class QueryPageScorerTest(unittest.TestCase):
 
         self.assertEqual(selected, ["concept:persistent-wiki"])
 
+    def test_name_matching_does_not_partially_strip_short_compound_particle(self) -> None:
+        scorer = QueryPageScorer(embedding_search=EmptyTextSearch(), text_search=EmptyTextSearch())
+        query = QueryRewrite(
+            original_question="나에서는 뭐야?",
+            retrieval_query="나에서는",
+            keywords=["나에서는"],
+        )
+
+        self.assertEqual(scorer._normalize_name("나에서는"), "나에서는")
+        self.assertEqual(scorer._normalize_name("문서에서는"), "문서")
+        self.assertEqual(
+            scorer._name_match_score(query, concept_page("concept:naeseo", "나서")),
+            0.0,
+        )
+        self.assertEqual(
+            scorer._name_match_score(
+                QueryRewrite(
+                    original_question="문서에서는 뭐야?",
+                    retrieval_query="문서",
+                    keywords=["문서"],
+                ),
+                concept_page("concept:document", "문서"),
+            ),
+            1.0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

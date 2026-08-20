@@ -118,7 +118,7 @@ def tokens(text: str) -> list[str]:
 
 
 def normalize_token(token: str) -> str:
-    for suffix in ["으로부터", "로부터", "에게서", "한테서", "에게", "한테", "으로", "로", "이랑", "랑", "이나", "나", "은", "는", "이", "가", "을", "를", "에", "의", "도", "만", "와", "과"]:
-        if token.endswith(suffix) and len(token) > len(suffix) + 1:
-            return token[: -len(suffix)]
+    for suffix in ["에서는", "으로부터", "로부터", "에게서", "한테서", "에게", "한테", "으로", "로", "이랑", "랑", "이나", "나", "은", "는", "이", "가", "을", "를", "에", "의", "도", "만", "와", "과"]:
+        if token.endswith(suffix):
+            return token[: -len(suffix)] if len(token) > len(suffix) + 1 else token
     return token

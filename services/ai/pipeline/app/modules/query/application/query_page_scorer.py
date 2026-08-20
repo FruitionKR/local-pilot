@@ -208,9 +208,9 @@ class QueryPageScorer:
         normalized = re.sub(r"\([^)]*\)", "", normalized)
         normalized = re.sub(r"[^a-z0-9가-힣]+", "", normalized)
         if re.search(r"[가-힣]", normalized):
-            for suffix in ["으로부터", "로부터", "에게서", "한테서", "에게", "한테", "으로", "로", "이랑", "랑", "이나", "나", "은", "는", "이", "가", "을", "를", "에", "의", "도", "만", "와", "과"]:
-                if normalized.endswith(suffix) and len(normalized) > len(suffix) + 1:
-                    return normalized[: -len(suffix)]
+            for suffix in ["에서는", "으로부터", "로부터", "에게서", "한테서", "에게", "한테", "으로", "로", "이랑", "랑", "이나", "나", "은", "는", "이", "가", "을", "를", "에", "의", "도", "만", "와", "과"]:
+                if normalized.endswith(suffix):
+                    return normalized[: -len(suffix)] if len(normalized) > len(suffix) + 1 else normalized
         return normalized
 
     def _question_stopwords(self) -> set[str]:
