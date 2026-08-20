@@ -231,7 +231,7 @@ def test_postgres_lint_reads_active_contribution_logs_and_removes_orphan(
     assert removed == [{**unsupported, "reason": "no_active_support"}]
 
 
-def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
+def test_wiki_maintenance_reserves_embedding_before_commit_and_keeps_result_when_worker_start_fails(
     monkeypatch,
 ) -> None:
     calls = []
@@ -239,6 +239,7 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
     class EmbeddingJob:
         def start(self, run_id: str, page_ids: list[str]) -> None:
             calls.append(("embedding", run_id, page_ids))
+            raise RuntimeError("thread start failed")
 
     class Transaction:
         def __enter__(self):
@@ -293,6 +294,13 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
         "apply_lint_object_changes",
         lambda _result: calls.append("objects"),
     )
+    monkeypatch.setattr(
+        wiki_maintenance,
+        "reserve_page_embeddings",
+        lambda connection, page_ids, model: calls.append(
+            ("reserve", connection is transaction, page_ids, model)
+        ),
+    )
 
     result = wiki_maintenance.PostgresWikiMaintenance(EmbeddingJob()).lint(
         WikiMaintenanceCommand(
@@ -312,6 +320,7 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
         ("artifact", "lint-op-1"),
         ("log", [{"reason": "no_active_support"}]),
         "objects",
+        ("reserve", True, ["page-1", "page-2"], "BAAI/bge-m3"),
         "commit",
         ("embedding", "lint-op-1", ["page-1", "page-2"]),
     ]

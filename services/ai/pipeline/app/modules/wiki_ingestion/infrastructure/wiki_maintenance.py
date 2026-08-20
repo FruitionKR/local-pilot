@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
+from app.core.llm_env import resolve_llm_provider_defaults
+from app.modules.wiki_embedding.infrastructure.bge_m3_embedding_model import (
+    BgeM3EmbeddingModel,
+)
+from app.modules.wiki_embedding.infrastructure.postgres_wiki_page_embedding_repository import (
+    reserve_page_embeddings,
+)
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
 )
-from app.core.llm_env import resolve_llm_provider_defaults
 from app.modules.wiki_ingestion.application.models import (
     WikiMaintenanceCommand,
     WikiMaintenanceConfigurationError,
@@ -25,6 +32,9 @@ from app.modules.wiki_ingestion.infrastructure.promotion_concept_page import (
     build_promotion_concept_page,
     promotion_representative,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class PostgresWikiMaintenance(WikiMaintenancePort):
@@ -92,22 +102,29 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
                     written_object_keys.extend(
                         database.apply_lint_object_changes(result) or []
                     )
+                    page_ids = _embedding_page_ids(result)
+                    if self._embedding_job is not None and page_ids:
+                        reserve_page_embeddings(
+                            connection,
+                            page_ids,
+                            BgeM3EmbeddingModel().model_name,
+                        )
                 except Exception:
                     # 이후 단계 실패로 DB 트랜잭션이 롤백될 때, 이미 object storage에
                     # 써버린 lint 산출물이 orphan으로 남지 않도록 함께 지운다.
                     for key in written_object_keys:
                         delete_object(key)
                     raise
-        page_ids = list(
-            dict.fromkeys(
-                str(promotion["page_id"])
-                for promotion_type in ("materialized_promotions", "merged_promotions")
-                for promotion in result.get(promotion_type, [])
-                if isinstance(promotion, dict) and promotion.get("page_id")
-            )
-        )
+        page_ids = _embedding_page_ids(result)
         if not command.dry_run and self._embedding_job is not None and page_ids:
-            self._embedding_job.start(str(command.operation_id), page_ids)
+            try:
+                self._embedding_job.start(str(command.operation_id), page_ids)
+            except Exception:
+                logger.warning(
+                    "wiki embedding worker start failed; pending reservation remains operation_id=%s",
+                    command.operation_id,
+                    exc_info=True,
+                )
         return result
 
     def _build_promotion_page_generator(
@@ -189,4 +206,15 @@ def _promotion_concept_system_prompt() -> str:
         "Generate a real concept page draft from the supplied evidence only.\n"
         "Use allowed_anchor_refs exactly as anchor_block_ids. They may be global refs like doc_id:B0001.\n"
         "Do not use refs that are not listed in allowed_anchor_refs.\n"
+    )
+
+
+def _embedding_page_ids(result: dict[str, Any]) -> list[str]:
+    return list(
+        dict.fromkeys(
+            str(promotion["page_id"])
+            for promotion_type in ("materialized_promotions", "merged_promotions")
+            for promotion in result.get(promotion_type, [])
+            if isinstance(promotion, dict) and promotion.get("page_id")
+        )
     )

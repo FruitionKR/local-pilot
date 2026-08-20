@@ -61,11 +61,11 @@
 | Log Backend focused | PR #224 최종 조합 HEAD `778e2ca0` | **204/204 (204 tests, failures 0, errors 0, BUILD SUCCESSFUL in 20s)** | Java 21 직접 실행 |
 | Log 표시 이름 snapshot 통합 | 변경 2건+중복 삭제 ID, PostgreSQL rename+soft-delete | unique 3 ID 1회 조회·3건 저장; `Old Doc`·`Old Page` 보존 | 새 production defect 없음; 커밋된 회귀 artifact와 full HTTP는 아님 |
 | Lint 승격 | production 점검 1회 + 기존 promotion page 3개 × 3회 + MeaningClusterJudge 6개 fixture × 3회 | 기존 promotion page 표면 계약 **9/9**, core selection 미시험; MeaningClusterJudge 평가 expected 기준 10/18 | 표면 계약, cluster match/target, promotion 경계를 분리 |
-| Lint 기존 typed relation 탐색·embedding | pre-LIMIT 혼합 관계 조회, 승격·병합 변경 ID | whitelist 선필터 후 limit 통과; `wiki_ingestion` **169 passed, 1 skipped** | generic/untyped Related Concepts는 표시 전용; daemon job 내구성은 미해결 |
+| Lint 기존 typed relation 탐색·embedding | pre-LIMIT 혼합 관계 조회, 승격·병합 변경 ID | whitelist 선필터 후 limit 통과; 예약·worker 회귀 포함 `wiki_ingestion` **169 passed, 1 skipped** | generic/untyped Related Concepts는 표시 전용; BGE-M3 1GiB 배포 한계는 미해결 |
 
 ## 결론
 
-현재 결과는 표식·장문 구조 계약, Agent 계획, Skill 라우팅·분류를 충족했고, 자연스러운 줄글 편입에는 독립 의미 판정 당시 7/9(운영 설정 승인 줄글의 독립 실행 1·2회 판정 실패)가 기록됐다. 직접 `concept_related_slugs` 생성 0/9는 핵심 의미 실패가 아니며 description·`evidence_related_slugs`의 관계 후보와 최종 Markdown 미캡처를 함께 봐야 한다. 완료된 AI 관련 suite는 **404 passed, 79 subtests passed**, 직접 변경 범위는 **102 passed, 4 subtests passed**, 최신 Query 전체는 **141 passed, 19 subtests passed**다. Query는 복합 조사 1회 제거, 실제 BM25+dense 오순위 교정, distinct facet 두 근거·인용 보존을 고정 fixture에서 통과했고 교차언어 제품 E2E도 page·citation **2/2**였지만, generator의 facet 누락 감지나 운영 corpus 전체의 hybrid 가중치까지 증명하지 않는다. 실제 Skill 적용의 기존 표면 계약 9/9와 후속 live A strict 1/3·route 3/3·grounding 2/3, B 3/3은 그대로 분리한다. 추가 persisted E2E는 같은 요청에서 stored-Skill marker 차이와 실제 publish·Backend/Pipeline readback·명시적 승인·`create_document`·version/revision 1 영속 저장을 확인했지만 답변 생성은 deterministic fake였다. Log 표시 이름 snapshot 통합 검증에서는 새 production defect가 없었고 `Old Doc`·`Old Page`가 유지됐지만 저장소에 커밋된 exact regression과 full HTTP 검증은 남아 있다. Lint는 기존 typed relation 7개를 limit 전에 필터링하고 `graph_link_limit=1` mutation을 통과했으며, generic/untyped `Related Concepts`는 제품 결정에 따라 표시 전용으로 유지한다. 승격·병합 뒤 unique page ID의 기존 embedding job을 한 번 호출하고 `document:Bxxxx` 참조를 보존했지만 daemon thread의 process-exit 유실 가능성, BGE-M3의 1GiB 초과 메모리, semantic live retrieval은 해결하거나 증명하지 않았다. 기존 promotion page 9회와 MeaningClusterJudge 18회의 계약 한계도 그대로다. 따라서 PR #215 제품 전체 통과가 아니라, 각 fixture와 실제 경로에서 확인한 범위만 통과로 판정한다.
+현재 결과는 표식·장문 구조 계약, Agent 계획, Skill 라우팅·분류를 충족했고, 자연스러운 줄글 편입에는 독립 의미 판정 당시 7/9(운영 설정 승인 줄글의 독립 실행 1·2회 판정 실패)가 기록됐다. 직접 `concept_related_slugs` 생성 0/9는 핵심 의미 실패가 아니며 description·`evidence_related_slugs`의 관계 후보와 최종 Markdown 미캡처를 함께 봐야 한다. 완료된 AI 관련 suite는 **404 passed, 79 subtests passed**, 직접 변경 범위는 **102 passed, 4 subtests passed**, 최신 Query 전체는 **141 passed, 19 subtests passed**다. Query는 복합 조사 1회 제거, 실제 BM25+dense 오순위 교정, distinct facet 두 근거·인용 보존을 고정 fixture에서 통과했고 교차언어 제품 E2E도 page·citation **2/2**였지만, generator의 facet 누락 감지나 운영 corpus 전체의 hybrid 가중치까지 증명하지 않는다. 실제 Skill 적용의 기존 표면 계약 9/9와 후속 live A strict 1/3·route 3/3·grounding 2/3, B 3/3은 그대로 분리한다. 추가 persisted E2E는 같은 요청에서 stored-Skill marker 차이와 실제 publish·Backend/Pipeline readback·명시적 승인·`create_document`·version/revision 1 영속 저장을 확인했지만 답변 생성은 deterministic fake였다. Log 표시 이름 snapshot 통합 검증에서는 새 production defect가 없었고 `Old Doc`·`Old Page`가 유지됐지만 저장소에 커밋된 exact regression과 full HTTP 검증은 남아 있다. Lint는 기존 typed relation 7개를 limit 전에 필터링하고 `graph_link_limit=1` mutation을 통과했으며, generic/untyped `Related Concepts`는 제품 결정에 따라 표시 전용으로 유지한다. 승격·병합 page ID는 Lint DB commit 전에 `pending`으로 예약되고 worker 시작 실패를 삼켜도 예약이 남으며, maintenance worker 기동 시 `pending/failed`를 회수해 최대 3회 재시도한다. 다만 BGE-M3의 1GiB 초과 메모리와 semantic live retrieval은 해결하거나 증명하지 않았다. 기존 promotion page 9회와 MeaningClusterJudge 18회의 계약 한계도 그대로다. 따라서 PR #215 제품 전체 통과가 아니라, 각 fixture와 실제 경로에서 확인한 범위만 통과로 판정한다.
 
 ## 평가 공통 조건
 
@@ -2119,13 +2119,15 @@ production `PostgresWikiMaintenance.lint`에 `dry_run=True`로 실제 1회 실�
 
 #### 수정 전
 
-평가셋은 Lint가 새 page를 승격하거나 기존 page를 병합해 DB/object storage를 쓴 경우다. 기존 경로는 본문을 저장한 뒤 query embedding 갱신을 요청하지 않아, 직후 검색이 이전 embedding을 볼 수 있었다.
+평가셋은 Lint가 새 page를 승격하거나 기존 page를 병합해 DB/object storage를 쓴 경우다. 최초 수정 전에는 본문 저장 뒤 query embedding 갱신 요청이 없었다. 기존 수정은 commit 뒤 daemon thread를 시작했지만 `start()` 실패나 process 종료 시 이미 반영된 page의 재처리 대상을 복구할 영속 예약이 없었다.
 
 #### 수정 후
 
-기대 동작은 commit과 object write가 끝난 뒤 실제 변경된 promoted/merged page의 unique ID만 기존 embedding job에 한 번 전달하고, dry-run 또는 변경 없음이면 호출하지 않는 것이다. 실제 회귀에서 여러 변경에 중복 ID가 있어도 unique ID 묶음으로 job을 **1회** 호출했고, dry-run과 no-change에서는 **0회**였다. 생성 page의 citation은 `document:Bxxxx` 형식을 그대로 보존했다. `wiki_ingestion` 결과는 **169 passed, 1 skipped**로 **통과**했다.
+기대 동작은 실제 변경된 promoted/merged page의 unique ID를 Lint DB transaction 안에서 영속 예약하고, commit 뒤 worker에 전달하며, dry-run 또는 변경 없음이면 예약·호출하지 않는 것이다. 실제 회귀에서 중복 ID는 한 번만 `pending`으로 예약됐고, 예약 뒤 worker `start()`가 실패해도 Lint 결과는 유지됐다. maintenance worker는 기동 시 `pending/failed` page를 PostgreSQL advisory lock 아래 회수하고 실패를 최대 3회 재시도한다. 생성 page의 citation은 `document:Bxxxx` 형식을 그대로 보존했다. `wiki_ingestion` 결과는 **169 passed, 1 skipped**로 **통과**했다.
 
-이 수정은 새 durable queue 아키텍처를 추가하지 않고 기존 daemon thread job을 재사용한다. 따라서 process가 즉시 종료되거나 유실되면 job을 잃을 수 있고, BGE-M3가 1GiB를 넘는 메모리를 요구하는 배포 한계도 남는다. 이 회귀는 갱신 요청과 reference 보존을 검증한 것이며, 실제 BGE semantic live retrieval의 성공까지 증명하지 않는다.
+#### 남은 한계
+
+별도 queue table은 추가하지 않고 기존 `wiki_page_embeddings.status`를 재처리 예약으로 재사용했다. 따라서 daemon process가 종료돼도 예약은 남아 다음 maintenance worker 기동에서 회수되지만, 지속적인 별도 queue consumer와 지수 backoff는 없다. BGE-M3가 1GiB를 넘는 메모리를 요구하는 배포 한계도 남는다. 이 회귀는 예약·회수·재시도와 reference 보존을 검증한 것이며, 실제 BGE semantic live retrieval의 성공까지 증명하지 않는다.
 
 ## 왜 그렇게 판정했나
 
@@ -2133,7 +2135,7 @@ production `PostgresWikiMaintenance.lint`에 `dry_run=True`로 실제 1회 실�
 
 ## 이 실험이 증명하지 못하는 것
 
-dry-run 관찰값은 실제 수정을 증명하지 않는다. 기존 promotion page 9회는 core selection이나 일반적인 의미 품질을 증명하지 않으며, MeaningClusterJudge 10/18은 제품 실패율이 아니다. `core_concept` 또는 `promotion_eligible=true`인 별도 promotion-stage 입력이 없었으므로 진짜 core concept miss를 평가하지 않았다. 음성 9/9도 cluster decision 품질이나 전체 Lint 품질을 증명하지 않는다. typed relation 회귀는 새 type 자동 추론을, embedding 회귀는 daemon job 내구성이나 BGE semantic live retrieval을 증명하지 않는다.
+dry-run 관찰값은 실제 수정을 증명하지 않는다. 기존 promotion page 9회는 core selection이나 일반적인 의미 품질을 증명하지 않으며, MeaningClusterJudge 10/18은 제품 실패율이 아니다. `core_concept` 또는 `promotion_eligible=true`인 별도 promotion-stage 입력이 없었으므로 진짜 core concept miss를 평가하지 않았다. 음성 9/9도 cluster decision 품질이나 전체 Lint 품질을 증명하지 않는다. typed relation 회귀는 새 type 자동 추론을, embedding 회귀는 실제 BGE semantic live retrieval이나 1GiB 배포 가능성을 증명하지 않는다.
 
 ## Lint 회차별 최종 promotion Markdown 전문(실제 9개 보존)
 
@@ -2592,7 +2594,7 @@ Promotion cluster에서 독립 concept 후보로 판단된 항목이다.
 
 ## 실제 결과
 
-편입의 구조 계약은 짧은 입력 9/9, 장문 3/3이고 새 줄글은 자동 평가·원문 참조·기계 guard 9/9, 당시 독립 의미 판정 7/9였다. `concept_related_slugs` 0/9는 핵심 의미 실패가 아니며 최종 Markdown 관계는 미캡처다. 완료된 AI 관련 suite는 **404 passed, 79 subtests passed**, 직접 변경 범위는 **102 passed, 4 subtests passed**다. 최신 Query 전체는 **141 passed, 19 subtests passed**다. `문서에서는`은 `문서`로 한 번만 조사 제거됐고 짧은 `나에서는`·`가에서는`은 보존됐다. 실제 hybrid fixture는 BM25 `[1,0]`, dense target/distractor **0.80/0.95**, hybrid **0.84/0.76**으로 `doc_target:B0001`을 선택·인용했다. distinct facet 질문은 `doc-config:B0001`, `doc-incident:B0002`를 모두 선택·인용했다. 교차언어 제품 E2E는 **2/2**였다. Agent는 21/21이다. Skill 라우팅은 32/32, 기존 표면 계약은 9/9, 후속 A는 strict 1/3·route 3/3·grounding 2/3, B는 3/3, 고정 템플릿은 3/3, 1열 표는 **112 passed, 2 subtests passed**다. 실제 저장 Skill E2E는 게시한 instructions·capabilities·도구가 Backend/Pipeline에서 일치했고, 동일 요청의 no-Skill에는 marker가 없고 stored-Skill에는 정확한 제목·본문 marker가 있었다. 명시적 승인 뒤 실제 `create_document`와 Backend/core version/revision 1·hash readback이 성공했으며 planning·execution은 attempt 1로 retry가 없었다. Log는 AI guard **29/29**, Backend focused **204/204**이고 snapshot 통합 fixture도 unique ID 3개 1회 조회·3건 저장, PostgreSQL rename·soft-delete 뒤 `Old Doc`·`Old Page` 보존으로 통과했다. Lint typed relation은 정확한 7개 whitelist를 limit 전에 적용해 `graph_link_limit=1` mutation을 통과했다. 승격·병합 page는 commit/object write 뒤 unique ID를 기존 embedding job에 한 번 전달했고 dry-run/no-change는 호출하지 않았으며 `document:Bxxxx` 참조를 보존했다. `wiki_ingestion`은 **169 passed, 1 skipped**다. 기존 promotion page 9/9와 MeaningClusterJudge 10/18의 계약 한계는 그대로다.
+편입의 구조 계약은 짧은 입력 9/9, 장문 3/3이고 새 줄글은 자동 평가·원문 참조·기계 guard 9/9, 당시 독립 의미 판정 7/9였다. `concept_related_slugs` 0/9는 핵심 의미 실패가 아니며 최종 Markdown 관계는 미캡처다. 완료된 AI 관련 suite는 **404 passed, 79 subtests passed**, 직접 변경 범위는 **102 passed, 4 subtests passed**다. 최신 Query 전체는 **141 passed, 19 subtests passed**다. `문서에서는`은 `문서`로 한 번만 조사 제거됐고 짧은 `나에서는`·`가에서는`은 보존됐다. 실제 hybrid fixture는 BM25 `[1,0]`, dense target/distractor **0.80/0.95**, hybrid **0.84/0.76**으로 `doc_target:B0001`을 선택·인용했다. distinct facet 질문은 `doc-config:B0001`, `doc-incident:B0002`를 모두 선택·인용했다. 교차언어 제품 E2E는 **2/2**였다. Agent는 21/21이다. Skill 라우팅은 32/32, 기존 표면 계약은 9/9, 후속 A는 strict 1/3·route 3/3·grounding 2/3, B는 3/3, 고정 템플릿은 3/3, 1열 표는 **112 passed, 2 subtests passed**다. 실제 저장 Skill E2E는 게시한 instructions·capabilities·도구가 Backend/Pipeline에서 일치했고, 동일 요청의 no-Skill에는 marker가 없고 stored-Skill에는 정확한 제목·본문 marker가 있었다. 명시적 승인 뒤 실제 `create_document`와 Backend/core version/revision 1·hash readback이 성공했으며 planning·execution은 attempt 1로 retry가 없었다. Log는 AI guard **29/29**, Backend focused **204/204**이고 snapshot 통합 fixture도 unique ID 3개 1회 조회·3건 저장, PostgreSQL rename·soft-delete 뒤 `Old Doc`·`Old Page` 보존으로 통과했다. Lint typed relation은 정확한 7개 whitelist를 limit 전에 적용해 `graph_link_limit=1` mutation을 통과했다. 승격·병합 page는 commit 전에 unique ID를 `pending`으로 예약하고 worker 기동 시 `pending/failed`를 회수해 재시도하며 `document:Bxxxx` 참조를 보존했다. `wiki_ingestion`은 **169 passed, 1 skipped**다. 기존 promotion page 9/9와 MeaningClusterJudge 10/18의 계약 한계는 그대로다.
 
 ## 왜 그렇게 판정했나
 
@@ -2600,4 +2602,4 @@ Promotion cluster에서 독립 concept 후보로 판단된 항목이다.
 
 ## 이 실험이 증명하지 못하는 것
 
-이 보고서는 제품 전체 통과, 모든 문서·질문·한국어 조사 조합, 운영 corpus의 hybrid 우월성, assembler의 generator facet 누락 감지, 실제 답변 모델의 Skill·Query 품질, 전체 embedding backfill과 Kubernetes 1GiB 배포 가능성을 증명하지 않는다. Lint embedding은 기존 daemon thread를 사용하므로 process 종료·유실 가능성이 있고, semantic live retrieval은 시험하지 않았다. Log snapshot 검증은 커밋된 exact regression이나 full HTTP E2E가 아니다. 기존 promotion page 9회의 core selection, MeaningClusterJudge의 진짜 core concept miss와 구조화 승격의 일반적 의미 품질도 증명하지 않는다. 줄글의 7/9, 직접 `concept_related_slugs` 0/9, MeaningClusterJudge 10/18과 candidate 1/9은 제한된 fixture·평가 계약의 관찰값이지 PR 전체 품질 보증이 아니다.
+이 보고서는 제품 전체 통과, 모든 문서·질문·한국어 조사 조합, 운영 corpus의 hybrid 우월성, assembler의 generator facet 누락 감지, 실제 답변 모델의 Skill·Query 품질, 전체 embedding backfill과 Kubernetes 1GiB 배포 가능성을 증명하지 않는다. Lint embedding 예약은 process 종료 뒤에도 회수되지만 지속적인 별도 queue consumer와 지수 backoff는 없고, semantic live retrieval은 시험하지 않았다. Log snapshot 검증은 커밋된 exact regression이나 full HTTP E2E가 아니다. 기존 promotion page 9회의 core selection, MeaningClusterJudge의 진짜 core concept miss와 구조화 승격의 일반적 의미 품질도 증명하지 않는다. 줄글의 7/9, 직접 `concept_related_slugs` 0/9, MeaningClusterJudge 10/18과 candidate 1/9은 제한된 fixture·평가 계약의 관찰값이지 PR 전체 품질 보증이 아니다.
