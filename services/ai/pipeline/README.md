@@ -207,7 +207,7 @@ python -m app.modules.document_restoration.interfaces.cli \
   --selective-model gemini-3.1-flash-lite
 ```
 
-키는 선택 provider에 따라 `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` 중 하나만 읽습니다. 모델과 병렬도는 각각 `--selective-model`, `--selective-max-workers`로 변경할 수 있습니다.
+키는 선택 provider에 따라 `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` 중 하나만 읽습니다. `--selective-model`을 생략하면 선택 provider의 catalog 모델을 사용하고, 병렬도는 `--selective-max-workers`로 변경할 수 있습니다.
 
 기존 OCR·규칙·SLLM·Vision 전체 복원이 필요한 경우에만 `full-repair`를 명시합니다. 전용 requirements에는 수식 image-to-LaTeX 근거를 생성하는 `pix2tex`가 포함됩니다. `tesseract`는 별도 시스템 명령으로 설치되어 있어야 하며, Paddle FormulaRecognition은 `paddleocr`이 설치된 환경에서 선택적으로 사용됩니다.
 

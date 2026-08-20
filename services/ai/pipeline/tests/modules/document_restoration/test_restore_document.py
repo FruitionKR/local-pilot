@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.modules.document_restoration.application.models import (
     PreparedRestoration,
@@ -13,6 +14,7 @@ from app.modules.document_restoration.domain.entities import (
     RestorationMode,
     RestorationStage,
 )
+from app.modules.document_restoration.interfaces.cli import main
 
 
 class FakeStages:
@@ -143,6 +145,28 @@ class RestoreDocumentUseCaseTest(unittest.TestCase):
         self.assertIn(RestorationStage.REVIEW_BLOCKS_WITH_VISION, stages.stages)
         self.assertIn(RestorationStage.RECOVER_FIGURES_WITH_VISION, stages.stages)
         self.assertEqual(stages.stages[-1], RestorationStage.ASSEMBLE_MARKDOWN)
+
+    def test_cli_uses_provider_default_model_when_model_is_omitted(self) -> None:
+        for provider, model in (
+            ("openai", "gpt-5-nano"),
+            ("claude", "claude-sonnet-5"),
+        ):
+            with self.subTest(provider=provider):
+                argv = [
+                    "restore-document",
+                    "--pdf-file", "paper.pdf",
+                    "--output-dir", "output",
+                    "--document-slug", "paper",
+                    "--selective-provider", provider,
+                ]
+                with patch("sys.argv", argv), patch.object(
+                    RestoreDocumentUseCase, "execute"
+                ) as execute:
+                    main()
+
+                command = execute.call_args.args[0]
+                self.assertEqual(command.selective_provider, provider)
+                self.assertEqual(command.selective_model, model)
 
 
 if __name__ == "__main__":

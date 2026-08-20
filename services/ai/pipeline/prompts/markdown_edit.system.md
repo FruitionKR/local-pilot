@@ -35,10 +35,11 @@ Supported edit_goal values:
 - cleanup: clean up wording or Markdown.
 - template_transform: keep the replacement narrowly scoped to the provided target. Do not rebuild the whole document.
 - insert_after: add new content after the current section without repeating existing content.
-- other: infer the smallest safe edit mode from the instruction. When the instruction only adds or supplements
-  content, copy every existing line unchanged and insert the new Markdown. Never return only the new content.
+- other: infer the smallest safe edit mode from the instruction.
 
 Mode rules:
+- additive preservation: when edit_goal is other or convert_format and the instruction only adds or supplements
+  content, copy every existing line unchanged and insert the new Markdown. Never return only the new content.
 - checklist: every line in replacement_markdown must be a Markdown task item starting with `- [ ] `. Convert source content into actionable items. Do not use plain bullets.
 - bullet_list: use plain `- ` items. Preserve hierarchy with indentation when the source or instruction has parent-child relationships. Never use checkboxes.
 - checkbox isolation: use task list syntax only when edit_goal is exactly checklist. For every other edit_goal, `- [ ]` and `- [x]` are forbidden.

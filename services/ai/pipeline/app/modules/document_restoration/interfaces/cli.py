@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+from app.core.llm_env import SUPPORTED_LLM_MODELS
 from app.modules.document_restoration.application.models import RestoreDocumentCommand
 from app.modules.document_restoration.application.restore_document import (
     RestoreDocumentUseCase,
@@ -43,7 +44,7 @@ def main() -> None:
         choices=["openai", "gemini", "claude"],
         default="gemini",
     )
-    parser.add_argument("--selective-model", default="gemini-3.1-flash-lite")
+    parser.add_argument("--selective-model")
     parser.add_argument("--selective-max-workers", type=int, default=16)
     parser.add_argument("--anydoc-command", default="anydoc")
     parser.add_argument("--heron-command", default="raw-special-regions")
@@ -71,7 +72,10 @@ def main() -> None:
             max_vision_attempts=args.max_vision_attempts,
             docling_command=args.docling_command,
             selective_provider=args.selective_provider,
-            selective_model=args.selective_model,
+            selective_model=(
+                args.selective_model
+                or SUPPORTED_LLM_MODELS[args.selective_provider]
+            ),
             selective_max_workers=args.selective_max_workers,
             anydoc_command=args.anydoc_command,
             heron_command=args.heron_command,

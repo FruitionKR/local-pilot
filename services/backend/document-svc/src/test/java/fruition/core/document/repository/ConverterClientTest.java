@@ -72,10 +72,8 @@ class ConverterClientTest {
         assertThat(capturedContentType.get()).startsWith("multipart/form-data");
         assertThat(capturedBody.get())
                 .contains("name=\"file\"")
-                .contains("name=\"provider\"")
-                .contains("gemini")
-                .contains("name=\"model\"")
-                .contains("gemini-3.1-flash-lite")
+                .containsPattern("(?s)name=\"provider\"\\r\\n.*?\\r\\n\\r\\ngemini\\r\\n--")
+                .containsPattern("(?s)name=\"model\"\\r\\n.*?\\r\\n\\r\\ngemini-3\\.1-flash-lite\\r\\n--")
                 .contains("Content-Type: application/pdf")
                 .contains("%PDF-1.4");
     }
