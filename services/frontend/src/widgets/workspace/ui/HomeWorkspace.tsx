@@ -208,7 +208,7 @@ export function HomeWorkspace() {
   async function handleGraphIngest(targets: DocumentItemResponse[]) {
     if (wikiActionPending || targets.length === 0) return;
     setWikiActionPending("ingest");
-    // 한 문서가 실패해도 나머지는 계속 보낸다(NotificationsPanel과 동일).
+    // 한 문서가 실패해도 나머지는 계속 보낸다.
     const results = await Promise.allSettled(
       targets.map((target) => reflectDocumentToWiki(target.id, target.document_role))
     );
@@ -242,7 +242,7 @@ export function HomeWorkspace() {
     if (wikiActionPending) return;
     setWikiActionPending("lint");
     try {
-      // 마지막 다듬기 이후 위키 변경이 있을 때만 실제 lint를 보낸다(NotificationsPanel과 동일).
+      // 마지막 다듬기 이후 위키 변경이 있을 때만 실제 lint를 보낸다.
       const { needs_lint } = await fetchWikiMaintenanceStatus();
       if (!needs_lint) {
         publishNotice({ kind: "info", title: "Lint 요청", message: "수정 된 Wiki의 구성요소가 없습니다." });
