@@ -418,9 +418,8 @@ ko-doc-en-query {'top_page': 'source:doc-ko', 'refs': [{'source_document_id': 'd
 
 #### 남은 조건
 
-- active page **165개** 중 BGE-M3 embedding 저장 완료는 **153개**이며, 전체 active page를 일괄 backfill하는 진입점이 아직 없다.
 - BGE-M3 실측 최대 RSS는 **1,228,472,320 bytes(약 1,171.6MiB)**로 Kubernetes의 **1GiB** 메모리 제한을 넘었다.
-- 따라서 Compose·Kubernetes의 `QUERY_EMBEDDING_MODE=text-only` 기본값은 변경하지 않았다. 전체 backfill과 배포 메모리 조건을 해결하고 실제 답변 모델까지 포함한 운영 E2E를 통과한 뒤 전환해야 한다.
+- 따라서 Compose·Kubernetes의 `QUERY_EMBEDDING_MODE=text-only` 기본값은 변경하지 않았다. 배포 메모리 조건을 해결하고 실제 답변 모델까지 포함한 운영 E2E를 통과한 뒤 전환해야 한다.
 - 이번 2건은 한영 양방향 제품 경로의 최소 검증이며, 모든 언어·문서·질문 조합이나 생성 답변 품질의 제품 전체 통과를 뜻하지 않는다.
 - 전체 command/script는 로컬 Codex session JSONL에만 있으며 DB·MinIO credential과 test token을 포함하므로 보고서나 저장소에 복사하지 않았다. 저장소 안에는 이 실행을 그대로 재현하는 runner나 artifact가 없어, 위 fixture·안전한 stdout·실행 경계만으로 provenance를 확인해야 한다.
 
@@ -2602,4 +2601,4 @@ Promotion cluster에서 독립 concept 후보로 판단된 항목이다.
 
 ## 이 실험이 증명하지 못하는 것
 
-이 보고서는 제품 전체 통과, 모든 문서·질문·한국어 조사 조합, 운영 corpus의 hybrid 우월성, assembler의 generator facet 누락 감지, 실제 답변 모델의 Skill·Query 품질, 전체 embedding backfill과 Kubernetes 1GiB 배포 가능성을 증명하지 않는다. Lint embedding 예약은 process 종료 뒤에도 회수되지만 지속적인 별도 queue consumer와 지수 backoff는 없고, semantic live retrieval은 시험하지 않았다. Log snapshot 검증은 커밋된 exact regression이나 full HTTP E2E가 아니다. 기존 promotion page 9회의 core selection, MeaningClusterJudge의 진짜 core concept miss와 구조화 승격의 일반적 의미 품질도 증명하지 않는다. 줄글의 7/9, 직접 `concept_related_slugs` 0/9, MeaningClusterJudge 10/18과 candidate 1/9은 제한된 fixture·평가 계약의 관찰값이지 PR 전체 품질 보증이 아니다.
+이 보고서는 제품 전체 통과, 모든 문서·질문·한국어 조사 조합, 운영 corpus의 hybrid 우월성, assembler의 generator facet 누락 감지, 실제 답변 모델의 Skill·Query 품질, Kubernetes 1GiB 배포 가능성을 증명하지 않는다. Lint embedding 예약은 process 종료 뒤에도 회수되지만 지속적인 별도 queue consumer와 지수 backoff는 없고, semantic live retrieval은 시험하지 않았다. Log snapshot 검증은 커밋된 exact regression이나 full HTTP E2E가 아니다. 기존 promotion page 9회의 core selection, MeaningClusterJudge의 진짜 core concept miss와 구조화 승격의 일반적 의미 품질도 증명하지 않는다. 줄글의 7/9, 직접 `concept_related_slugs` 0/9, MeaningClusterJudge 10/18과 candidate 1/9은 제한된 fixture·평가 계약의 관찰값이지 PR 전체 품질 보증이 아니다.
