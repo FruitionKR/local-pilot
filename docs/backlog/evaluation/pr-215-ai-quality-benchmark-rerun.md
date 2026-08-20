@@ -40,25 +40,27 @@
 | --- | --- | --- | --- |
 | 완료된 AI 관련 suite | PR #224 관련 AI 테스트 | **404 passed, 79 subtests passed** | 전체 관련 suite 실행 결과 |
 | 직접 변경 범위 | PR #224에서 직접 변경한 경로 | **102 passed, 4 subtests passed** | 직접 변경 테스트 범위 |
-| Query 전체 `tests/modules/query` | 의존성 완비 `dev-msa` venv 최종 조합 | **132 passed, 16 subtests passed in 2.23s** | 최종 Query suite |
+| Query 전체 `tests/modules/query` | 모델 재사용·저장 벡터 누락·비정상 벡터 fallback 회귀 테스트 | **134 passed, 19 subtests passed** | 최종 Query 회귀 suite; 제품 E2E 결과와 별도 |
 | 짧은 문서 편입 | 3개 문서 × 3회 | **9/9** | 표식 3개와 유효 원문 블록 보존 |
 | 장문 문서 편입 | 1개 문서 × 3회 | **3/3** | 7개 주제명 존재와 유효 원문 블록 |
 | 새 편입 문장 재실행 | 자연스러운 한국어 줄글 3개 × 3회 | 자동 평가 9/9, 원문 참조 9/9, 기계 guard 9/9, 독립 의미 판정 당시 7/9, 직접 `concept_related_slugs` 생성 0/9 관찰(핵심 의미 실패 아님) | 의미 품질과 구조 계약을 분리; description·`evidence_related_slugs`의 관계 후보와 최종 Markdown 렌더링은 별도 미캡처 |
 | 질의 검색 | 실제 질문 18개, 대상 문서 묶음 6개 | MRR/Hit@1/Recall@3 측정 | 검색 평가만 해당 |
 | 질의 근거 회수 | 77쪽, 답변 가능 25개, 무응답 5개, 사실 묶음 30개 | Hybrid75: 0.9000/0.8800/0.2000, Dense100: 0.9333/0.9200/0.2000 | 근거 회수 지표만 해당 |
 | Query 수정 후 진단 | `index.md`·`log.md` 질문 repeat=1 및 전체 6개 | `index.md`·`log.md` **1/1**, 전체 **6/6** | 수정 후 진단; 기존 보존 실행과 별도 |
+| Query 교차언어 제품 E2E | 영문 문서→한국어 질문 1건, 한국어 문서→영문 질문 1건 | 기대 page·citation **2/2** | 답변 생성만 deterministic fake; 저장·HTTP·검색·인용은 실제 경로 |
 | Agent 작업 계획 | 실제 지시 7개 × 3회 = 21회 | **21/21** | 도구·핵심 인자·승인 대기 |
 | Skill 라우팅·분류 | 실제 지시 32개 × 1회 | **32/32** | 지원·범위 밖·모호성 및 작업 유형 |
 | 실제 Skill 적용(기존 기록) | 3개 fixture × 3회 | 형식·라우팅·도구 계약 **9/9** | 문서 생성·편집·폴더 정리의 기존 표면 계약 기록 |
 | 실제 Skill 적용 후속 Live 재실행 | A 온보딩 3회, B 폴더 계획 3회 | A strict **1/3**, route **3/3**, grounding **2/3**; B **3/3** | 현재 온보딩의 엄격한 출력·근거·폴더 계획 계약 |
 | 별도 고정 템플릿 Skill | 1개 fixture × 3회 | **3/3** | 입력 근거 기반 결정 보존, 구조·라우팅·helper 계약 |
+| Skill 1열 표 구조 | 유효한 1열 표와 음성 경계 | **112 passed, 2 subtests passed** | helper 구조 보존 회귀 테스트; live 생성 평가 아님 |
 | Log AI guard | Log 관련 AI guard | **29/29** | 최종 guard 결과 |
 | Log Backend focused | PR #224 최종 조합 HEAD `778e2ca0` | **204/204 (204 tests, failures 0, errors 0, BUILD SUCCESSFUL in 20s)** | Java 21 직접 실행 |
 | Lint 승격 | production 점검 1회 + 기존 promotion page 3개 × 3회 + MeaningClusterJudge 6개 fixture × 3회 | 기존 promotion page 표면 계약 **9/9**, core selection 미시험; MeaningClusterJudge 평가 expected 기준 10/18 | 표면 계약, cluster match/target, promotion 경계를 분리 |
 
 ## 결론
 
-현재 결과는 표식·장문 구조 계약, Agent 계획, Skill 라우팅·분류를 충족했고, 자연스러운 줄글 편입에는 독립 의미 판정 당시 7/9(운영 설정 승인 줄글의 독립 실행 1·2회 판정 실패)가 기록됐다. 직접 `concept_related_slugs` 생성은 0/9로 관찰됐지만 이는 핵심 의미 실패가 아니며, description과 `evidence_related_slugs`에는 관계 후보가 포함됐고 최종 Markdown 관계 렌더링은 캡처하지 않았다. 또한 production prompt는 하나의 정규 워크플로로 개념을 묶는 것을 허용하고 gold concept 개수는 제품 계약이 아니므로, 개념 수만으로 실패를 판정한 부분은 평가 한계다. 완료된 AI 관련 suite는 **404 passed, 79 subtests passed**, 직접 변경 범위는 **102 passed, 4 subtests passed**다. 실제 Skill 적용은 기존 기록의 표면 형식·라우팅·도구 계약 9/9로 보존하되, 후속 live 재실행에서 일반 온보딩 A는 strict **1/3**, route **3/3**, grounding **2/3**으로 세분화됐고 폴더 계획 B는 **3/3**이었다. 따라서 현재 온보딩 strict 품질이나 실제 Skill 적용 전체를 무조건 9/9로 해석하지 않는다. Query 전체 `tests/modules/query`는 의존성 완비 `dev-msa` venv 최종 조합에서 **132 passed, 16 subtests passed in 2.23s**였고, 직접 변경 범위 **102 passed, 4 subtests passed**와 별도다. 한국어 조사 수정은 [PR #223](https://github.com/FruitionKR/local-pilot/pull/223)로 추적하며 수정 후 Query 진단은 `index.md`·`log.md` **1/1**, 전체 **6/6**이다. Lint의 기존 promotion page 생성 9회는 정의·핵심 내용·citation·title/slug·구조가 **9/9**였으며, Related Concepts 문자열 변동은 LLM Wiki 특성상 실패 기준이 아니다. 이 9회는 core selection 자체를 시험하지 않았고 실제 Markdown 9개는 이 보고서에 보존한다. 별도 MeaningClusterJudge 18회는 최초 expected 기준 10/18이지만 제품 실패율이 아니라 평가 expected와 production contract의 불일치이며, 양성의 cluster match·target은 9/9, 비-core `none`은 8/9, `candidate`는 1/9 false promotion 가능성이고, 음성의 `none`은 9/9로 promotion 경계만 통과했다. 진짜 core concept miss는 시험되지 않았다. 별도 고정 템플릿 Skill은 입력에 결정 근거가 있는 fixture에서 3/3이었다. 최종 PR #224 조합 HEAD `778e2ca0`의 Java 21 직접 실행 Backend focused는 **204/204 (204 tests, failures 0, errors 0, BUILD SUCCESSFUL in 20s)**였고 Log AI guard는 **29/29**였다. 따라서 PR #215 제품 전체가 통과했다고 결론내릴 수 없고, 라우팅·구조 계약·promotion 경계와 실제 의미 품질을 분리해 판단해야 한다.
+현재 결과는 표식·장문 구조 계약, Agent 계획, Skill 라우팅·분류를 충족했고, 자연스러운 줄글 편입에는 독립 의미 판정 당시 7/9(운영 설정 승인 줄글의 독립 실행 1·2회 판정 실패)가 기록됐다. 직접 `concept_related_slugs` 생성은 0/9로 관찰됐지만 이는 핵심 의미 실패가 아니며, description과 `evidence_related_slugs`에는 관계 후보가 포함됐고 최종 Markdown 관계 렌더링은 캡처하지 않았다. 또한 production prompt는 하나의 정규 워크플로로 개념을 묶는 것을 허용하고 gold concept 개수는 제품 계약이 아니므로, 개념 수만으로 실패를 판정한 부분은 평가 한계다. 완료된 AI 관련 suite는 **404 passed, 79 subtests passed**, 직접 변경 범위는 **102 passed, 4 subtests passed**다. 실제 Skill 적용은 기존 기록의 표면 형식·라우팅·도구 계약 9/9로 보존하되, 후속 live 재실행에서 일반 온보딩 A는 strict **1/3**, route **3/3**, grounding **2/3**으로 세분화됐고 폴더 계획 B는 **3/3**이었다. 따라서 현재 온보딩 strict 품질이나 실제 Skill 적용 전체를 무조건 9/9로 해석하지 않는다. Query 전체는 **134 passed, 19 subtests passed**이며, 교차언어 제품 E2E는 기대 page·citation **2/2**였다. 다만 전체 backfill 진입점이 없고 BGE-M3 최대 RSS가 Kubernetes 1GiB 제한을 넘으므로 배포 기본값은 바꾸지 않았다. 한국어 조사 수정은 [PR #223](https://github.com/FruitionKR/local-pilot/pull/223)로 추적하며 수정 후 Query 진단은 `index.md`·`log.md` **1/1**, 전체 **6/6**이다. Lint의 기존 promotion page 생성 9회는 정의·핵심 내용·citation·title/slug·구조가 **9/9**였으며, Related Concepts 문자열 변동은 LLM Wiki 특성상 실패 기준이 아니다. 이 9회는 core selection 자체를 시험하지 않았고 실제 Markdown 9개는 이 보고서에 보존한다. 별도 MeaningClusterJudge 18회는 최초 expected 기준 10/18이지만 제품 실패율이 아니라 평가 expected와 production contract의 불일치이며, 양성의 cluster match·target은 9/9, 비-core `none`은 8/9, `candidate`는 1/9 false promotion 가능성이고, 음성의 `none`은 9/9로 promotion 경계만 통과했다. 진짜 core concept miss는 시험되지 않았다. 별도 고정 템플릿 Skill은 입력에 결정 근거가 있는 fixture에서 3/3이었다. 최종 PR #224 조합 HEAD `778e2ca0`의 Java 21 직접 실행 Backend focused는 **204/204 (204 tests, failures 0, errors 0, BUILD SUCCESSFUL in 20s)**였고 Log AI guard는 **29/29**였다. 따라서 PR #215 제품 전체가 통과했다고 결론내릴 수 없고, 라우팅·구조 계약·promotion 경계와 실제 의미 품질을 분리해 판단해야 한다.
 
 ## 평가 공통 조건
 
@@ -332,7 +334,7 @@ Artifacts: `[원시 산출물]`, `[원시 산출물]`.
 
 - [PR #223](https://github.com/FruitionKR/local-pilot/pull/223)에서 한국어 조사 토큰화를 수정
 - live `index.md`·`log.md`: **1/1**, 전체: **6/6**
-- Query 전체 `tests/modules/query`: **132 passed, 16 subtests passed**
+- Query 전체 `tests/modules/query`: **134 passed, 19 subtests passed**
 
 ## 실제 평가 입력
 
@@ -365,6 +367,53 @@ production `BgeM3EmbeddingSearch`의 기본 모델 `BAAI/bge-m3`로 서로 겹�
 | 6 | 한국어 문서 → 영문 질문 | How do we periodically check and revoke unnecessary workspace permissions? | `ko_access_review`(권한 주기 검토/회수); `ko_document_restore`, `ko_api_rate_limit` | `ko_access_review` · `ko_access_review` | 0.674396 | 0.487023 | 0.187373 |
 
 영문 문서→한국어 질문은 top-1 **3/3**, 평균 margin **0.237860**이고 한국어 문서→영문 질문도 top-1 **3/3**, 평균 margin **0.216698**이었다. `RuleBasedQueryRewriter`는 `결제 중복 청구를 막기 위해 요청 키를 어떻게 사용하나요?`를 `결제 중복 청구 막기 위해 요청 키를 사용하나요`처럼 같은 언어의 토큰만 정제하고, `How can I restore a document to an earlier version?`를 `how can restore document earlier version`처럼 정제할 뿐 번역하지 않는다. 코드에서 환경변수가 없을 때의 fallback은 `bge-m3`지만, Compose와 Kubernetes ConfigMap의 배포 기본값은 `QUERY_EMBEDDING_MODE=text-only`이므로 배포 기본 경로는 BGE-M3가 아닌 BM25 text-only이며 이 한계를 별도로 기록한다.
+
+### Query 교차언어 제품 경로 수정
+
+#### 수정 전
+
+- 앞의 6행 실측은 BGE-M3 모델 수준 dense 검색으로, DB·MinIO 저장부터 HTTP Query 응답과 citation까지 이어지는 제품 경로를 검증하지 않았다.
+- 저장 벡터가 없는 후보의 fallback에서 같은 BGE-M3 weights가 두 번 load됐고, NaN·`+Inf`·`-Inf` 점수의 fallback 경계도 회귀 테스트로 고정되지 않았다.
+
+#### 수정 후
+
+영문 문서→한국어 질문 1건과 한국어 문서→영문 질문 1건을 실제 제품 경로로 실행했다. 기대 조건은 각 질문이 반대 언어의 정답 page를 선택하고 해당 block citation을 반환하는 것이다. 실제 4-page 평가셋은 다음과 같다.
+
+| page | 제목 | summary | 본문 |
+| --- | --- | --- | --- |
+| `doc-en` | Idempotent event processing | Duplicate delivery protection for payment events. | Every event carries a unique idempotency key. Consumers store each key and ignore duplicate deliveries, preventing a payment from being applied twice. `[B0001]` |
+| `doc-ko` | 문서 복원 검증 | 삭제 문서를 안전하게 복원하기 위한 검증 절차. | 문서를 복원할 때 잠금 조회에서 대상 문서가 요청한 작업 공간에 속하는지와 삭제 상태인지 함께 검증한다. `[B0002]` |
+| `doc-sensor` | Sensor calibration schedule | - | Temperature sensors are calibrated once every quarter against a reference probe. `[B0003]` |
+| `doc-plant` | 사무실 식물 관리 | - | 창가의 식물에는 매주 월요일 오전에 물을 준다. `[B0004]` |
+
+embedding build 결과는 target **4**, embedded **4**, skipped **0**, failed **0**이었다.
+
+안전한 raw stdout은 다음과 같다.
+
+```text
+embedding_build {'target_count': 4, 'embedded_count': 4, 'skipped_count': 0, 'failed_count': 0}
+en-doc-ko-query {'top_page': 'source:doc-en', 'refs': [{'source_document_id': 'doc-en', 'source_block_id': 'B0001'}], 'passed': True}
+ko-doc-en-query {'top_page': 'source:doc-ko', 'refs': [{'source_document_id': 'doc-ko', 'source_block_id': 'B0002'}], 'passed': True}
+11.11 real 4.57 user 1.04 sys
+1228472320 maximum resident set size
+```
+
+| 방향·질문 원문 | 기대 정답 page / citation | 실제 page / citation | 결과 |
+| --- | --- | --- | --- |
+| 영문 문서 → 한국어 질문: `이벤트가 중복 전달되어도 결제가 두 번 처리되지 않게 하는 방법은 무엇인가?` | `source:doc-en` / `doc-en:B0001` | `source:doc-en` / `doc-en:B0001` | 통과 |
+| 한국어 문서 → 영문 질문: `What must be verified under a lock before restoring a deleted document?` | `source:doc-ko` / `doc-ko:B0002` | `source:doc-ko` / `doc-ko:B0002` | 통과 |
+
+답변 문장 생성만 결과를 고정하기 위한 deterministic fake를 사용했다. DB·MinIO·embedding 저장·HTTP 요청·retrieval·citation 조립은 실제 경로를 사용했으므로, 이 **2/2**는 반대 언어 검색 결과가 저장된 page와 block citation까지 연결되는지를 검증한다.
+
+저장 벡터가 누락된 후보의 검색에는 query에 이미 사용한 동일 모델을 재사용해 한 요청의 weights load를 **2회에서 1회**로 줄였다. similarity가 NaN·`+Inf`·`-Inf`이면 해당 dense 점수를 사용하지 않고 기존 fallback 경로로 처리한다. Query 전체 결과는 **134 passed, 19 subtests passed**다.
+
+#### 남은 조건
+
+- active page **165개** 중 BGE-M3 embedding 저장 완료는 **153개**이며, 전체 active page를 일괄 backfill하는 진입점이 아직 없다.
+- BGE-M3 실측 최대 RSS는 **1,228,472,320 bytes(약 1,171.6MiB)**로 Kubernetes의 **1GiB** 메모리 제한을 넘었다.
+- 따라서 Compose·Kubernetes의 `QUERY_EMBEDDING_MODE=text-only` 기본값은 변경하지 않았다. 전체 backfill과 배포 메모리 조건을 해결하고 실제 답변 모델까지 포함한 운영 E2E를 통과한 뒤 전환해야 한다.
+- 이번 2건은 한영 양방향 제품 경로의 최소 검증이며, 모든 언어·문서·질문 조합이나 생성 답변 품질의 제품 전체 통과를 뜻하지 않는다.
+- 전체 command/script는 로컬 Codex session JSONL에만 있으며 DB·MinIO credential과 test token을 포함하므로 보고서나 저장소에 복사하지 않았다. 저장소 안에는 이 실행을 그대로 재현하는 runner나 artifact가 없어, 위 fixture·안전한 stdout·실행 경계만으로 provenance를 확인해야 한다.
 
 ### 검색 평가
 
@@ -1780,6 +1829,34 @@ plan JSON:
 
 표는 실제 셀 값을 노출하지 않고 header·separator와 본문 행·열 topology를 placeholder로 보존한다. `test_normalizes_checkbox_state_and_preserves_ordinary_list_structure`, `test_preserves_table_body_topology_without_cell_content`, escaped pipe·fence·outer pipe 변형 회귀 테스트가 이 동작을 확인하며, 관련 AI suite 결과는 **404 passed, 79 subtests passed**다. 별도 고정 템플릿 3회 live 평가는 수정 전 fixture 실행 기록이므로 수정 후 helper의 live 재평가로 확대하지 않는다.
 
+## 1열 Markdown 표 구조 보존 수정
+
+### 수정 전
+
+다음 유효한 1열 표를 `extract_markdown_structure`에 넣으면 구조가 빈 문자열로 추출됐다.
+
+```markdown
+| 상태 |
+| --- |
+| 완료 |
+```
+
+### 수정 후
+
+같은 입력에서 header와 separator를 유지하고 실제 본문 값 `완료`는 노출하지 않은 채 1열 body topology를 placeholder로 보존한다.
+
+```markdown
+| 상태 |
+| --- |
+|  |
+```
+
+1열 표의 본문 행 보존뿐 아니라 표가 아닌 단독 separator와 일반 pipe 문장을 표로 오인하지 않는 음성 경계도 함께 확인했다. Skill 관련 결과는 **112 passed, 2 subtests passed**다.
+
+### 남은 조건
+
+기존 별도 고정 템플릿 live 3회 fixture에는 표가 없었다. 따라서 이 결과는 helper와 회귀 테스트의 1열 구조 보존을 증명하지만, 1열 표가 포함된 실제 Skill live 생성 품질 전체를 증명하지 않는다.
+
 ## 회차별 결과 및 사람 검토
 
 ### 1회차
@@ -2416,7 +2493,7 @@ Q-1 selector finding은 [PR #223](https://github.com/FruitionKR/local-pilot/pull
 
 ## 실제 평가 입력
 
-편입은 짧은 3개 문서·장문 1개·자연스러운 줄글 3개, 질의는 검색 18개·근거 77쪽 평가·답변 스트레스 18회와 PR #223 수정 상태 확인, production BGE-M3 교차언어 6행, Agent 21회, Skill 라우팅·분류 32회와 기존 일반 Skill 적용 9회·후속 live A 온보딩 3회·B 폴더 계획 3회·별도 고정 템플릿 3회, Log 기존 raw 75회·AI guard 29/29·Backend focused 204 tests, Lint dry-run 1회·기존 promotion page 9회·MeaningClusterJudge 18회다.
+편입은 짧은 3개 문서·장문 1개·자연스러운 줄글 3개, 질의는 검색 18개·근거 77쪽 평가·답변 스트레스 18회와 PR #223 수정 상태 확인, production BGE-M3 모델 수준 교차언어 6행과 제품 E2E 2건, Agent 21회, Skill 라우팅·분류 32회와 기존 일반 Skill 적용 9회·후속 live A 온보딩 3회·B 폴더 계획 3회·별도 고정 템플릿 3회 및 1열 표 구조 회귀 테스트, Log 기존 raw 75회·AI guard 29/29·Backend focused 204 tests, Lint dry-run 1회·기존 promotion page 9회·MeaningClusterJudge 18회다.
 
 ## 기대 동작
 
@@ -2424,12 +2501,12 @@ Q-1 selector finding은 [PR #223](https://github.com/FruitionKR/local-pilot/pull
 
 ## 실제 결과
 
-편입의 기존 구조 계약은 짧은 입력 9/9, 장문 3/3이고, 새 줄글은 자동 평가·원문 참조·기계 guard 9/9이었다. 새 줄글의 독립 의미 판정 당시 결과는 7/9(운영 설정 승인 줄글의 독립 실행 1·2회 판정 실패)이고, 직접 `concept_related_slugs` 생성은 핵심 의미 실패가 아닌 0/9 관찰값이다. description과 `evidence_related_slugs`에는 관계 후보가 포함됐지만 최종 Markdown 관계 렌더링은 캡처하지 않았으며, production prompt는 canonical workflow 하나로 개념을 묶는 것을 허용하고 gold concept 개수는 제품 계약이 아니므로 개념 수만으로 실패를 판정한 부분은 평가 한계다. 완료된 AI 관련 suite는 **404 passed, 79 subtests passed**, 직접 변경 범위는 **102 passed, 4 subtests passed**다. Query 전체 `tests/modules/query`는 의존성 완비 `dev-msa` venv 최종 조합에서 **132 passed, 16 subtests passed in 2.23s**였고, 수정 후 `index.md`·`log.md` 진단은 **1/1**, 전체는 **6/6**이었다. Agent 21/21, Skill 라우팅·분류 32/32, 기존 일반 Skill 적용의 표면 형식·라우팅·도구 계약 9/9, 후속 live 일반 온보딩 A는 strict 1/3·route 3/3·grounding 2/3, 폴더 계획 B는 3/3, 입력 결정 근거를 반영한 별도 고정 템플릿 Skill 3/3이었다. Log AI guard는 **29/29**였고, 최종 PR #224 조합 HEAD `778e2ca0`의 Java 21 직접 실행 Backend focused는 **204/204**였다. PR #223은 Backend·Frontend·llmPipeline·CodeRabbit 검증을 통과했다. Production BGE-M3 교차언어는 영문 문서→한국어 질문 3/3, 한국어 문서→영문 질문 3/3이었지만 모델 수준 dense 평가로 full Query end-to-end는 별도 한계다. Lint dry-run은 변경 없이 끝났고 기존 promotion page는 정의·핵심 내용·citation·title/slug·구조 9/9였으며 core selection은 시험하지 않았다. MeaningClusterJudge 18회는 최초 expected 기준 10/18이지만 제품 실패율이 아니고, 양성 cluster match·target 9/9, 비-core none 8/9, candidate 1/9, 음성 none 9/9이며 진짜 core concept miss는 시험되지 않았다.
+편입의 기존 구조 계약은 짧은 입력 9/9, 장문 3/3이고, 새 줄글은 자동 평가·원문 참조·기계 guard 9/9이었다. 새 줄글의 독립 의미 판정 당시 결과는 7/9(운영 설정 승인 줄글의 독립 실행 1·2회 판정 실패)이고, 직접 `concept_related_slugs` 생성은 핵심 의미 실패가 아닌 0/9 관찰값이다. description과 `evidence_related_slugs`에는 관계 후보가 포함됐지만 최종 Markdown 관계 렌더링은 캡처하지 않았으며, production prompt는 canonical workflow 하나로 개념을 묶는 것을 허용하고 gold concept 개수는 제품 계약이 아니므로 개념 수만으로 실패를 판정한 부분은 평가 한계다. 완료된 AI 관련 suite는 **404 passed, 79 subtests passed**, 직접 변경 범위는 **102 passed, 4 subtests passed**다. Query 전체는 **134 passed, 19 subtests passed**였고, 수정 후 `index.md`·`log.md` 진단은 **1/1**, 전체는 **6/6**이었다. 교차언어 제품 E2E 2건은 기대 page·citation **2/2**였으며 DB·MinIO·embedding 저장·HTTP·retrieval·citation은 실제 경로, 답변 생성만 deterministic fake였다. 저장 벡터 누락 시 같은 모델을 재사용해 weights load를 2회에서 1회로 줄였고 NaN·±Inf 점수는 fallback 처리했다. Agent 21/21, Skill 라우팅·분류 32/32, 기존 일반 Skill 적용의 표면 형식·라우팅·도구 계약 9/9, 후속 live 일반 온보딩 A는 strict 1/3·route 3/3·grounding 2/3, 폴더 계획 B는 3/3, 입력 결정 근거를 반영한 별도 고정 템플릿 Skill 3/3이었다. 1열 표 구조와 음성 경계의 Skill 결과는 **112 passed, 2 subtests passed**다. Log AI guard는 **29/29**였고, 최종 PR #224 조합 HEAD `778e2ca0`의 Java 21 직접 실행 Backend focused는 **204/204**였다. PR #223은 Backend·Frontend·llmPipeline·CodeRabbit 검증을 통과했다. Production BGE-M3 모델 수준 교차언어는 영문 문서→한국어 질문 3/3, 한국어 문서→영문 질문 3/3이었고, 별도 제품 E2E는 양방향 2/2였다. 다만 active 165개 중 BGE 저장 완료는 153개이고 전체 backfill 진입점이 없으며 최대 RSS 약 1,171.6MiB가 Kubernetes 1GiB 제한을 넘으므로 배포 기본값은 `text-only`로 유지했다. Lint dry-run은 변경 없이 끝났고 기존 promotion page는 정의·핵심 내용·citation·title/slug·구조 9/9였으며 core selection은 시험하지 않았다. MeaningClusterJudge 18회는 최초 expected 기준 10/18이지만 제품 실패율이 아니고, 양성 cluster match·target 9/9, 비-core none 8/9, candidate 1/9, 음성 none 9/9이며 진짜 core concept miss는 시험되지 않았다.
 
 ## 왜 그렇게 판정했나
 
-검색·근거 회수·답변 스트레스, PR #223 수정 상태, production BGE-M3 모델 수준 교차언어 실측, 구조 계약, 실제 의미 품질, 일반 Skill 후속 live, 고정 템플릿 Skill, Lint dry-run·promotion page 표면 계약·MeaningClusterJudge 경계는 입력과 통과 기준이 다르므로 각 결과를 별도 해석했다. 반복 실행의 비결정성과 seed 미노출, 복구된 일부 집합, 실제 DB/backend/object storage·승인 persistence 미사용을 명시했으며, 기존 일반 Skill 표면 9/9나 결정 근거가 있는 고정 템플릿의 3/3을 근거가 없는 일반 온보딩 생성의 결정 품질 또는 제품 전체 품질 대리 통과로 보지 않았다. 특히 후속 A strict 1/3·grounding 2/3은 실제 raw 출력 판정이고, MeaningClusterJudge 10/18은 expected와 production contract가 어긋난 점수이며 core concept miss율이 아니다. Log Backend focused는 Java 21 직접 실행에서 **204/204**, Log AI guard는 **29/29**였다.
+검색·근거 회수·답변 스트레스, PR #223 수정 상태, production BGE-M3 모델 수준 교차언어 실측과 제품 E2E, 구조 계약, 실제 의미 품질, 일반 Skill 후속 live, 고정 템플릿 Skill, Lint dry-run·promotion page 표면 계약·MeaningClusterJudge 경계는 입력과 통과 기준이 다르므로 각 결과를 별도 해석했다. 반복 실행의 비결정성과 seed 미노출, 복구된 일부 집합을 명시했다. 실제 DB·MinIO·embedding 저장·HTTP·retrieval·citation은 Query 제품 E2E 2건에서 사용했지만, Skill live에서는 DB·backend·object storage·승인 persistence를 사용하지 않았다. 기존 일반 Skill 표면 9/9나 결정 근거가 있는 고정 템플릿의 3/3을 근거가 없는 일반 온보딩 생성의 결정 품질 또는 제품 전체 품질 대리 통과로 보지 않았다. 특히 후속 A strict 1/3·grounding 2/3은 실제 raw 출력 판정이고, MeaningClusterJudge 10/18은 expected와 production contract가 어긋난 점수이며 core concept miss율이 아니다. Log Backend focused는 Java 21 직접 실행에서 **204/204**, Log AI guard는 **29/29**였다.
 
 ## 이 실험이 증명하지 못하는 것
 
-이 보고서는 제품 전체 통과, 모든 문서·질문 조합의 안정성, 실제 외부 서비스 권한·저장 성공, 기존 promotion page 9회의 core selection, MeaningClusterJudge의 진짜 core concept miss, 구조화 승격의 일반적 의미 품질을 증명하지 않는다. 줄글의 당시 독립 의미 판정 7/9(운영 설정 승인 줄글의 독립 실행 1·2회에 대한 역사적 판정), 직접 `concept_related_slugs` 생성 0/9 관찰(핵심 의미 실패 아님), MeaningClusterJudge의 10/18과 candidate 1/9은 각각 제한된 fixture·반복·평가 계약에 대한 관찰값이며 PR 전체의 품질 보증이 아니다. 줄글에서는 description·`evidence_related_slugs`의 관계 후보는 확인했지만 최종 Markdown 관계 렌더링은 캡처하지 않았고, production prompt의 canonical workflow 허용과 gold concept 개수의 비계약성을 반영하면 개념 수만으로 실패를 판정한 부분은 평가 한계다.
+이 보고서는 제품 전체 통과, 모든 문서·질문 조합의 안정성, deterministic fake를 실제 답변 모델로 바꾼 운영 E2E, 전체 embedding backfill과 Kubernetes 1GiB 배포 가능성, Query E2E 범위 밖 외부 서비스 권한·저장 성공, 기존 promotion page 9회의 core selection, MeaningClusterJudge의 진짜 core concept miss, 구조화 승격의 일반적 의미 품질을 증명하지 않는다. 줄글의 당시 독립 의미 판정 7/9(운영 설정 승인 줄글의 독립 실행 1·2회에 대한 역사적 판정), 직접 `concept_related_slugs` 생성 0/9 관찰(핵심 의미 실패 아님), MeaningClusterJudge의 10/18과 candidate 1/9은 각각 제한된 fixture·반복·평가 계약에 대한 관찰값이며 PR 전체의 품질 보증이 아니다. 줄글에서는 description·`evidence_related_slugs`의 관계 후보는 확인했지만 최종 Markdown 관계 렌더링은 캡처하지 않았고, production prompt의 canonical workflow 허용과 gold concept 개수의 비계약성을 반영하면 개념 수만으로 실패를 판정한 부분은 평가 한계다.
