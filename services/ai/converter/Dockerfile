@@ -54,8 +54,8 @@ COPY --from=heron-builder /build/heron-special-regions/target/release/raw-specia
 COPY --from=anydoc /usr/local/bin/node /usr/local/bin/node
 COPY --from=anydoc /usr/local/bin/npm /usr/local/bin/npm
 COPY --from=anydoc /usr/local/bin/npx /usr/local/bin/npx
-COPY --from=anydoc /usr/local/bin/anydoc /usr/local/bin/anydoc
 COPY --from=anydoc /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/@firecrawl/anydoc/cli.js /usr/local/bin/anydoc
 
 RUN mkdir -p /opt/docling-rs/models \
     && curl -fsSL \

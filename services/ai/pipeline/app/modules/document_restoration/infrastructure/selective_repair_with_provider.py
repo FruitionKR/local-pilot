@@ -110,6 +110,24 @@ def page_markdown(markdown: str) -> dict[int, str]:
     return pages
 
 
+def block_markdown(
+    block: dict[str, Any],
+    fragments: dict[str, str] | None = None,
+) -> str:
+    candidates = []
+    if fragments is not None and block["id"] in fragments:
+        candidates.append(fragments[block["id"]])
+    candidates.extend(
+        block.get(field)
+        for field in ("markdown", "source_text", "fallback_text")
+    )
+    return max(
+        (str(candidate or "") for candidate in candidates),
+        key=lambda value: len(re.sub(r"\s+", "", value)),
+        default="",
+    )
+
+
 def valid_replacement(
     block_type: str,
     replacement: str,
@@ -424,6 +442,7 @@ def save_replacements(
     blocks: list[dict[str, Any]],
     result: dict[str, Any],
     provider: str,
+    fragments: dict[str, str] | None = None,
 ) -> dict[str, int]:
     expected = {block["id"]: block for block in blocks}
     returned = result.get("results") or []
@@ -449,7 +468,7 @@ def save_replacements(
             replacement,
             block.get("required_tokens"),
             scope=str(block.get("scope", "block")),
-            source_text=str(block.get("markdown") or block.get("source_text") or ""),
+            source_text=block_markdown(block, fragments),
         ):
             counts["rejected"] += 1
             continue
@@ -483,6 +502,7 @@ def save_replacements(
 def rejected_candidates(
     blocks: list[dict[str, Any]],
     result: dict[str, Any],
+    fragments: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     returned = {item["block_id"]: item for item in result["results"]}
     return [
@@ -499,9 +519,7 @@ def rejected_candidates(
                 str(returned[block["id"]]["replacement"]),
                 block.get("required_tokens"),
                 scope=str(block.get("scope", "block")),
-                source_text=str(
-                    block.get("markdown") or block.get("source_text") or ""
-                ),
+                source_text=block_markdown(block, fragments),
             )
         )
     ]
@@ -564,14 +582,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     "crop_sequence": sequence,
                     "scope": block.get("scope", "block"),
                     "required_tokens": block.get("required_tokens", []),
-                    "current_markdown": fragments.get(
-                        block["id"],
-                        str(
-                            block.get("markdown")
-                            or block.get("source_text")
-                            or ""
-                        ),
-                    ),
+                    "current_markdown": block_markdown(block, fragments),
                 }
                 for sequence, block in enumerate(request_blocks, 1)
             ]
@@ -604,11 +615,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         try:
             result, usage = request(blocks)
             batch_counts = save_replacements(
-                args.output_dir, blocks, result, provider
+                args.output_dir, blocks, result, provider, fragments
             )
             for name, count in batch_counts.items():
                 counts[name] += count
-            fallback_blocks = rejected_candidates(blocks, result)
+            fallback_blocks = rejected_candidates(blocks, result, fragments)
             counts["rejected"] -= len(fallback_blocks)
         except (TimeoutError, urllib.error.URLError, RuntimeError, ValueError) as exc:
             batch_error = type(exc).__name__
@@ -618,7 +629,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             try:
                 result, item_usage = request([block])
                 item_counts = save_replacements(
-                    args.output_dir, [block], result, provider
+                    args.output_dir, [block], result, provider, fragments
                 )
             except (TimeoutError, urllib.error.URLError, RuntimeError, ValueError):
                 counts["failed"] += 1

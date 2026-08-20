@@ -12,6 +12,7 @@ from app.modules.document_restoration.infrastructure.crop_first_with_anydoc impo
 )
 from app.modules.document_restoration.infrastructure.selective_repair_with_provider import (
     OUTPUT_SCHEMA,
+    block_markdown,
     call_page,
     clean_previous_results,
     markdown_fragments,
@@ -112,6 +113,73 @@ Second
         self.assertEqual(
             normalize_replacement("equation_candidate", r"\[x_{1}=1\]"),
             "$$\nx_{1}=1\n$$",
+        )
+
+    def test_uses_richest_body_candidate_for_prompt_and_validation(self) -> None:
+        block = {
+            "id": "body-1",
+            "markdown": "XQ001QX",
+            "source_text": "XQ001QX",
+            "fallback_text": "완전한 원본 본문 " * 10,
+        }
+
+        self.assertEqual(
+            block_markdown(block, {"body-1": "XQ001QX"}),
+            block["fallback_text"],
+        )
+
+    def test_rejects_token_only_detected_source_against_long_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            block = {
+                "id": "body-1",
+                "type": "paragraph",
+                "scope": "page_body",
+                "markdown": "XQ001QX",
+                "source_text": "XQ001QX",
+                "fallback_text": "완전한 원본 본문 " * 10,
+                "required_tokens": ["XQ001QX"],
+            }
+
+            counts = save_replacements(
+                Path(temp_dir),
+                [block],
+                {
+                    "results": [
+                        {
+                            "block_id": "body-1",
+                            "action": "replace",
+                            "replacement": "XQ001QX",
+                        }
+                    ]
+                },
+                "openai",
+                {"body-1": "XQ001QX"},
+            )
+
+            self.assertEqual(
+                counts,
+                {"replace": 0, "keep": 0, "rejected": 1},
+            )
+
+    def test_allows_token_only_true_table_page_without_fallback(self) -> None:
+        block = {
+            "id": "body-1",
+            "type": "paragraph",
+            "scope": "page_body",
+            "markdown": "XQ001QX",
+            "source_text": "XQ001QX",
+            "fallback_text": "",
+            "required_tokens": ["XQ001QX"],
+        }
+
+        self.assertTrue(
+            valid_replacement(
+                block["type"],
+                "XQ001QX",
+                block["required_tokens"],
+                scope=block["scope"],
+                source_text=block_markdown(block, {"body-1": "XQ001QX"}),
+            )
         )
 
     def test_extracts_structured_output_text(self) -> None:
