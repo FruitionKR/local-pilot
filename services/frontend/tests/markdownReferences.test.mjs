@@ -7,11 +7,14 @@ import remarkGfm from "remark-gfm";
 import { splitMarkdownBlockRanges, splitMarkdownBlocks } from "../src/shared/lib/markdownSegments.ts";
 import { createRehypeSourceBlocks } from "../src/shared/lib/markdownSourceBlocks.ts";
 
-function renderMarkdown(markdown) {
+function renderMarkdown(markdown, highlightedBlocks = []) {
   const sourceBlocks = splitMarkdownBlockRanges(markdown).map((segment, index) => ({
     ...segment,
     blockId: `B${String(index + 1).padStart(4, "0")}`
   }));
+  const highlightedRankByBlockId = new Map(
+    highlightedBlocks.map((highlight) => [highlight.block_id, highlight.rank])
+  );
 
   return renderToStaticMarkup(React.createElement(
     ReactMarkdown,
@@ -19,11 +22,44 @@ function renderMarkdown(markdown) {
       // MarkdownViewer와 동일하게 원본 HTML을 렌더하지 않는다
       skipHtml: true,
       remarkPlugins: [remarkGfm],
-      rehypePlugins: [createRehypeSourceBlocks(sourceBlocks)]
+      rehypePlugins: [createRehypeSourceBlocks(sourceBlocks)],
+      components: {
+        "source-block": ({ node, children }) => {
+          const blockId = String(node?.properties?.dataBlockId ?? "");
+          const highlightedRank = highlightedRankByBlockId.get(blockId);
+          return React.createElement("div", {
+            className: highlightedRank ? `markdown-source-block is-highlighted citation-rank-${highlightedRank}` : "markdown-source-block",
+            "data-block-id": blockId,
+            "data-citation-rank": highlightedRank
+          }, children);
+        }
+      }
     },
     markdown
   ));
 }
+
+test("노트 marker를 포함한 원문에서 citation block을 실제 필드에 강조한다", () => {
+  const markdown = [
+    "<!-- fruition-note: note-1 -->",
+    "# 제목",
+    "",
+    "첫 번째 필드",
+    "",
+    "강조할 필드"
+  ].join("\n");
+
+  const html = renderMarkdown(markdown, [{ block_id: "B0004", rank: 2 }]);
+
+  assert.match(
+    html,
+    /class="markdown-source-block is-highlighted citation-rank-2" data-block-id="B0004" data-citation-rank="2"><p>강조할 필드<\/p>/
+  );
+  assert.doesNotMatch(
+    html,
+    /class="markdown-source-block is-highlighted citation-rank-2" data-block-id="B0003"/
+  );
+});
 
 test("footnote reference와 definition을 한 문서 문맥에서 연결한다", () => {
   const markdown = [
