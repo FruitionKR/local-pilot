@@ -1744,9 +1744,11 @@ plan JSON:
 - 결과: 3/3 통과. 모든 회차에서 `routed_action=markdown_create`, `selected_skill_id=skill-template-onboarding`이었다.
 - 최초 보정 전 오류는 각 raw JSON의 `correction_history`에 기록했다: `SkillNotFoundError: Skill not found: skill-template-before-fix` → 정확한 explicit Skill ID와 helper 결과로 재실행.
 
-## Reference 구조와 production helper 결과
+## 고정 템플릿 구조 보존 수정
 
-Reference Markdown은 요청된 H1 1개, H2 6개와 첫날 번호 목록 2개, 첫 주 체크 목록 2개, 결정 bullet 2개만 포함했다. `extract_markdown_structure` 실제 결과는 다음과 같다.
+### 수정 전
+
+별도 고정 템플릿 Skill 실험 당시 Reference Markdown은 요청된 H1 1개, H2 6개와 첫날 번호 목록 2개, 첫 주 체크 목록 2개, 결정 bullet 2개만 포함했다. 당시 `extract_markdown_structure` 결과에서는 체크박스가 일반 목록과 같은 `[item]`으로 바뀌었다.
 
 ```markdown
 # 신규 팀원 온보딩 계획
@@ -1764,7 +1766,19 @@ Reference Markdown은 요청된 H1 1개, H2 6개와 첫날 번호 목록 2개, �
 - [item]
 ```
 
-`build_reference_template_instructions`의 실제 전체 결과는 `report.json`의 `build_reference_template_instructions_result`에 저장했다. 추출 결과에서 예시 본문 사실은 제거됐고, 목록 label과 본문은 `[item]`으로 일반화됐다. 체크박스 enhancement contract는 체크박스의 구조와 항목 수는 보존하되 completion state는 unchecked로 정규화하는 것이며, 원래 `[x]`·`[X]`·`[ ]`의 정확한 상태 보존을 뜻하지 않는다. 이 fixture에는 표를 넣지 않았으므로 표 본문 보존 여부 자체는 실행으로 판정할 수 없으며, helper는 표 header/separator만 구조로 수집하고 표 본문 행은 수집하지 않는 구현 한계를 함께 기록한다.
+`build_reference_template_instructions`의 당시 전체 결과는 `report.json`의 `build_reference_template_instructions_result`에 저장했다. 이 fixture에는 표가 없으므로 당시 live 결과로 표 본문 보존 여부를 판정하지 않았다.
+
+### 수정 후
+
+현재 `extract_markdown_structure`는 체크박스의 구조와 항목 수를 보존하고 완료 상태만 unchecked로 정규화한다. 따라서 같은 Reference Markdown의 첫 주 체크리스트는 다음처럼 추출된다.
+
+```markdown
+## 첫 주 체크리스트
+- [ ] [item]
+- [ ] [item]
+```
+
+표는 실제 셀 값을 노출하지 않고 header·separator와 본문 행·열 topology를 placeholder로 보존한다. `test_normalizes_checkbox_state_and_preserves_ordinary_list_structure`, `test_preserves_table_body_topology_without_cell_content`, escaped pipe·fence·outer pipe 변형 회귀 테스트가 이 동작을 확인하며, 관련 AI suite 결과는 **404 passed, 79 subtests passed**다. 별도 고정 템플릿 3회 live 평가는 수정 전 fixture 실행 기록이므로 수정 후 helper의 live 재평가로 확대하지 않는다.
 
 ## 회차별 결과 및 사람 검토
 
@@ -2383,18 +2397,13 @@ Promotion cluster에서 독립 concept 후보로 판단된 항목이다.
 
 ## 검증된 고도화 후보
 
-아래 항목은 watcher 조사와 production 코드·테스트 대조에서 확인된 후속 후보다. 즉시 결함으로 확정한 항목과 제품 계약 또는 평가 계약을 먼저 정해야 하는 항목을 구분한다.
+아래에는 아직 남은 후속 후보만 기록한다. PR #224에서 완료된 Log 표시 이름 snapshot, Skill checkbox·표 topology, 온보딩 결정 표현, folder 승인 문구는 미해결 후보에서 제거했다.
 
 | 우선순위 | 항목 | 현재 판정과 최소 후속 범위 |
 | --- | --- | --- |
 | 계약 확정 후 | I-1 validated relation graph edge capability gap | resolver가 검증한 `concept_resolutions[*].link_targets`·`hint_resolutions[*].link_targets`를 표시용 `Related Concepts`뿐 아니라 persisted `concept_related_to` edge로 materialize할지는 제품 계약을 먼저 확정한다. 확정할 때만 `LinkBuilder`와 회귀 테스트를 추가한다. |
 | fixture 우선 | Q-2 distinct facet citable evidence | 질문의 distinct facet별 citable evidence 보존은 먼저 사람·LLM facet이 각각 별도 source block/evidence unit인 fixture로 고정한다. 두 facet 선택과 근거 없는 facet 비단정을 검증한 뒤 결정적 결함일 때 selector 경계를 보강한다. |
 | 평가 계약 | I-2 benchmark gold facet | source별 gold facet을 benchmark 입력과 evaluator/guard 계약에 명시한다. 일반 ingest의 concept 개수나 prompt를 강제하는 production 결함으로 확대하지 않는다. |
-| P1 | Log `resource_display_name` | `OperationChange` 생성 경로 일부가 변경 시점 리소스 표시 이름을 전달하지 않아 DTO 값이 null이 되는 production 결함이다. 문서 편집·Wiki restore/rebuild 등 해당 경로와 당시 이름 보존 회귀 테스트를 추가한다. |
-| P1 | Skill checkbox | fixed-template helper가 `- [ ]`, `- [x]`, `- [X]` 상태를 잃는다. checkbox marker를 보존하는 최소 helper·authoring 회귀 테스트를 추가한다. |
-| P1 | Skill table body topology | fixed-template helper가 table separator 뒤 body row의 행·열 구조를 보존하지 않는다. 실제 셀 값은 노출하지 않고 행·열 topology만 placeholder로 보존하는 회귀 테스트를 추가한다. |
-| P2 | onboarding 결정 표현 | 근거 없는 입력에서 Skill이 요구한 `결정 사항`을 사실처럼 단정하지 않도록 `제안` 또는 `결정 필요` 경계를 보강한다. 현재 3/3 형식·라우팅 통과를 의미 품질 통과로 재분류하지 않는다. |
-| P2 | folder plan 승인 후 mutation 문구 | 계획 생성은 승인 전 변경 없음이며 승인 후 `move_document`·`rename_document`가 gateway를 통해 실행된다. 사용자-facing 문구를 “승인 후 listed mutation 실행” 의미로 정합화하고 read-only 호환 레이어는 만들지 않는다. |
 | 평가 인프라 | Log keyed case evidence·Backend focused 최종 실행 | 기존 raw aggregate의 개별 case key·명령·status·stdout/stderr를 runner가 저장하고 validator가 합계와 unique key를 검사하게 한다. Backend focused는 HEAD `778e2ca0` Java 21 직접 실행 **204/204**, Log AI guard **29/29**로 기록한다. |
 
 Q-1 selector finding은 [PR #223](https://github.com/FruitionKR/local-pilot/pull/223)의 한국어 조사 tokenization 조사·수정과 원인이 중복되므로 이 보고서의 고도화 후보에서 제외한다. Skill 기존 실행의 9/9는 routing·plan·allowlist·recording gateway까지 검증한 표면 결과이고, 후속 live 일반 온보딩은 strict 1/3·grounding 2/3으로 세분화됐으며 실제 Backend mutation e2e가 아니다. 따라서 이를 결함으로 확정하지 않고, 실제 Backend integration/e2e가 별도 요구될 때 독립 평가로 추가한다.
