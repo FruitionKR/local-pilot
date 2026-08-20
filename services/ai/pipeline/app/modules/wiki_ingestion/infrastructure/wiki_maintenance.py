@@ -32,6 +32,9 @@ from app.modules.wiki_ingestion.infrastructure.promotion_concept_page import (
     build_promotion_concept_page,
     promotion_representative,
 )
+from app.modules.wiki_ingestion.infrastructure.workspace_concept_lock import (
+    concept_write_lock,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -52,10 +55,15 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
             if should_materialize
             else None
         )
+        lock = (
+            concept_write_lock(command.workspace_id, str(command.operation_id))
+            if not command.dry_run
+            else nullcontext()
+        )
         transaction = (
             nullcontext(None) if command.dry_run else database.connect()
         )
-        with transaction as connection:
+        with lock, transaction as connection:
             result = database.lint_wiki_workspace(
                 command.user_id,
                 command.workspace_id,

@@ -1024,6 +1024,10 @@ def _assemble_meaning_clusters(
 def run_pipeline(
     command: PipelineRunCommand,
     progress_callback: Callable[[], bool | None] | None = None,
+    finalization_callback: Callable[
+        [Callable[[], dict[str, Any]]], dict[str, Any]
+    ]
+    | None = None,
 ) -> dict:
     args = resolve_api_defaults(command)
     input_text = getattr(args, "input_markdown", None)
@@ -1197,82 +1201,89 @@ def run_pipeline(
         log=log,
     )
 
-    meaning_cluster_artifact, maintenance_summary = _assemble_meaning_clusters(
-        args,
-        api_client=api_client,
-        normalized=contribution_normalized,
-        out=out,
-        log=log,
-    )
-
-    source_extraction_artifact = _json_safe(
-        page_outputs.source_page_normalized.get("source_extraction_artifact")
-    )
-    if source_changes is not None and isinstance(
-        source_extraction_artifact,
-        dict,
-    ):
-        source_extraction_artifact = {
-            **source_extraction_artifact,
-            "max_block_number": source_changes.max_block_number,
-        }
-    manifest = {
-        "input": input_source_name if input_text is not None else str(input_path),
-        "out": str(out),
-        "mode": args.mode,
-        "operation_id": args.operation_id,
-        "selection_mode": getattr(args, "selection_mode", None),
-        "user_id": args.user_id,
-        "workspace_id": args.workspace_id,
-        "source_page_mode": page_outputs.source_page_mode,
-        "concept_page_mode": page_outputs.concept_page_mode,
-        "document_id": document.document_id,
-        "source_document_id": getattr(args, "source_document_id", None),
-        "source_page": page_outputs.source_page,
-        "source_extraction_artifact": source_extraction_artifact,
-        "source_blocks": source_block_records,
-        "source_block_changes": (
-            source_changes.to_manifest()
-            if source_changes is not None
-            else None
-        ),
-        "concept_pages": page_outputs.concept_pages,
-        "concept_contributions": build_concept_contributions(
-            operation_id=args.operation_id,
+    def build_manifest() -> dict[str, Any]:
+        meaning_cluster_artifact, maintenance_summary = _assemble_meaning_clusters(
+            args,
+            api_client=api_client,
             normalized=contribution_normalized,
-            source_blocks=source_block_records,
-            links=page_outputs.links,
-            concept_update_decisions=meaning_cluster_artifact.get(
-                "concept_update_decisions",
-                [],
-            ),
+            out=out,
+            log=log,
         )
-        if args.operation_id
-        else {},
-        "links": page_outputs.links,
-        "meaning_clusters": meaning_cluster_artifact,
-        "maintenance_summary": maintenance_summary,
-        "normalized": normalized,
-        "generation_evaluations": generation_evaluations,
-        "generation_evaluation_status": generation_evaluation_status(generation_evaluations),
-        "pipeline_log": str(log.path),
-        "log_callback_url": getattr(args, "log_callback_url", None),
-        "save_debug_json": args.save_debug_json,
-        "warnings": normalized.get("warnings", []),
-    }
-    log.emit(
-        "완료",
-        "파이프라인 실행이 완료되었습니다.",
-        {
-            "문서 ID": document.document_id,
-            "core concept 수": len(normalized["concept_ledger"]),
-            "section candidate 수": len(normalized.get("section_candidates", [])),
-            "mention 수": len(normalized.get("mentions", [])),
-            "category 수": len(normalized.get("categories", [])),
-            "근거 수": len(normalized["evidence_units"]),
-        },
+
+        source_extraction_artifact = _json_safe(
+            page_outputs.source_page_normalized.get("source_extraction_artifact")
+        )
+        if source_changes is not None and isinstance(
+            source_extraction_artifact,
+            dict,
+        ):
+            source_extraction_artifact = {
+                **source_extraction_artifact,
+                "max_block_number": source_changes.max_block_number,
+            }
+        manifest = {
+            "input": input_source_name if input_text is not None else str(input_path),
+            "out": str(out),
+            "mode": args.mode,
+            "operation_id": args.operation_id,
+            "selection_mode": getattr(args, "selection_mode", None),
+            "user_id": args.user_id,
+            "workspace_id": args.workspace_id,
+            "source_page_mode": page_outputs.source_page_mode,
+            "concept_page_mode": page_outputs.concept_page_mode,
+            "document_id": document.document_id,
+            "source_document_id": getattr(args, "source_document_id", None),
+            "source_page": page_outputs.source_page,
+            "source_extraction_artifact": source_extraction_artifact,
+            "source_blocks": source_block_records,
+            "source_block_changes": (
+                source_changes.to_manifest()
+                if source_changes is not None
+                else None
+            ),
+            "concept_pages": page_outputs.concept_pages,
+            "concept_contributions": build_concept_contributions(
+                operation_id=args.operation_id,
+                normalized=contribution_normalized,
+                source_blocks=source_block_records,
+                links=page_outputs.links,
+                concept_update_decisions=meaning_cluster_artifact.get(
+                    "concept_update_decisions",
+                    [],
+                ),
+            )
+            if args.operation_id
+            else {},
+            "links": page_outputs.links,
+            "meaning_clusters": meaning_cluster_artifact,
+            "maintenance_summary": maintenance_summary,
+            "normalized": normalized,
+            "generation_evaluations": generation_evaluations,
+            "generation_evaluation_status": generation_evaluation_status(generation_evaluations),
+            "pipeline_log": str(log.path),
+            "log_callback_url": getattr(args, "log_callback_url", None),
+            "save_debug_json": args.save_debug_json,
+            "warnings": normalized.get("warnings", []),
+        }
+        log.emit(
+            "완료",
+            "파이프라인 실행이 완료되었습니다.",
+            {
+                "문서 ID": document.document_id,
+                "core concept 수": len(normalized["concept_ledger"]),
+                "section candidate 수": len(normalized.get("section_candidates", [])),
+                "mention 수": len(normalized.get("mentions", [])),
+                "category 수": len(normalized.get("categories", [])),
+                "근거 수": len(normalized["evidence_units"]),
+            },
+        )
+        return _json_safe(manifest)
+
+    return (
+        finalization_callback(build_manifest)
+        if finalization_callback is not None
+        else build_manifest()
     )
-    return _json_safe(manifest)
 
 
 def pipeline_command_from_cli_args(args: argparse.Namespace) -> PipelineRunCommand:

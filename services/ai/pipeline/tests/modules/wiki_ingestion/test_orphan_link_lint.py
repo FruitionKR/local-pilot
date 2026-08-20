@@ -1,4 +1,5 @@
 import json
+from contextlib import nullcontext
 
 import pytest
 
@@ -253,6 +254,11 @@ def test_wiki_maintenance_reserves_embedding_before_commit_and_keeps_result_when
     transaction = Transaction()
     monkeypatch.setattr(wiki_maintenance.database, "connect", lambda: transaction)
     monkeypatch.setattr(
+        wiki_maintenance,
+        "concept_write_lock",
+        lambda *_args: nullcontext(),
+    )
+    monkeypatch.setattr(
         wiki_maintenance.database,
         "lint_wiki_workspace",
         lambda *_args, **kwargs: (
@@ -345,6 +351,11 @@ def test_wiki_maintenance_rolls_back_when_operation_log_persistence_fails(
     transaction = Transaction()
     monkeypatch.setattr(wiki_maintenance.database, "connect", lambda: transaction)
     monkeypatch.setattr(
+        wiki_maintenance,
+        "concept_write_lock",
+        lambda *_args: nullcontext(),
+    )
+    monkeypatch.setattr(
         wiki_maintenance.database,
         "lint_wiki_workspace",
         lambda *_args, **kwargs: (
@@ -429,6 +440,11 @@ def test_wiki_maintenance_deletes_written_objects_when_later_step_fails(
 
     transaction = Transaction()
     monkeypatch.setattr(wiki_maintenance.database, "connect", lambda: transaction)
+    monkeypatch.setattr(
+        wiki_maintenance,
+        "concept_write_lock",
+        lambda *_args: nullcontext(),
+    )
     monkeypatch.setattr(
         wiki_maintenance.database,
         "lint_wiki_workspace",

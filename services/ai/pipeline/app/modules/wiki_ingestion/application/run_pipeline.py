@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 from app.core.pipeline_control import PipelineRunCancelledError
@@ -35,19 +36,49 @@ class RunPipelineUseCase:
         )
 
     def execute(self, run_id: str, command: PipelineRunCommand) -> dict[str, Any]:
-        try:
-            self._ensure_active(run_id)
-            manifest = self._runner.run(
-                command,
-                progress_callback=lambda: self._repository.touch(run_id),
-            )
+        page_ids: list[str] = []
+        finished = False
+
+        def finish_after_heavy_phase(
+            build_manifest: Callable[[], dict[str, Any]],
+        ) -> dict[str, Any]:
+            nonlocal finished, page_ids
             self._ensure_active(run_id)
             self._ensure_current_source(command)
-            page_ids = self._repository.finish(
-                run_id,
-                manifest,
-                command.source_content_hash,
-            )
+            with self._repository.concept_write_lock(command.workspace_id, run_id):
+                self._ensure_active(run_id)
+                self._ensure_current_source(command)
+                manifest = build_manifest()
+                self._ensure_active(run_id)
+                self._ensure_current_source(command)
+                page_ids = self._repository.finish(
+                    run_id,
+                    manifest,
+                    command.source_content_hash,
+                )
+                finished = True
+            return manifest
+
+        try:
+            self._ensure_active(run_id)
+            runner_kwargs: dict[str, Any] = {
+                "progress_callback": lambda: self._repository.touch(run_id),
+            }
+            if command.source_document_id is not None:
+                runner_kwargs["finalization_callback"] = finish_after_heavy_phase
+            manifest = self._runner.run(command, **runner_kwargs)
+            if not finished:
+                if command.source_document_id is None:
+                    self._ensure_active(run_id)
+                    self._ensure_current_source(command)
+                    page_ids = self._repository.finish(
+                        run_id,
+                        manifest,
+                        command.source_content_hash,
+                    )
+                    finished = True
+                else:
+                    manifest = finish_after_heavy_phase(lambda: manifest)
             self._embedding_job.start(run_id, page_ids)
             return manifest
         except Exception as exc:

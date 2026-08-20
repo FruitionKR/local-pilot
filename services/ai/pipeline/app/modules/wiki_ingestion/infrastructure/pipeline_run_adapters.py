@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, ContextManager
 
 from app.modules.wiki_ingestion.application.models import PipelineRunCommand
 from app.modules.wiki_ingestion.infrastructure import (
@@ -15,11 +15,25 @@ class RunLabPipelineRunner:
         self,
         command: PipelineRunCommand,
         progress_callback: Callable[[], bool | None] | None = None,
+        finalization_callback: Callable[
+            [Callable[[], dict[str, Any]]], dict[str, Any]
+        ]
+        | None = None,
     ) -> dict[str, Any]:
-        return run_pipeline(command, progress_callback=progress_callback)
+        kwargs: dict[str, Any] = {"progress_callback": progress_callback}
+        if finalization_callback is not None:
+            kwargs["finalization_callback"] = finalization_callback
+        return run_pipeline(command, **kwargs)
 
 
 class PostgresPipelineRunRepository:
+    def concept_write_lock(
+        self,
+        workspace_id: str,
+        run_id: str,
+    ) -> ContextManager[None]:
+        return database.concept_write_lock(workspace_id, run_id)
+
     def create(
         self,
         run_id: str,
