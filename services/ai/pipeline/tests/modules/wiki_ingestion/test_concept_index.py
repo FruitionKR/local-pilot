@@ -403,7 +403,8 @@ reason: 기존 누적 근거
 ## cluster: back-emf
 
 ### Evidence Claims
-- claim_002: 추가 근거 [doc_b:B0002]
+- claim_002: 추가 근거 [doc_a:B0001]
+- claim_003: 추가 근거 [doc_b:B0002]
 
 ### Promotion
 status: candidate
@@ -415,6 +416,7 @@ reason: 신규 누적 근거
 
     assert merged.count("claim_001") == 1
     assert merged.count("claim_002") == 1
+    assert merged.count("claim_003") == 1
     assert merged.count("### Promotion") == 1
     assert "source_refs: [doc_a, doc_b]" in merged
 

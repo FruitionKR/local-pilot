@@ -36,13 +36,21 @@ def _lock_key(workspace_id: str) -> str:
 
 @contextmanager
 def concept_write_lock(workspace_id: str, run_id: str) -> Iterator[None]:
+    from psycopg.errors import LockNotAvailable
+
     del run_id
     key = _lock_key(workspace_id)
     with _connect() as connection:
-        connection.execute(
-            "SELECT pg_advisory_lock(hashtextextended(%s, 0))",
-            (key,),
-        )
+        try:
+            connection.execute("SET LOCAL lock_timeout = '60s'")
+            connection.execute(
+                "SELECT pg_advisory_lock(hashtextextended(%s, 0))",
+                (key,),
+            )
+        except LockNotAvailable as exc:
+            raise RuntimeError(
+                f"workspace concept lock acquisition timed out: {workspace_id}"
+            ) from exc
         try:
             yield
         finally:

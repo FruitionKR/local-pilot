@@ -81,6 +81,9 @@ class FakeRepository:
             return self.active_results.pop(0)
         return True
 
+    def concept_write_lock(self, _workspace_id: str, _run_id: str):
+        return Lock()
+
 
 class FakeEmbeddingJob:
     def __init__(self, calls: list[object]) -> None:
@@ -430,6 +433,8 @@ class RunPipelineUseCaseTest(unittest.TestCase):
         for thread in threads:
             thread.join(timeout=2)
 
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(len(seen_active), 2)
         self.assertFalse(errors)
         self.assertEqual(set(heavy_runs), {"run-1", "run-2"})
         self.assertEqual(seen_active[0][1], "")

@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from contextlib import nullcontext
 from typing import Any
 
 from app.core.pipeline_control import PipelineRunCancelledError
@@ -46,13 +45,7 @@ class RunPipelineUseCase:
             nonlocal finished, page_ids
             self._ensure_active(run_id)
             self._ensure_current_source(command)
-            lock_factory = getattr(self._repository, "concept_write_lock", None)
-            lock = (
-                lock_factory(command.workspace_id, run_id)
-                if lock_factory is not None
-                else nullcontext()
-            )
-            with lock:
+            with self._repository.concept_write_lock(command.workspace_id, run_id):
                 self._ensure_active(run_id)
                 self._ensure_current_source(command)
                 manifest = build_manifest()

@@ -1,13 +1,14 @@
 from contextlib import contextmanager
 
 import pytest
+from psycopg.errors import LockNotAvailable
 
 from app.modules.wiki_ingestion.infrastructure import workspace_concept_lock
 
 
 class FakeConnection:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[str, ...]]] = []
+        self.calls: list[tuple[str, tuple[str, ...] | None]] = []
         self.exit_exception = None
 
     def __enter__(self):
@@ -17,7 +18,7 @@ class FakeConnection:
         self.exit_exception = exc_type
         return False
 
-    def execute(self, query: str, params: tuple[str, ...]) -> None:
+    def execute(self, query: str, params: tuple[str, ...] | None = None) -> None:
         self.calls.append((query, params))
 
 
@@ -30,6 +31,7 @@ def test_concept_lock_uses_workspace_advisory_key_and_releases_on_exception(monk
             raise RuntimeError("boom")
 
     assert connection.calls == [
+        ("SET LOCAL lock_timeout = '60s'", None),
         (
             "SELECT pg_advisory_lock(hashtextextended(%s, 0))",
             ("wiki:concept-lock:workspace-1",),
@@ -58,9 +60,32 @@ def test_concept_lock_keys_differ_by_workspace(monkeypatch) -> None:
     with workspace_concept_lock.concept_write_lock("workspace-2", "run-2"):
         pass
 
-    assert [connection.calls[0][1][0] for connection in connections] == [
+    assert [connection.calls[1][1][0] for connection in connections] == [
         "wiki:concept-lock:workspace-1",
         "wiki:concept-lock:workspace-2",
+    ]
+
+
+def test_concept_lock_timeout_fails_without_unlock(monkeypatch) -> None:
+    class FailingConnection(FakeConnection):
+        def execute(self, query: str, params: tuple[str, ...] | None = None) -> None:
+            super().execute(query, params)
+            if query == "SELECT pg_advisory_lock(hashtextextended(%s, 0))":
+                raise LockNotAvailable("lock timeout")
+
+    connection = FailingConnection()
+    monkeypatch.setattr(workspace_concept_lock, "_connect", lambda: connection)
+
+    with pytest.raises(RuntimeError, match="acquisition timed out"):
+        with workspace_concept_lock.concept_write_lock("workspace-1", "run-1"):
+            pass
+
+    assert connection.calls == [
+        ("SET LOCAL lock_timeout = '60s'", None),
+        (
+            "SELECT pg_advisory_lock(hashtextextended(%s, 0))",
+            ("wiki:concept-lock:workspace-1",),
+        ),
     ]
 
 
