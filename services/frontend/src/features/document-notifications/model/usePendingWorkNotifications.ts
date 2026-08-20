@@ -15,8 +15,33 @@ const INGEST_STALL_MS = 60_000;
 const STALL_CHECK_INTERVAL_MS = 30_000;
 // 연속 완료 시 같은 제안 카드가 반복되지 않게 최소 간격을 둔다.
 const LINT_CHECK_COOLDOWN_MS = 5 * 60_000;
+// 새로고침해도 이미 보여준 제안 카드가 반복되지 않도록 제안 기록을 보존한다.
+const PROMPT_MEMORY_STORAGE_KEY = "fruition.pending_work_prompted";
 
-function publishIngestPrompt(documents: DocumentItemResponse[], title: string) {
+type PromptMemory = { prompted?: string[]; stalled?: string[]; reingest?: string[] };
+
+function loadPromptMemory(): PromptMemory {
+  if (typeof window === "undefined") return {};
+  try {
+    return (JSON.parse(window.localStorage.getItem(PROMPT_MEMORY_STORAGE_KEY) ?? "null") ?? {}) as PromptMemory;
+  } catch {
+    // 손상된 저장값은 무시하고 새로 쌓는다.
+    return {};
+  }
+}
+
+function savePromptMemory(memory: Required<PromptMemory>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PROMPT_MEMORY_STORAGE_KEY, JSON.stringify(memory));
+  } catch {
+    // 저장 실패는 다음 새로고침에 카드가 한 번 더 보일 뿐이므로 무시한다.
+  }
+}
+
+function publishIngestPrompt(candidates: DocumentItemResponse[], title: string) {
+  // PDF 원본은 ingest 대상이 아니므로 분석 제안에서 제외한다.
+  const documents = candidates.filter((document) => document.mime_type !== "application/pdf");
   if (documents.length === 0) return;
   const message = documents.length === 1
     ? `"${documents[0].filename}" 문서를 위키에 반영하려면 분석을 시작하세요.`
@@ -71,9 +96,29 @@ export function usePendingWorkNotifications(documents: DocumentItemResponse[]) {
   const reingestNotifiedRef = useRef(new Set<string>());
   const lintCheckInFlightRef = useRef(false);
   const lastLintCheckAtRef = useRef(0);
+  // 새로고침 후에도 같은 카드를 다시 띄우지 않도록 제안 기록을 localStorage에서 복원한다.
+  const promptMemoryLoadedRef = useRef(false);
+
+  function restorePromptMemory() {
+    if (promptMemoryLoadedRef.current) return;
+    promptMemoryLoadedRef.current = true;
+    const memory = loadPromptMemory();
+    memory.prompted?.forEach((id) => promptedIdsRef.current.add(id));
+    memory.stalled?.forEach((id) => stallNotifiedRef.current.add(id));
+    memory.reingest?.forEach((id) => reingestNotifiedRef.current.add(id));
+  }
+
+  function persistPromptMemory() {
+    savePromptMemory({
+      prompted: [...promptedIdsRef.current],
+      stalled: [...stallNotifiedRef.current],
+      reingest: [...reingestNotifiedRef.current]
+    });
+  }
 
   // ① 업로드 직후 / ② 세션 진입 시: uploaded 문서에 분석 시작 제안
   useEffect(() => {
+    restorePromptMemory();
     const known = knownIdsRef.current;
     const uploaded = documents.filter((document) => document.status === "uploaded");
 
@@ -82,6 +127,7 @@ export function usePendingWorkNotifications(documents: DocumentItemResponse[]) {
       knownIdsRef.current = new Set(documents.map((document) => document.id));
       const initial = uploaded.filter((document) => !promptedIdsRef.current.has(document.id));
       initial.forEach((document) => promptedIdsRef.current.add(document.id));
+      persistPromptMemory();
       publishIngestPrompt(initial, "분석 대기 중인 문서가 있습니다");
       return;
     }
@@ -96,6 +142,7 @@ export function usePendingWorkNotifications(documents: DocumentItemResponse[]) {
         promptedIdsRef.current.add(document.id);
         promptQueueRef.current.add(document.id);
       });
+      persistPromptMemory();
       if (promptTimerRef.current) window.clearTimeout(promptTimerRef.current);
       promptTimerRef.current = window.setTimeout(() => {
         promptTimerRef.current = null;
@@ -115,6 +162,7 @@ export function usePendingWorkNotifications(documents: DocumentItemResponse[]) {
 
   // ③ 60초 정체 리마인드: 제안을 넘겼거나 시작이 실패한 문서를 다시 잡아준다
   useEffect(() => {
+    restorePromptMemory();
     function checkStalledUploads() {
       const now = Date.now();
       const firstSeen = uploadedFirstSeenRef.current;
@@ -139,6 +187,7 @@ export function usePendingWorkNotifications(documents: DocumentItemResponse[]) {
           promptedIdsRef.current.delete(id);
         }
       });
+      persistPromptMemory();
 
       publishIngestPrompt(stalled, "문서 분석이 아직 시작되지 않았습니다");
     }
@@ -151,6 +200,10 @@ export function usePendingWorkNotifications(documents: DocumentItemResponse[]) {
   // 재분석 제안: 마지막 ingest 이후 편집된 문서(needs_reingest)를 감지한다.
   // 재분석이 시작되면 needs_reingest가 풀리므로, 그때 알림 기록을 해제해 다음 편집 때 다시 제안한다.
   useEffect(() => {
+    restorePromptMemory();
+    // 문서 목록을 아직 받기 전(빈 배열)에는 복원한 알림 기록을 지우면 안 된다.
+    // 여기서 지우면 목록 도착 시 같은 카드가 새로고침마다 다시 발행된다.
+    if (documents.length === 0) return;
     const needing = documents.filter((document) => document.needs_reingest);
     const needingIds = new Set(needing.map((document) => document.id));
     [...reingestNotifiedRef.current].forEach((id) => {
@@ -158,8 +211,12 @@ export function usePendingWorkNotifications(documents: DocumentItemResponse[]) {
     });
 
     const fresh = needing.filter((document) => !reingestNotifiedRef.current.has(document.id));
-    if (fresh.length === 0) return;
+    if (fresh.length === 0) {
+      persistPromptMemory();
+      return;
+    }
     fresh.forEach((document) => reingestNotifiedRef.current.add(document.id));
+    persistPromptMemory();
     publishIngestPrompt(fresh, "마지막 분석 이후 수정된 문서가 있습니다");
   }, [documents]);
 
