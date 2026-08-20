@@ -373,7 +373,7 @@ production `BgeM3EmbeddingSearch`의 기본 모델 `BAAI/bge-m3`로 서로 겹�
 #### 수정 전
 
 - 앞의 6행 실측은 BGE-M3 모델 수준 dense 검색으로, DB·MinIO 저장부터 HTTP Query 응답과 citation까지 이어지는 제품 경로를 검증하지 않았다.
-- 저장 벡터가 없는 후보의 fallback에서 같은 BGE-M3 weights가 두 번 load됐고, NaN·`+Inf`·`-Inf` 점수의 fallback 경계도 회귀 테스트로 고정되지 않았다.
+- 저장 벡터가 없는 후보의 fallback에서 같은 BGE-M3 weights가 두 번 load됐고, 저장 벡터 요소가 NaN·`+Inf`·`-Inf`인 경우의 fallback 경계도 회귀 테스트로 고정되지 않았다.
 
 #### 수정 후
 
@@ -405,7 +405,7 @@ ko-doc-en-query {'top_page': 'source:doc-ko', 'refs': [{'source_document_id': 'd
 
 답변 문장 생성만 결과를 고정하기 위한 deterministic fake를 사용했다. DB·MinIO·embedding 저장·HTTP 요청·retrieval·citation 조립은 실제 경로를 사용했으므로, 이 **2/2**는 반대 언어 검색 결과가 저장된 page와 block citation까지 연결되는지를 검증한다.
 
-저장 벡터가 누락된 후보의 검색에는 query에 이미 사용한 동일 모델을 재사용해 한 요청의 weights load를 **2회에서 1회**로 줄였다. similarity가 NaN·`+Inf`·`-Inf`이면 해당 dense 점수를 사용하지 않고 기존 fallback 경로로 처리한다. Query 전체 결과는 **134 passed, 19 subtests passed**다.
+저장 벡터가 누락된 후보의 검색에는 query에 이미 사용한 동일 모델을 재사용해 한 요청의 weights load를 **2회에서 1회**로 줄였다. 저장된 벡터 요소가 NaN·`+Inf`·`-Inf`이면 해당 문서를 기존 fallback 경로로 처리한다. Query 전체 결과는 **134 passed, 19 subtests passed**다.
 
 #### 남은 조건
 
@@ -2501,7 +2501,7 @@ Q-1 selector finding은 [PR #223](https://github.com/FruitionKR/local-pilot/pull
 
 ## 실제 결과
 
-편입의 기존 구조 계약은 짧은 입력 9/9, 장문 3/3이고, 새 줄글은 자동 평가·원문 참조·기계 guard 9/9이었다. 새 줄글의 독립 의미 판정 당시 결과는 7/9(운영 설정 승인 줄글의 독립 실행 1·2회 판정 실패)이고, 직접 `concept_related_slugs` 생성은 핵심 의미 실패가 아닌 0/9 관찰값이다. description과 `evidence_related_slugs`에는 관계 후보가 포함됐지만 최종 Markdown 관계 렌더링은 캡처하지 않았으며, production prompt는 canonical workflow 하나로 개념을 묶는 것을 허용하고 gold concept 개수는 제품 계약이 아니므로 개념 수만으로 실패를 판정한 부분은 평가 한계다. 완료된 AI 관련 suite는 **404 passed, 79 subtests passed**, 직접 변경 범위는 **102 passed, 4 subtests passed**다. Query 전체는 **134 passed, 19 subtests passed**였고, 수정 후 `index.md`·`log.md` 진단은 **1/1**, 전체는 **6/6**이었다. 교차언어 제품 E2E 2건은 기대 page·citation **2/2**였으며 DB·MinIO·embedding 저장·HTTP·retrieval·citation은 실제 경로, 답변 생성만 deterministic fake였다. 저장 벡터 누락 시 같은 모델을 재사용해 weights load를 2회에서 1회로 줄였고 NaN·±Inf 점수는 fallback 처리했다. Agent 21/21, Skill 라우팅·분류 32/32, 기존 일반 Skill 적용의 표면 형식·라우팅·도구 계약 9/9, 후속 live 일반 온보딩 A는 strict 1/3·route 3/3·grounding 2/3, 폴더 계획 B는 3/3, 입력 결정 근거를 반영한 별도 고정 템플릿 Skill 3/3이었다. 1열 표 구조와 음성 경계의 Skill 결과는 **112 passed, 2 subtests passed**다. Log AI guard는 **29/29**였고, 최종 PR #224 조합 HEAD `778e2ca0`의 Java 21 직접 실행 Backend focused는 **204/204**였다. PR #223은 Backend·Frontend·llmPipeline·CodeRabbit 검증을 통과했다. Production BGE-M3 모델 수준 교차언어는 영문 문서→한국어 질문 3/3, 한국어 문서→영문 질문 3/3이었고, 별도 제품 E2E는 양방향 2/2였다. 다만 active 165개 중 BGE 저장 완료는 153개이고 전체 backfill 진입점이 없으며 최대 RSS 약 1,171.6MiB가 Kubernetes 1GiB 제한을 넘으므로 배포 기본값은 `text-only`로 유지했다. Lint dry-run은 변경 없이 끝났고 기존 promotion page는 정의·핵심 내용·citation·title/slug·구조 9/9였으며 core selection은 시험하지 않았다. MeaningClusterJudge 18회는 최초 expected 기준 10/18이지만 제품 실패율이 아니고, 양성 cluster match·target 9/9, 비-core none 8/9, candidate 1/9, 음성 none 9/9이며 진짜 core concept miss는 시험되지 않았다.
+편입의 기존 구조 계약은 짧은 입력 9/9, 장문 3/3이고, 새 줄글은 자동 평가·원문 참조·기계 guard 9/9이었다. 새 줄글의 독립 의미 판정 당시 결과는 7/9(운영 설정 승인 줄글의 독립 실행 1·2회 판정 실패)이고, 직접 `concept_related_slugs` 생성은 핵심 의미 실패가 아닌 0/9 관찰값이다. description과 `evidence_related_slugs`에는 관계 후보가 포함됐지만 최종 Markdown 관계 렌더링은 캡처하지 않았으며, production prompt는 canonical workflow 하나로 개념을 묶는 것을 허용하고 gold concept 개수는 제품 계약이 아니므로 개념 수만으로 실패를 판정한 부분은 평가 한계다. 완료된 AI 관련 suite는 **404 passed, 79 subtests passed**, 직접 변경 범위는 **102 passed, 4 subtests passed**다. Query 전체는 **134 passed, 19 subtests passed**였고, 수정 후 `index.md`·`log.md` 진단은 **1/1**, 전체는 **6/6**이었다. 교차언어 제품 E2E 2건은 기대 page·citation **2/2**였으며 DB·MinIO·embedding 저장·HTTP·retrieval·citation은 실제 경로, 답변 생성만 deterministic fake였다. 저장 벡터 누락 시 같은 모델을 재사용해 weights load를 2회에서 1회로 줄였고, 저장된 벡터 요소가 NaN·±Inf이면 해당 문서를 fallback 처리했다. Agent 21/21, Skill 라우팅·분류 32/32, 기존 일반 Skill 적용의 표면 형식·라우팅·도구 계약 9/9, 후속 live 일반 온보딩 A는 strict 1/3·route 3/3·grounding 2/3, 폴더 계획 B는 3/3, 입력 결정 근거를 반영한 별도 고정 템플릿 Skill 3/3이었다. 1열 표 구조와 음성 경계의 Skill 결과는 **112 passed, 2 subtests passed**다. Log AI guard는 **29/29**였고, 최종 PR #224 조합 HEAD `778e2ca0`의 Java 21 직접 실행 Backend focused는 **204/204**였다. PR #223은 Backend·Frontend·llmPipeline·CodeRabbit 검증을 통과했다. Production BGE-M3 모델 수준 교차언어는 영문 문서→한국어 질문 3/3, 한국어 문서→영문 질문 3/3이었고, 별도 제품 E2E는 양방향 2/2였다. 다만 active 165개 중 BGE 저장 완료는 153개이고 전체 backfill 진입점이 없으며 최대 RSS 약 1,171.6MiB가 Kubernetes 1GiB 제한을 넘으므로 배포 기본값은 `text-only`로 유지했다. Lint dry-run은 변경 없이 끝났고 기존 promotion page는 정의·핵심 내용·citation·title/slug·구조 9/9였으며 core selection은 시험하지 않았다. MeaningClusterJudge 18회는 최초 expected 기준 10/18이지만 제품 실패율이 아니고, 양성 cluster match·target 9/9, 비-core none 8/9, candidate 1/9, 음성 none 9/9이며 진짜 core concept miss는 시험되지 않았다.
 
 ## 왜 그렇게 판정했나
 
