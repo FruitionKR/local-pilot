@@ -52,8 +52,13 @@ test("프로필 메뉴는 설정과 로그아웃만 제공한다", async () => {
   assert.doesNotMatch(source, /Wiki 관리/);
   assert.doesNotMatch(source, /NotificationsPanel/);
   assert.doesNotMatch(source, /isNotificationsOpen/);
-  assert.match(source, />\s*설정\s*</);
-  assert.match(source, />\s*로그아웃\s*</);
+
+  // profile-menu 블록 안의 menuitem 텍스트를 추출해 목록 전체를 정확히 비교한다.
+  const menuBlock = source.match(/profile-menu[\s\S]*?\{isSettingsOpen/)?.[0] ?? "";
+  const menuItems = [...menuBlock.matchAll(/role="menuitem"[\s\S]*?>\s*([^<>{}]+?)\s*<\/button>/g)].map(
+    (match) => match[1]
+  );
+  assert.deepEqual(menuItems, ["설정", "로그아웃"]);
 });
 
 test("프로필은 Wiki 관리에만 필요했던 프로젝트 목록을 받지 않는다", async () => {
@@ -64,7 +69,7 @@ test("프로필은 Wiki 관리에만 필요했던 프로젝트 목록을 받지 
 
   assert.match(profileSource, /export function SidebarProfile\(\)/);
   assert.match(sidebarSource, /<SidebarProfile\s*\/>/);
-  assert.doesNotMatch(sidebarSource, /<SidebarProfile projects=/);
+  assert.doesNotMatch(sidebarSource, /<SidebarProfile\b[^>]*\bprojects\s*=/);
 });
 
 test("문서 알림 공개 API에서 Wiki 관리 패널을 제거한다", async () => {
