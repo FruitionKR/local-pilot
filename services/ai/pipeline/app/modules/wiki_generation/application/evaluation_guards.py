@@ -494,7 +494,6 @@ def _is_broken_observation_text(text: str) -> bool:
             return True
         if stripped.count(opener) > stripped.count(closer):
             return True
-    return len(stripped) < 8
 
 
 def _observation_signature(observation: dict[str, Any]) -> str:
