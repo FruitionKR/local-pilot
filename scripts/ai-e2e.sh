@@ -7,6 +7,7 @@ PDF_FILE="${1:-}"
 RUN_KEY="$(date +%Y%m%d%H%M%S)-$$"
 OUTPUT_DIR="${AI_E2E_OUTPUT_DIR:-$ROOT_DIR/.tmp/ai-e2e/$RUN_KEY}"
 CONVERTER_OUTPUT="$OUTPUT_DIR/converter.md"
+FIXTURE_DIR="$ROOT_DIR/services/ai/pipeline/examples/ai-e2e"
 COMPOSE_FILES=(
   -f "$ROOT_DIR/infra/compose.infra.yml"
   -f "$ROOT_DIR/infra/compose.ai.yml"
@@ -87,7 +88,7 @@ CONVERTER_ENV_FILE="$ENV_FILE" CONVERTER_E2E_SKIP_START=true \
   "$ROOT_DIR/scripts/converter-e2e.sh" "$PDF_FILE" "$CONVERTER_OUTPUT"
 
 log "공개 API로 ingest·query·agent·lint 작업을 실행합니다."
-python3 - "$OUTPUT_DIR" "$RUN_KEY" <<'PY'
+python3 - "$OUTPUT_DIR" "$RUN_KEY" "$FIXTURE_DIR" <<'PY'
 import json
 import sys
 import time
@@ -98,6 +99,7 @@ from pathlib import Path
 
 output_dir = Path(sys.argv[1])
 run_key = sys.argv[2]
+fixture_dir = Path(sys.argv[3])
 access_base = "http://localhost:8081"
 document_base = "http://localhost:8080"
 
@@ -178,52 +180,16 @@ workspace = request(
     expected=(201,),
 )
 workspace_id = workspace["id"]
-fixtures = [
-    (
-        "토양 수분 센서 운영",
-        """# 토양 수분 센서 운영
-
-토양 수분 센서는 작물 뿌리 주변의 함수율을 측정한다. 측정값은 센서 깊이와 토양 종류를 함께 고려해 해석한다.
-
-## 관수 판단
-
-배액률은 하루 동안 공급한 물 대비 배출된 물의 비율이다. 운영자는 토양 수분 센서 변화와 배액률을 함께 보며 수분 스트레스를 판단하고, 짧은 분할 관수로 급격한 수분 변화를 줄인다.
-""",
-    ),
-    (
-        "관수 밸브 제어",
-        """# 관수 밸브 제어
-
-관수 제어기는 토양 수분이 하한보다 낮을 때 밸브를 열고 목표 범위에 도달하면 닫는다. 짧은 주기의 분할 관수는 배수 손실을 줄인다.
-
-## 제어 목표
-
-밸브 제어 결과는 배액률로 확인할 수 있다. 배액률이 지나치게 높으면 공급 시간을 줄이고, 수분 스트레스가 나타나면 짧은 분할 관수로 공급한다.
-""",
-    ),
-    (
-        "양액 공급 관리",
-        """# 양액 공급 관리
-
-양액 공급은 EC와 pH를 관리하면서 작물에 물과 양분을 제공한다. 배액률은 공급량이 적절한지 판단하는 보조 지표다.
-
-## 수분과 농도
-
-배액률은 양액 공급량의 적절성을 판단하는 보조 지표다. 수분 스트레스를 줄이기 위해 분할 관수를 적용하고, 공급량과 배출량을 함께 기록한다.
-""",
-    ),
-    (
-        "온실 환경 제어",
-        """# 온실 환경 제어
-
-온도, 습도, 일사량은 환기와 차광 제어에 사용된다. 환경 변화는 작물의 증산량을 바꾸므로 관수 계획과 분리해서 볼 수 없다.
-
-## 관수 연계
-
-고온과 강한 일사로 증산량이 증가하면 배액률도 달라진다. 환경 센서로 수분 스트레스를 감지하면 분할 관수를 적용해 관수 시점과 공급량을 조정한다.
-""",
-    ),
-]
+fixtures = []
+for fixture_path in sorted(fixture_dir.glob("*.md")):
+    markdown = fixture_path.read_text(encoding="utf-8")
+    title = next(
+        (line[2:].strip() for line in markdown.splitlines() if line.startswith("# ")),
+        fixture_path.stem,
+    )
+    fixtures.append((title, markdown))
+if len(fixtures) != 4:
+    raise RuntimeError(f"스마트팜 Markdown fixture 4개가 필요합니다: {fixture_dir}")
 document_ids = []
 ingest_run_ids = []
 for index, (display_name, markdown) in enumerate(fixtures, start=1):
@@ -325,6 +291,11 @@ promotions = [
     *(lint_task_result.get("materialized_promotions") or []),
     *(lint_task_result.get("merged_promotions") or []),
 ]
+if not promotions:
+    raise RuntimeError("lint 결과에 materialized_promotions 또는 merged_promotions가 없습니다.")
+promotion_candidates = lint_task_result.get("promotion_candidates") or []
+materialized_promotions = lint_task_result.get("materialized_promotions") or []
+merged_promotions = lint_task_result.get("merged_promotions") or []
 
 result = {
     "workspace_id": workspace_id,
@@ -337,6 +308,10 @@ result = {
     "agent_status": agent_result["status"],
     "lint_run_id": lint["run_id"],
     "lint_status": lint_result["status"],
+    "lint_task_result": lint_task_result,
+    "promotion_candidates": promotion_candidates,
+    "materialized_promotions": materialized_promotions,
+    "merged_promotions": merged_promotions,
     "promotions": promotions,
 }
 (output_dir / "ai-tasks.json").write_text(

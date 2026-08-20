@@ -175,10 +175,19 @@ converter뿐 아니라 컨테이너형 백엔드와 모든 AI worker를 함께 �
 기록한다. 결과는 `.tmp/ai-e2e/<실행 ID>/`에 남으며
 기존 개발 DB를 마이그레이션하거나 지우지 않도록 `fruition-ai-e2e` Compose project의
 별도 볼륨을 쓴다. 고정 컨테이너 이름 충돌을 막기 위해 기존 개발 컨테이너는 내리지만
-그 볼륨은 보존하며, E2E 컨테이너와 볼륨도 후속 점검을 위해 유지한다.
+그 볼륨은 보존하며, E2E 컨테이너와 볼륨도 후속 점검을 위해 유지한다. 성공 기준은
+lint 결과의 `materialized_promotions` 또는 `merged_promotions`가 1건 이상인 것이다.
 
 ```sh
 ./scripts/ai-e2e.sh /path/to/input.pdf
+```
+
+저장소에 포함된 합성 PDF와 스마트팜 Markdown 4개로 실행하려면 다음 명령을 사용한다.
+스크립트는 PDF 경로는 인자로 받고, Markdown 입력은
+`services/ai/pipeline/examples/ai-e2e/*.md`에서 읽는다.
+
+```sh
+./scripts/ai-e2e.sh services/ai/pipeline/examples/ai-e2e/synthetic-smart-farm.pdf
 ```
 
 다른 env 또는 결과 디렉터리를 쓰려면 `AI_E2E_ENV_FILE`, `AI_E2E_OUTPUT_DIR`을 지정한다.
