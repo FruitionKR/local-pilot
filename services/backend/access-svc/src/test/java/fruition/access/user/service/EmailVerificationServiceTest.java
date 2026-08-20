@@ -1,6 +1,7 @@
 package fruition.access.user.service;
 
 import fruition.access.user.domain.EmailVerification;
+import fruition.access.user.domain.User;
 import fruition.access.user.dto.EmailVerificationRequest;
 import fruition.access.user.dto.EmailVerificationResponse;
 import fruition.access.user.dto.VerificationConfirmRequest;
@@ -80,7 +81,7 @@ class EmailVerificationServiceTest {
 
     @Test
     void request_signupDuplicateEmail_throws() {
-        when(userRepository.existsByEmail("test@example.com")).thenReturn(true);
+        when(userRepository.existsByEmailAndProvider("test@example.com", User.PROVIDER_LOCAL)).thenReturn(true);
 
         assertThatThrownBy(() -> service.request(new EmailVerificationRequest("test@example.com", "signup")))
                 .isInstanceOf(DuplicateEmailException.class);
@@ -117,7 +118,7 @@ class EmailVerificationServiceTest {
 
     @Test
     void request_valid_savesAndSends() {
-        when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
+        when(userRepository.existsByEmailAndProvider("test@example.com", User.PROVIDER_LOCAL)).thenReturn(false);
         when(verificationRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(anyString(), anyString()))
                 .thenReturn(Optional.empty());
         when(verificationRepository.countByEmailAndPurposeAndCreatedAtAfter(anyString(), anyString(), any()))

@@ -89,7 +89,7 @@ class InternalAuthzControllerTest {
     @DisplayName("사용자 조회는 표시명을 snake_case로 돌려준다")
     void user_found_returnsDisplayName() throws Exception {
         when(userRepository.findById("user_1"))
-                .thenReturn(Optional.of(new User("user_1", "test@example.com", "테스터", null)));
+                .thenReturn(Optional.of(new User("user_1", "test@example.com", User.PROVIDER_LOCAL, "테스터", null)));
 
         mockMvc.perform(get(USER_URL).header("X-Internal-Token", internalToken))
                 .andExpect(status().isOk())

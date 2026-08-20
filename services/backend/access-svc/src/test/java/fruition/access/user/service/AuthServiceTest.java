@@ -13,6 +13,7 @@ import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
 import fruition.access.user.exception.InvalidRefreshTokenException;
 import fruition.access.user.exception.InvalidVerificationTokenException;
+import fruition.access.user.exception.PasswordLoginUnavailableException;
 import fruition.access.user.repository.UserRefreshTokenRepository;
 import fruition.access.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,12 +72,12 @@ class AuthServiceTest {
     }
 
     private User newUser(String rawPassword) {
-        return new User("user_1f9a74af", "test@example.com", "tes", passwordEncoder.encode(rawPassword));
+        return new User("user_1f9a74af", "test@example.com", User.PROVIDER_LOCAL, "tes", passwordEncoder.encode(rawPassword));
     }
 
     @Test
     void login_correctPassword_issuesAccessAndRefreshToken() {
-        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(newUser("password123")));
+        when(userRepository.findByEmailAndProvider("test@example.com", User.PROVIDER_LOCAL)).thenReturn(Optional.of(newUser("password123")));
 
         LoginResponse response = authService.login(new LoginRequest("test@example.com", "password123"));
 
@@ -87,7 +88,7 @@ class AuthServiceTest {
 
     @Test
     void login_wrongPassword_throwsInvalidCredentials() {
-        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(newUser("password123")));
+        when(userRepository.findByEmailAndProvider("test@example.com", User.PROVIDER_LOCAL)).thenReturn(Optional.of(newUser("password123")));
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("test@example.com", "wrong-password")))
                 .isInstanceOf(InvalidCredentialsException.class);
@@ -95,7 +96,7 @@ class AuthServiceTest {
 
     @Test
     void login_unknownEmail_throwsInvalidCredentials() {
-        when(userRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmailAndProvider("nobody@example.com", User.PROVIDER_LOCAL)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("nobody@example.com", "password123")))
                 .isInstanceOf(InvalidCredentialsException.class);
@@ -117,7 +118,7 @@ class AuthServiceTest {
     void resetPassword_validToken_changesPasswordAndRevokesRefreshTokens() {
         User user = newUser("old-password");
         UserRefreshToken active = new UserRefreshToken("user_1f9a74af", "hash", Instant.now().plusSeconds(3600));
-        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndProvider("test@example.com", User.PROVIDER_LOCAL)).thenReturn(Optional.of(user));
         when(refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull("user_1f9a74af"))
                 .thenReturn(List.of(active));
 
@@ -130,11 +131,40 @@ class AuthServiceTest {
     @Test
     void resetPassword_unknownEmail_throwsInvalidVerificationToken() {
         // 토큰은 소비됐지만 계정이 없을 때 계정 존재 여부를 노출하지 않도록 토큰 오류로 처리한다.
-        when(userRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmailAndProvider("nobody@example.com", User.PROVIDER_LOCAL)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.resetPassword(
                 new PasswordResetRequest("nobody@example.com", "new-password123", "vtoken")))
                 .isInstanceOf(InvalidVerificationTokenException.class);
+    }
+
+    @Test
+    void resetPassword_oauthOnlyEmail_throwsPasswordLoginUnavailable() {
+        // 인증코드를 통과한 요청자는 이미 메일함을 통제하므로 가입 provider를 알려준다.
+        when(userRepository.findByEmailAndProvider("oauth@example.com", User.PROVIDER_LOCAL))
+                .thenReturn(Optional.empty());
+        when(userRepository.findAllByEmail("oauth@example.com"))
+                .thenReturn(List.of(new User("user_google1", "oauth@example.com", "google", "구글 사용자", null)));
+
+        assertThatThrownBy(() -> authService.resetPassword(
+                new PasswordResetRequest("oauth@example.com", "new-password123", "vtoken")))
+                .isInstanceOf(PasswordLoginUnavailableException.class)
+                .hasMessageContaining("google");
+    }
+
+    @Test
+    void resetPassword_multipleOauthAccounts_listsEveryProvider() {
+        // 하나만 고르면 사용자가 실제로 쓰는 수단을 못 짚을 수 있다.
+        when(userRepository.findByEmailAndProvider("oauth@example.com", User.PROVIDER_LOCAL))
+                .thenReturn(Optional.empty());
+        when(userRepository.findAllByEmail("oauth@example.com")).thenReturn(List.of(
+                new User("user_naver1", "oauth@example.com", "naver", "네이버 사용자", null),
+                new User("user_google1", "oauth@example.com", "google", "구글 사용자", null)));
+
+        assertThatThrownBy(() -> authService.resetPassword(
+                new PasswordResetRequest("oauth@example.com", "new-password123", "vtoken")))
+                .isInstanceOf(PasswordLoginUnavailableException.class)
+                .hasMessageContaining("google, naver");
     }
 
     @Test

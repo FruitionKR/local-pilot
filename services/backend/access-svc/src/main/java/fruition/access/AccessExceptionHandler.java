@@ -9,6 +9,7 @@ import fruition.access.user.exception.InvalidRefreshTokenException;
 import fruition.access.user.exception.InvalidVerificationCodeException;
 import fruition.access.user.exception.InvalidVerificationTokenException;
 import fruition.access.user.exception.OAuthEmailNotProvidedException;
+import fruition.access.user.exception.PasswordLoginUnavailableException;
 import fruition.access.user.exception.UserNotFoundException;
 import fruition.access.user.exception.VerificationCodeAttemptsExceededException;
 import fruition.access.user.exception.VerificationCodeExpiredException;
@@ -80,6 +81,14 @@ public class AccessExceptionHandler extends BaseExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("OAUTH_EMAIL_NOT_PROVIDED", e.getMessage()));
+    }
+
+    @ExceptionHandler(PasswordLoginUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handlePasswordLoginUnavailable(PasswordLoginUnavailableException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "PASSWORD_LOGIN_UNAVAILABLE");
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("PASSWORD_LOGIN_UNAVAILABLE", e.getMessage()));
     }
 
     @ExceptionHandler(EmailVerificationNotFoundException.class)

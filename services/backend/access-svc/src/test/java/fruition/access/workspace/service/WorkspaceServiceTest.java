@@ -55,7 +55,7 @@ class WorkspaceServiceTest {
                 authzProjectionStore
         );
         lenient().when(userRepository.getReferenceById(any()))
-                .thenAnswer(invocation -> new User(invocation.getArgument(0), "test@example.com", "test", null));
+                .thenAnswer(invocation -> new User(invocation.getArgument(0), "test@example.com", User.PROVIDER_LOCAL, "test", null));
         lenient().when(idempotencyService.execute(
                 any(), any(), any(), any(), any(), anyInt(), any(), any()))
                 .thenAnswer(invocation -> invocation.<java.util.function.Supplier<?>>getArgument(7).get());

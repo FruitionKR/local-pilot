@@ -1,6 +1,7 @@
 package fruition.access.user.service;
 
 import fruition.access.user.domain.EmailVerification;
+import fruition.access.user.domain.User;
 import fruition.access.user.dto.EmailVerificationRequest;
 import fruition.access.user.dto.EmailVerificationResponse;
 import fruition.access.user.dto.VerificationConfirmRequest;
@@ -83,7 +84,7 @@ public class EmailVerificationService {
         enforceRateLimit(email, purpose);
 
         // 회원가입은 의도적으로 존재 여부를 노출한다. 비밀번호 재설정은 노출하지 않는다.
-        if (PURPOSE_SIGNUP.equals(purpose) && userRepository.existsByEmail(email)) {
+        if (PURPOSE_SIGNUP.equals(purpose) && userRepository.existsByEmailAndProvider(email, User.PROVIDER_LOCAL)) {
             log.warn("[인증 요청 거부] reason=duplicate_email email={}", email);
             throw new DuplicateEmailException(email);
         }
