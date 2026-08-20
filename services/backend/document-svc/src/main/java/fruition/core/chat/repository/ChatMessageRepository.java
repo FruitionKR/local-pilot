@@ -48,7 +48,4 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, String
             """)
     List<ChatMessage> findByPairIdsInTurnOrder(@Param("sessionId") String sessionId,
                                                @Param("pairIds") Collection<String> pairIds);
-
-    /** 완료 마킹 대상: 세션의 특정 pair 문답 메시지들. */
-    List<ChatMessage> findAllBySession_IdAndPairIdIn(String sessionId, Collection<String> pairIds);
 }

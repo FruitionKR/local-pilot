@@ -5,9 +5,14 @@ import {
   collectRestoredOperationIds,
   formatOperationLogDescription,
   groupOperationLogsByDate,
+  mergeRefreshedLogPage,
   pickSelectedOperationId
 } from "../src/entities/operation-log/model/operationLogPage.ts";
-import { OPERATION_TYPE_LABELS } from "../src/entities/operation-log/model/operationType.ts";
+import {
+  formatOperationLogTitle,
+  OPERATION_TYPE_LABELS
+} from "../src/entities/operation-log/model/operationType.ts";
+import { formatElapsedMinutes } from "../src/features/wiki-ingest/model/activeLintOperation.ts";
 
 function log(operationId, operationType = "document_edit") {
   return { operation_id: operationId, operation_type: operationType };
@@ -41,6 +46,16 @@ test("유형이 섞인 목록도 시간순 그대로 이어붙인다", () => {
     [log("op2", "lint"), log("op3", "restore")]
   );
   assert.deepEqual(merged.map((item) => item.operation_type), ["ingest", "lint", "restore"]);
+});
+
+test("첫 페이지 갱신은 최신 항목을 교체하고 이미 불러온 이전 페이지를 보존한다", () => {
+  const merged = mergeRefreshedLogPage(
+    [{ ...log("op1"), summary: "이전" }, log("op2"), log("op3")],
+    [log("op0"), { ...log("op1"), summary: "갱신" }]
+  );
+
+  assert.deepEqual(merged.map((item) => item.operation_id), ["op0", "op1", "op2", "op3"]);
+  assert.equal(merged[1].summary, "갱신");
 });
 
 test("선택이 없으면 가장 최근 작업을 고른다", () => {
@@ -102,4 +117,23 @@ test("문서명과 작업 요약을 Figma 보조 문구로 조합한다", () => 
   );
   assert.equal(formatOperationLogDescription({ summary: "문서 편집" }), "문서 편집");
   assert.equal(formatOperationLogDescription({ summary: null }), "상세 정보 없음");
+});
+
+test("Ingest 로그 제목은 시작 시점의 문서 이름을 쓴다", () => {
+  assert.equal(
+    formatOperationLogTitle({ operation_type: "ingest", target_display_name: "회의록" }),
+    "회의록"
+  );
+  assert.equal(formatOperationLogTitle(log("op-lint", "lint")), "위키 다듬기");
+});
+
+test("실행 시작 시각으로 경과 분을 표시한다", () => {
+  assert.equal(
+    formatElapsedMinutes("2026-08-19T00:00:00Z", Date.parse("2026-08-19T00:00:59Z")),
+    "0분째 실행 중"
+  );
+  assert.equal(
+    formatElapsedMinutes("2026-08-19T00:00:00Z", Date.parse("2026-08-19T00:05:30Z")),
+    "5분째 실행 중"
+  );
 });

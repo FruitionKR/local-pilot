@@ -23,6 +23,7 @@ def parse_active_cluster_lint(markdown: str) -> list[dict[str, Any]]:
         relations, invalid_relations = cluster_relation_items(section)
         cluster = {
             "id": cluster_id,
+            "representative": cluster_representative(section),
             "refs": refs_in_text(section),
             "claims": cluster_claims(section),
             "relations": relations,
@@ -32,6 +33,14 @@ def parse_active_cluster_lint(markdown: str) -> list[dict[str, Any]]:
         }
         clusters.append(cluster)
     return clusters
+
+
+def cluster_representative(section: str) -> str:
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("representative:"):
+            return stripped.split(":", 1)[1].strip()
+    return ""
 
 
 def merge_active_cluster_markdown(existing: str, incoming: str) -> str:
@@ -233,6 +242,29 @@ def merge_cluster_section(existing: str, incoming: str) -> str:
     existing_lines = existing.splitlines()
     incoming_lines = incoming.splitlines()
     merged_lines = list(existing_lines)
+    if not cluster_representative(existing):
+        incoming_representative = cluster_representative(incoming)
+        if incoming_representative:
+            representative_index = next(
+                (
+                    index
+                    for index, line in enumerate(merged_lines)
+                    if line.strip().startswith("representative:")
+                ),
+                None,
+            )
+            if representative_index is not None:
+                merged_lines[representative_index] = f"representative: {incoming_representative}"
+            else:
+                insert_at = next(
+                    (
+                        index + 1
+                        for index, line in enumerate(merged_lines)
+                        if line.strip().startswith("type:")
+                    ),
+                    1,
+                )
+                merged_lines.insert(insert_at, f"representative: {incoming_representative}")
     existing_claims = {line.strip() for line in existing_lines if line.strip().startswith("- claim_") or line.strip().startswith("- ev_")}
     incoming_claims = [line for line in incoming_lines if line.strip().startswith("- claim_") or line.strip().startswith("- ev_")]
     insert_at = claim_insert_index(merged_lines)

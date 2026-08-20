@@ -734,6 +734,73 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         )
         self.assertEqual(repository.candidate_calls[0][1], "self attention token")
 
+    def test_backfills_lower_ranked_concept_when_top_page_has_no_evidence(self) -> None:
+        uncitable = concept_page("concept:uncitable", "Uncitable Concept")
+        citable = concept_page("concept:citable", "Citable Concept")
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository([uncitable, citable], []),
+            embedding_search=ScoreSearch(
+                {
+                    "Uncitable Concept": 1.0,
+                    "Citable Concept": 0.3,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    citable.markdown_uri: (
+                        "---\nsources: doc_citable\n---\n\n"
+                        "질문을 뒷받침하는 근거입니다. [B0001]"
+                    ),
+                }
+            ),
+        )
+
+        result = use_case.execute("근거가 필요한 질문", workspace_id="ws_test")
+
+        self.assertEqual(result.evidence_snippets[0].source_document_id, "doc_citable")
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0001"])
+
+    def test_backfills_citable_concepts_near_the_top_score(self) -> None:
+        first = concept_page("concept:first", "First Concept")
+        second = concept_page("concept:second", "Second Concept")
+        answer_generator = RecordingAnswerGenerator()
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository([first, second], []),
+            embedding_search=ScoreSearch(
+                {
+                    "First Concept": 1.0,
+                    "Second Concept": 0.88,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=answer_generator,
+            markdown_reader=FakeMarkdownReader(
+                {
+                    first.markdown_uri: (
+                        "---\nsources: doc_first\n---\n\n"
+                        "첫 번째 근거입니다. [doc_first:B0001]"
+                    ),
+                    second.markdown_uri: (
+                        "---\nsources: doc_second\n---\n\n"
+                        "두 번째 근거입니다. [doc_second:B0001]"
+                    ),
+                }
+            ),
+        )
+
+        use_case.execute("두 근거를 함께 설명해줘", workspace_id="ws_test")
+
+        self.assertIsNotNone(answer_generator.last_context)
+        self.assertEqual(
+            {
+                snippet.source_document_id
+                for snippet in answer_generator.last_context.evidence_snippets
+            },
+            {"doc_first", "doc_second"},
+        )
+
     def test_uses_rewritten_query_for_text_only_page_scoring(self) -> None:
         pages = [source_page("source:attention", "Self Attention")]
         text_search = RecordingScoreSearch({"Self Attention": 0.95})
@@ -985,6 +1052,149 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.retrieval_summary.stop_reason, "query_evaluator_internal_supported")
         self.assertIn("index.md는 위키 페이지 카탈로그입니다.", result.answer.content)
         self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0022"])
+
+    def test_query_evaluator_refuses_weak_internal_evidence_without_web_search(self) -> None:
+        pages = [source_page("source:adjacent", "Adjacent Wiki Source")]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"Adjacent Wiki Source": 0.9}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator("망원경 설정은 이 문서에 있습니다. [1]"),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:adjacent.md": (
+                        "---\ndocument_id: doc_adjacent\n---\n\n"
+                        "이 문서는 내부 용어를 정리한 참고 자료입니다. [B0001]"
+                    )
+                }
+            ),
+            query_evaluator=FakeQueryEvaluator(
+                QueryEvaluation(
+                    route="unsupported",
+                    evidence_relevance=0.2,
+                    reason="질문과 인접한 내용만 있습니다.",
+                )
+            ),
+        )
+
+        result = use_case.execute(
+            "망원경을 어떻게 설정하나요?",
+            workspace_id="ws_test",
+            output_language="ko",
+            allow_web_search=False,
+        )
+
+        self.assertTrue(result.answer.content.startswith("제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다."))
+        self.assertNotIn("망원경 설정은 이 문서에 있습니다.", result.answer.content)
+        self.assertEqual(result.retrieval_summary.stop_reason, "query_evaluator_unsupported")
+
+    def test_weak_internal_evidence_reaches_web_fallback_when_web_is_enabled(self) -> None:
+        page = source_page("source:adjacent", "Adjacent Wiki Source")
+        web_search = FakeWebSearch(
+            [
+                WebSearchResult(
+                    title="Telescope Setup",
+                    url="https://example.com/telescope",
+                    snippet="External setup instructions.",
+                    score=0.9,
+                )
+            ]
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository([page], []),
+            embedding_search=ScoreSearch({"Adjacent Wiki Source": 0.9}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator("망원경 설정은 이 문서에 있습니다. [1]"),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    page.markdown_uri: "---\ndocument_id: doc_adjacent\n---\n\n"
+                    "내부 용어를 정리한 참고 자료입니다. [B0001]"
+                }
+            ),
+            query_evaluator=FakeQueryEvaluator(
+                QueryEvaluation(
+                    route="web_fallback",
+                    evidence_relevance=0.2,
+                    reason="질문과 직접 관련 없는 내부 근거입니다.",
+                    web_query="telescope setup",
+                )
+            ),
+            web_search=web_search,
+        )
+
+        result = use_case.execute("망원경을 어떻게 설정하나요?", workspace_id="ws_test")
+
+        self.assertEqual(web_search.queries, ["telescope setup"])
+        self.assertEqual(result.retrieval_summary.stop_reason, "web_search_fallback")
+        self.assertTrue(result.web_search.executed)
+
+    def test_weak_internal_evidence_returns_grounded_refusal_when_web_is_disabled(self) -> None:
+        page = source_page("source:adjacent", "Adjacent Wiki Source")
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository([page], []),
+            embedding_search=ScoreSearch({"Adjacent Wiki Source": 0.9}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator("망원경 설정은 이 문서에 있습니다. [1]"),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    page.markdown_uri: "---\ndocument_id: doc_adjacent\n---\n\n"
+                    "내부 용어를 정리한 참고 자료입니다. [B0001]"
+                }
+            ),
+            query_evaluator=FakeQueryEvaluator(
+                QueryEvaluation(
+                    route="web_fallback",
+                    evidence_relevance=0.2,
+                    reason="질문과 직접 관련 없는 내부 근거입니다.",
+                    web_query="telescope setup",
+                )
+            ),
+        )
+
+        result = use_case.execute(
+            "망원경을 어떻게 설정하나요?",
+            workspace_id="ws_test",
+            allow_web_search=False,
+            output_language="ko",
+        )
+
+        self.assertTrue(result.answer.content.startswith("제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다."))
+        self.assertNotIn("망원경 설정은 이 문서에 있습니다.", result.answer.content)
+
+    def test_supported_internal_evidence_stays_internal_with_web_enabled(self) -> None:
+        page = source_page("source:telescope", "Telescope Setup")
+        web_search = FakeWebSearch([])
+        answer_generator = RecordingAnswerGenerator("망원경은 초점 링을 돌려 초점을 맞춥니다. [1]")
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository([page], []),
+            embedding_search=ScoreSearch({"Telescope Setup": 0.9}),
+            text_search=EmptyTextSearch(),
+            answer_generator=answer_generator,
+            markdown_reader=FakeMarkdownReader(
+                {
+                    page.markdown_uri: "---\ndocument_id: doc_telescope\n---\n\n"
+                    "망원경은 초점 링을 돌려 초점을 맞춥니다. [B0001]"
+                }
+            ),
+            query_evaluator=FakeQueryEvaluator(
+                QueryEvaluation(
+                    route="internal_supported",
+                    evidence_relevance=0.2,
+                    reason="내부 근거가 질문에 직접 답합니다.",
+                )
+            ),
+            web_search=web_search,
+        )
+
+        result = use_case.execute(
+            "망원경은 어떻게 초점을 맞추나요?",
+            workspace_id="ws_test",
+            allow_web_search=True,
+        )
+
+        self.assertEqual(web_search.queries, [])
+        self.assertEqual(result.retrieval_summary.stop_reason, "no_frontier")
+        self.assertIn("망원경은 초점 링을 돌려 초점을 맞춥니다.", result.answer.content)
 
     def test_query_evaluator_feedback_can_retry_answer_until_internal_supported(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]

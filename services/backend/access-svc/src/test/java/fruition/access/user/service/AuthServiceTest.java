@@ -175,11 +175,10 @@ class AuthServiceTest {
     }
 
     @Test
-    void logout_unknownToken_throwsInvalidRefreshToken() {
+    void logout_unknownToken_isIdempotent() {
         when(refreshTokenRepository.findByTokenHash(any())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.logout(new RefreshRequest("unknown-token")))
-                .isInstanceOf(InvalidRefreshTokenException.class);
+        authService.logout(new RefreshRequest("unknown-token"));
     }
 
     @Test

@@ -18,7 +18,6 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
 
 DEFAULT_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "skill_authoring.system.md"
 DEFAULT_CLASSIFIER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "skill_intent_classifier.system.md"
-DEFAULT_VERIFIER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "skill_intent_verifier.system.md"
 
 
 class ChatCompletionsSkillAuthoringGenerator:
@@ -27,12 +26,10 @@ class ChatCompletionsSkillAuthoringGenerator:
         client: ChatCompletionsJsonClient,
         system_prompt: str,
         classifier_prompt: str,
-        verifier_prompt: str,
     ) -> None:
         self._client = client
         self._system_prompt = system_prompt
         self._classifier_prompt = classifier_prompt
-        self._verifier_prompt = verifier_prompt
 
     def classify(
         self,
@@ -43,20 +40,6 @@ class ChatCompletionsSkillAuthoringGenerator:
     ) -> dict[str, object]:
         return self._complete_intent(
             self._classifier_prompt,
-            instruction,
-            references,
-            requested_description,
-        )
-
-    def verify(
-        self,
-        instruction: str,
-        references: tuple[SkillAuthoringReference, ...],
-        *,
-        requested_description: str | None,
-    ) -> dict[str, object]:
-        return self._complete_intent(
-            self._verifier_prompt,
             instruction,
             references,
             requested_description,
@@ -140,15 +123,12 @@ def build_skill_authoring_generator(
     classifier_prompt_path = Path(
         os.environ.get("SKILL_INTENT_CLASSIFIER_SYSTEM_PROMPT", str(DEFAULT_CLASSIFIER_PROMPT))
     )
-    verifier_prompt_path = Path(
-        os.environ.get("SKILL_INTENT_VERIFIER_SYSTEM_PROMPT", str(DEFAULT_VERIFIER_PROMPT))
-    )
     return ChatCompletionsSkillAuthoringGenerator(
         ChatCompletionsJsonClient(
             ChatClientConfig(
                 api_key=api_key,
                 model=resolved_model,
-                temperature=None,
+                temperature=None if resolved_provider == "claude" else 0.0,
                 timeout_seconds=int_env("SKILL_AUTHORING_LLM_TIMEOUT_SECONDS", 180),
                 max_tokens=None,
                 json_mode=True,
@@ -157,5 +137,4 @@ def build_skill_authoring_generator(
         ),
         prompt_path.read_text(encoding="utf-8"),
         classifier_prompt_path.read_text(encoding="utf-8"),
-        verifier_prompt_path.read_text(encoding="utf-8"),
     )

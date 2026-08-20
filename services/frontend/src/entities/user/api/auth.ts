@@ -3,8 +3,11 @@ import type { UserMeResponse } from "@/entities/user/model/auth";
 
 export type AuthTokensResponse = {
   access_token: string;
-  refresh_token: string;
 };
+
+export async function logout(): Promise<void> {
+  await fetch("/api/auth/logout", { method: "POST" });
+}
 
 export type EmailVerificationResponse = {
   verification_id: string;

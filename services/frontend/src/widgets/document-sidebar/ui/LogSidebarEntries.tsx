@@ -1,7 +1,7 @@
 import {
   formatOperationLogDescription,
+  formatOperationLogTitle,
   groupOperationLogsByDate,
-  OPERATION_TYPE_LABELS,
   type OperationLogItem
 } from "@/entities/operation-log";
 import { cx } from "@/shared/lib/classNames";
@@ -67,15 +67,15 @@ export function LogSidebarEntries({
               }}
             >
               <span className={styles["log-entry-label"]}>
-                {OPERATION_TYPE_LABELS[item.operation_type]}
+                {formatOperationLogTitle(item)}
               </span>
               <span className={styles["log-entry-time"]}>{formatRelativeTime(item.created_at)}</span>
               <span className={styles["log-entry-summary"]}>
                 {formatOperationLogDescription(
                   item,
-                  item.target_document_id
+                  item.target_display_name ?? (item.target_document_id
                     ? documentTitles.get(item.target_document_id)
-                    : undefined
+                    : undefined)
                 )}
               </span>
             </button>

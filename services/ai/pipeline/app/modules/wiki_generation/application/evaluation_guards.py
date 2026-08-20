@@ -10,7 +10,12 @@ from app.modules.wiki_generation.application.models import GenerationEvaluation
 def apply_generation_evaluation_guards(
     evaluation: GenerationEvaluation,
     normalized: dict[str, Any],
+    source_block_ids: list[str] | None = None,
 ) -> None:
+    if not evaluation.get("passed"):
+        evaluation["retry_recommended"] = True
+    _apply_reference_guards(evaluation, normalized, source_block_ids)
+    _apply_packet_completeness_guards(evaluation, normalized, source_block_ids)
     core_slugs = {str(item.get("slug")) for item in normalized.get("concept_ledger", [])}
     metadata_fragments = {
         "citation-marker",
@@ -42,6 +47,206 @@ def apply_generation_evaluation_guards(
             scores["overall"] = min(float(scores["overall"]), 0.74)
         feedbacks = [str(issue.get("feedback")) for issue in evaluation.get("issues", []) if issue.get("feedback")]
         evaluation["retry_feedback"] = " ".join(_unique(feedbacks))
+
+
+def _apply_reference_guards(
+    evaluation: GenerationEvaluation,
+    normalized: dict[str, Any],
+    source_block_ids: list[str] | None,
+) -> None:
+    allowed_refs = set(source_block_ids) if source_block_ids is not None else None
+    collections = (
+        ("semantic_notes", normalized.get("semantic_notes", [])),
+        ("concept_ledger", normalized.get("concept_ledger", [])),
+        ("observations", normalized.get("observations", [])),
+        ("section_candidates", normalized.get("section_candidates", [])),
+        ("mentions", normalized.get("mentions", [])),
+        ("evidence_units", normalized.get("evidence_units", [])),
+    )
+    for collection, items in collections:
+        if not isinstance(items, list):
+            continue
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            _check_reference_item(
+                evaluation,
+                item,
+                collection,
+                index,
+                allowed_refs,
+            )
+            if collection != "semantic_notes":
+                continue
+            for nested_collection in (
+                "key_points",
+                "observations",
+                "core_concepts",
+                "section_candidates",
+                "mentions",
+                "evidence_claims",
+            ):
+                nested_items = item.get(nested_collection, [])
+                if not isinstance(nested_items, list):
+                    continue
+                for nested_index, nested_item in enumerate(nested_items):
+                    if isinstance(nested_item, dict):
+                        _check_reference_item(
+                            evaluation,
+                            nested_item,
+                            nested_collection,
+                            nested_index,
+                            allowed_refs,
+                            chunk_id=str(item.get("chunk_id") or ""),
+                        )
+
+
+def _check_reference_item(
+    evaluation: GenerationEvaluation,
+    item: dict[str, Any],
+    collection: str,
+    index: int,
+    allowed_refs: set[str] | None,
+    *,
+    chunk_id: str = "",
+) -> None:
+    if collection == "categories" or not _has_factual_content(item):
+        return
+    refs = _item_refs(item)
+    target = _item_target(item, chunk_id or f"{collection}[{index}]")
+    if not refs:
+        if collection == "semantic_notes":
+            return
+        _append_eval_issue(
+            evaluation,
+            {
+                "metric": "source_faithfulness",
+                "type": "missing_ref",
+                "severity": "high",
+                "target": [target],
+                "reason": "사실성 있는 의미 항목에 직접 source block ref가 없습니다.",
+                "feedback": "모든 factual key point, observation, concept, section, mention, evidence claim에 실제 source block ref를 포함하세요.",
+            },
+        )
+        return
+    if allowed_refs is not None:
+        invalid_refs = sorted(set(refs) - allowed_refs)
+        if invalid_refs:
+            _append_eval_issue(
+                evaluation,
+                {
+                    "metric": "source_faithfulness",
+                    "type": "invalid_ref",
+                    "severity": "high",
+                    "target": [target],
+                    "reason": f"source block allow-list에 없는 ref가 포함되었습니다: {', '.join(invalid_refs)}",
+                    "feedback": "source_blocks에 제공된 block_id만 사용하고 존재하지 않는 ref는 제거하세요.",
+                },
+            )
+
+
+def _apply_packet_completeness_guards(
+    evaluation: GenerationEvaluation,
+    normalized: dict[str, Any],
+    source_block_ids: list[str] | None,
+) -> None:
+    notes = normalized.get("semantic_notes", [])
+    if source_block_ids is None or not isinstance(notes, list):
+        return
+    for note in notes:
+        if not isinstance(note, dict):
+            continue
+        if not _has_meaningful_semantic_content(note):
+            continue
+        if _record_anchor_ids(note):
+            continue
+        chunk_id = str(note.get("chunk_id") or "unknown")
+        _append_eval_issue(
+            evaluation,
+            {
+                "metric": "source_coverage",
+                "type": "semantic_coverage_gap",
+                "severity": "high",
+                "target": [chunk_id],
+                "reason": "packet의 의미 노트에 직접 source anchor가 있는 factual item이 없습니다.",
+                "feedback": "모든 packet을 전체 문서 맥락에서 읽고, 의미를 담은 key point·observation·concept·evidence를 직접 anchor와 함께 남기세요.",
+            },
+        )
+
+
+def _has_meaningful_semantic_content(note: dict[str, Any]) -> bool:
+    if any(
+        str(note.get(field) or "").strip()
+        for field in ("semantic_summary", "summary", "text", "claim", "definition")
+    ):
+        return True
+    for field in (
+        "key_points",
+        "observations",
+        "core_concepts",
+        "section_candidates",
+        "mentions",
+        "evidence_claims",
+    ):
+        if any(
+            isinstance(item, dict) and _has_factual_content(item)
+            for item in note.get(field, []) or []
+        ):
+            return True
+    return False
+
+
+def _has_factual_content(item: dict[str, Any]) -> bool:
+    return any(
+        str(item.get(field) or "").strip()
+        for field in (
+            "text",
+            "title",
+            "name",
+            "term",
+            "slug",
+            "claim",
+            "summary",
+            "definition",
+            "semantic_summary",
+            "context",
+        )
+    )
+
+
+def _item_refs(item: dict[str, Any]) -> list[str]:
+    return _unique(
+        [
+            str(ref)
+            for field in ("anchor_reference_ids", "anchor_block_ids", "evidence_block_ids")
+            for ref in item.get(field, []) or []
+            if str(ref).strip()
+        ]
+    )
+
+
+def _item_target(item: dict[str, Any], fallback: str) -> str:
+    for field in ("slug", "observation_id", "evidence_id", "title", "name", "term", "text", "claim"):
+        value = str(item.get(field) or "").strip()
+        if value:
+            return value
+    return fallback
+
+
+def _record_anchor_ids(record: dict[str, Any]) -> list[str]:
+    anchors = _item_refs(record)
+    for field in (
+        "key_points",
+        "observations",
+        "core_concepts",
+        "section_candidates",
+        "mentions",
+        "evidence_claims",
+    ):
+        for item in record.get(field, []) or []:
+            if isinstance(item, dict):
+                anchors.extend(_item_refs(item))
+    return _unique(anchors)
 
 
 def repair_normalized_from_evaluation(

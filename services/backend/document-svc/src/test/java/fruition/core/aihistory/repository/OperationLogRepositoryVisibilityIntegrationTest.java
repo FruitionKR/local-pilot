@@ -23,7 +23,7 @@ class OperationLogRepositoryVisibilityIntegrationTest {
     @Autowired OperationLogRepository operationLogRepository;
 
     @Test
-    void findPage_showsOnlyDocumentEditsThatActuallyChangedContent() {
+    void findPage_hidesProcessingUnlessStatusIsExplicitlyRequested() {
         String workspaceId = "ws_" + UUID.randomUUID();
         Instant now = Instant.now();
         OperationLog changed = OperationLog.completed(
@@ -38,14 +38,33 @@ class OperationLogRepositoryVisibilityIntegrationTest {
         OperationLog ingest = OperationLog.processing(
                 "op_ingest_" + UUID.randomUUID(), workspaceId, "user_1",
                 OperationType.ingest, null, now);
-        operationLogRepository.saveAll(List.of(changed, unchanged, conflict, ingest));
+        OperationLog rebuilding = OperationLog.processing(
+                "op_rebuilding_" + UUID.randomUUID(), workspaceId, "user_1",
+                OperationType.lint, null, now.minusSeconds(1));
+        rebuilding.moveTo(OperationStatus.rebuilding);
+        operationLogRepository.saveAll(List.of(changed, unchanged, conflict, ingest, rebuilding));
 
         List<OperationLog> visible = operationLogRepository.findPage(
                 workspaceId, null, null, now.plusSeconds(1),
-                OperationType.document_edit, OperationStatus.succeeded, PageRequest.of(0, 20));
+                OperationType.document_edit, OperationStatus.succeeded, activeStatuses(),
+                PageRequest.of(0, 20));
 
         assertThat(visible)
                 .extracting(OperationLog::getOperationId)
-                .containsExactly(ingest.getOperationId(), changed.getOperationId());
+                .containsExactly(changed.getOperationId());
+
+        List<OperationLog> processing = operationLogRepository.findPage(
+                workspaceId, null, OperationStatus.processing, now.plusSeconds(1),
+                OperationType.document_edit, OperationStatus.succeeded, activeStatuses(),
+                PageRequest.of(0, 20));
+
+        assertThat(processing)
+                .extracting(OperationLog::getOperationId)
+                .containsExactly(ingest.getOperationId());
+    }
+
+    private List<OperationStatus> activeStatuses() {
+        return List.of(OperationStatus.processing, OperationStatus.applying,
+                OperationStatus.notify_pending, OperationStatus.rebuilding);
     }
 }

@@ -111,6 +111,24 @@
   background: #3a1f1d;
 }
 
+.target-document-button {
+  flex: 0 1 auto;
+  overflow: hidden;
+  padding: 4px 8px;
+  color: var(--ink);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.target-document-button:hover {
+  border-color: var(--subdued);
+}
+
 .rollback-button {
   flex: 0 0 auto;
   display: inline-flex;

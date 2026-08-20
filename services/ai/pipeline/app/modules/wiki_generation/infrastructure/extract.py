@@ -31,17 +31,9 @@ class MarkdownBlockExtractor:
         text: str,
         source_path: str,
         fallback_title: str | None = None,
-        preserve_prefixed_refs: bool = False,
     ) -> tuple[SourceDocument, list[SourceBlock]]:
         doc_hash = sha1_short(text)
-        document_id = f"doc_{doc_hash}"
-        title = _guess_title(text, fallback_title or Path(source_path).stem)
-        doc = SourceDocument(
-            document_id=document_id,
-            title=title,
-            source_path=source_path,
-            content_sha1=sha1_short(text, 40),
-        )
+        doc = self._document(text, source_path, fallback_title)
         raw_blocks = self._split_blocks(text)
         blocks: list[SourceBlock] = []
         section_path: list[str] = []
@@ -51,21 +43,12 @@ class MarkdownBlockExtractor:
                 level = len(stripped) - len(stripped.lstrip("#"))
                 heading = stripped.lstrip("#").strip()
                 section_path = section_path[: max(0, level - 1)] + [heading]
-            prefix_ref, text_without_prefix = _prefixed_ref(stripped)
-            if preserve_prefixed_refs and prefix_ref:
-                block_id = prefix_ref
-                source_ref = prefix_ref
-                block_body = text_without_prefix or stripped
-            else:
-                block_id = f"B{idx:04d}"
-                source_ref = f"ref_{doc_hash}_md_b{idx:04d}"
-                block_body = block_text
             blocks.append(
                 SourceBlock(
-                    document_id=document_id,
-                    block_id=block_id,
-                    source_reference_id=source_ref,
-                    text=normalize_space(block_body),
+                    document_id=doc.document_id,
+                    block_id=f"B{idx:04d}",
+                    source_reference_id=f"ref_{doc_hash}_md_b{idx:04d}",
+                    text=normalize_space(block_text),
                     line_start=start,
                     line_end=end,
                     section_path=section_path.copy(),
@@ -73,6 +56,46 @@ class MarkdownBlockExtractor:
                 )
             )
         return doc, blocks
+
+    def blocks_from_records(
+        self,
+        records: list[dict[str, str]],
+        *,
+        text: str,
+        source_path: str,
+        fallback_title: str | None = None,
+    ) -> tuple[SourceDocument, list[SourceBlock]]:
+        """블록 경계와 anchor를 호출자가 확정해 넘기는 경로.
+
+        채팅처럼 provenance를 본문에 실을 수 없는 입력에서 쓴다. block_id가 그대로
+        source_reference_id가 되므로 본문에는 id가 들어가지 않는다.
+        """
+        doc = self._document(text, source_path, fallback_title)
+        blocks = [
+            SourceBlock(
+                document_id=doc.document_id,
+                block_id=record["block_id"],
+                source_reference_id=record["block_id"],
+                text=normalize_space(record["text"]),
+                line_start=idx,
+                line_end=idx,
+            )
+            for idx, record in enumerate(records, start=1)
+        ]
+        return doc, blocks
+
+    def _document(
+        self,
+        text: str,
+        source_path: str,
+        fallback_title: str | None,
+    ) -> SourceDocument:
+        return SourceDocument(
+            document_id=f"doc_{sha1_short(text)}",
+            title=_guess_title(text, fallback_title or Path(source_path).stem),
+            source_path=source_path,
+            content_sha1=sha1_short(text, 40),
+        )
 
     def _split_blocks(self, text: str) -> List[Tuple[str, str, int, int]]:
         lines = text.splitlines()
@@ -126,15 +149,3 @@ class MarkdownBlockExtractor:
             buf.append(line)
         flush(len(lines))
         return blocks
-
-
-def _prefixed_ref(text: str) -> tuple[str | None, str]:
-    if not text.startswith("["):
-        return None, text
-    close = text.find("]")
-    if close <= 1:
-        return None, text
-    ref = text[1:close].strip()
-    if ":" not in ref or any(ch.isspace() for ch in ref):
-        return None, text
-    return ref, text[close + 1 :].lstrip()

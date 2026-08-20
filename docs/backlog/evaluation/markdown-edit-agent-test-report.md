@@ -25,7 +25,7 @@
 실행 명령:
 
 ```bash
-cd /Users/jaehyeong/local-pilot/llmPipeline
+cd services/ai/pipeline
 .venv/bin/python -m pytest tests/modules/markdown_edit tests/modules/agent -v
 ```
 
@@ -45,7 +45,7 @@ tests/modules/agent/test_handle_agent_turn.py::HandleAgentTurnUseCaseTest::test_
 전체 `llmPipeline` 테스트:
 
 ```bash
-cd /Users/jaehyeong/local-pilot/llmPipeline
+cd services/ai/pipeline
 .venv/bin/python -m pytest
 ```
 

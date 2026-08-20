@@ -7,3 +7,12 @@ export const OPERATION_TYPE_LABELS: Record<OperationType, string> = {
   lint: "위키 다듬기",
   restore: "롤백"
 };
+
+/** Ingest는 작업 종류 대신 시작 시점의 문서 이름을 제목으로 쓴다. */
+export function formatOperationLogTitle(
+  item: { operation_type: OperationType; target_display_name?: string | null }
+): string {
+  return item.operation_type === "ingest" && item.target_display_name?.trim()
+    ? item.target_display_name
+    : OPERATION_TYPE_LABELS[item.operation_type];
+}

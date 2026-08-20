@@ -28,7 +28,9 @@ function renderMarkdown(markdown, highlightedBlocks = []) {
           const blockId = String(node?.properties?.dataBlockId ?? "");
           const highlightedRank = highlightedRankByBlockId.get(blockId);
           return React.createElement("div", {
-            className: highlightedRank ? `markdown-source-block is-highlighted citation-rank-${highlightedRank}` : "markdown-source-block",
+            className: highlightedRank
+              ? `markdown-source-block is-highlighted citation-rank-${highlightedRank}`
+              : "markdown-source-block",
             "data-block-id": blockId,
             "data-citation-rank": highlightedRank
           }, children);

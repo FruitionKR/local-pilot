@@ -1,6 +1,7 @@
 package fruition.access.user.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 public record LoginResponse(
@@ -9,9 +10,8 @@ public record LoginResponse(
                 + "payload의 sub(사용자 ID)·email·exp(만료 Unix seconds)를 갱신 타이밍 계산에 쓸 수 있다.")
         String accessToken,
 
-        @JsonProperty("refresh_token")
-        @Schema(description = "재발급용 opaque 토큰. refresh 호출마다 rotation되어 이전 토큰은 폐기된다.",
-                example = "EXAMPLE-refresh-token-not-a-real-value-0000")
+        @JsonIgnore
+        @Schema(hidden = true)
         String refreshToken,
 
         @JsonProperty("token_type")

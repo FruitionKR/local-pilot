@@ -11,6 +11,7 @@ from app.core.llm_env import (
     resolve_llm_selection,
 )
 from app.modules.query.application.ports import QueryEvaluatorPort
+from app.modules.query.application.query_evaluator_flow import apply_evidence_sufficiency_boundary
 from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, QueryEvaluation
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
 
@@ -78,11 +79,14 @@ def build_query_answer_evaluator(
     *,
     provider: str | None = None,
     model: str | None = None,
+    web_search_available: bool = False,
 ) -> QueryEvaluatorPort | None:
-    mode = os.environ.get("QUERY_EVALUATOR_MODE", "disabled").strip().lower()
+    mode = os.environ.get("QUERY_EVALUATOR_MODE", "web").strip().lower()
     if mode in {"", "disabled", "off", "none"}:
         return None
-    if mode != "llm":
+    if mode == "web" and not web_search_available:
+        return None
+    if mode not in {"web", "llm"}:
         return None
     resolved_provider, resolved_model = resolve_llm_selection(provider, model)
     api_key = _api_key(resolved_provider)
@@ -132,7 +136,7 @@ def _normalize_evaluation(
         else:
             route = "unsupported"
             feedback = ""
-    return QueryEvaluation(
+    evaluation = QueryEvaluation(
         route=route,
         evidence_relevance=_bounded_float(value.get("evidence_relevance"), 0.0),
         citation_evidence_alignment=_optional_bounded_float(value.get("citation_evidence_alignment")),
@@ -141,6 +145,11 @@ def _normalize_evaluation(
         feedback=feedback,
         web_query=web_query,
         warnings=[str(item).strip() for item in value.get("warnings", []) if str(item).strip()],
+    )
+    return apply_evidence_sufficiency_boundary(
+        evaluation,
+        has_internal_evidence=has_internal_evidence,
+        web_search_available=web_search_available,
     )
 
 

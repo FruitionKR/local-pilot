@@ -4,6 +4,7 @@ import { findTreeItem, findTreeItemByGraphNodeId } from "@/entities/tree";
 import type { SourceBlockHighlight } from "@/entities/document";
 import type { Project } from "@/entities/tree";
 import type { GraphNode } from "@/entities/wiki";
+import { focusGraphNode } from "./focusGraphNode";
 
 export type PreviewTarget = {
   pageId: string | null;
@@ -86,13 +87,7 @@ export function useTreeSelection(projects: Project[], nodes: GraphNode[]) {
   }
 
   function openGraphNodePreview(node: GraphNode) {
-    const kind = node.kind ?? "concept";
-    openPreviewTarget({
-      nodeId: node.id,
-      title: node.label,
-      pageType: kind === "raw" ? null : kind,
-      documentId: node.documentId ?? null
-    });
+    setSelection((current) => focusGraphNode(current, node.id));
   }
 
   function openWikiPagePreview(pageId: string, title: string, pageType: string) {

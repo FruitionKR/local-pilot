@@ -34,6 +34,7 @@ class LintOperationStarterTest {
         assertThat(saved.getOperationType()).isEqualTo(OperationType.lint);
         assertThat(saved.getStatus()).isEqualTo(OperationStatus.processing);
         assertThat(saved.getTargetDocumentId()).isNull();
+        assertThat(saved.getTargetDisplayName()).isEqualTo("위키 다듬기");
     }
 
     @Test

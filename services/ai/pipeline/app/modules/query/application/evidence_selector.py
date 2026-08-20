@@ -11,13 +11,12 @@ from app.modules.query.application.evidence_text import (
 )
 from app.modules.query.application.ports import EmbeddingSearchPort, TextSearchPort
 from app.modules.query.application.source_references import (
-    has_global_source_refs,
     legacy_source_fields,
     remove_block_refs,
     source_references,
     source_references_from_ids,
 )
-from app.modules.query.domain.entities import EvidenceSnippet, RetrievedPage, SourceReference, WikiEmbeddingUnit
+from app.modules.query.domain.entities import EvidenceSnippet, RetrievedPage, SourceReference, WikiEmbeddingUnit, WikiPage
 from app.modules.query.domain.scoring import hybrid_score
 
 
@@ -30,6 +29,56 @@ class _EvidenceCandidate:
     text: str
     score: float
     unit_type: str = "evidence"
+
+
+def has_selectable_evidence(
+    page: WikiPage,
+    embedding_units: list[WikiEmbeddingUnit],
+) -> bool:
+    if embedding_units:
+        return any(
+            unit.source_block_ids
+            and unit.text
+            and source_references_from_ids(unit.source_block_ids, unit.source_document_id)
+            for unit in embedding_units
+        )
+    source_document_id = _source_document_id_for_page(page)
+    return bool(source_references(page.markdown or page.summary, source_document_id))
+
+
+def _source_document_id_for_page(page: WikiPage) -> str | None:
+    if page.source_document_id:
+        return page.source_document_id
+    markdown = page.markdown or ""
+    if page.is_source:
+        return _frontmatter_value(markdown, "document_id") or _source_id_from_page_id(page.id)
+    if page.is_concept:
+        sources = _frontmatter_value(markdown, "sources")
+        if not sources:
+            return None
+        source_ids = [part.strip() for part in re.split(r"[,\s]+", sources) if part.strip()]
+        if len(source_ids) == 1:
+            return source_ids[0]
+    return None
+
+
+def _source_id_from_page_id(page_id: str) -> str | None:
+    if page_id.startswith("source:"):
+        return page_id.split(":", 1)[1]
+    return None
+
+
+def _frontmatter_value(markdown: str, key: str) -> str | None:
+    if not markdown.startswith("---"):
+        return None
+    parts = markdown.split("---", 2)
+    if len(parts) < 3:
+        return None
+    for line in parts[1].splitlines():
+        match = re.match(rf"^{re.escape(key)}\s*:\s*(.+)$", line.strip(), flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    return None
 
 
 class EvidenceSelector:
@@ -67,7 +116,7 @@ class EvidenceSelector:
             if stored_units:
                 candidates.extend(self._score_stored_embedding_units(question, item, stored_units))
                 continue
-            if not source_document_id and not has_global_source_refs(item.page.markdown or item.page.summary):
+            if not has_selectable_evidence(item.page, stored_units):
                 continue
             candidates.extend(self._score_evidence_sentences(question, item, source_document_id or ""))
 
@@ -75,6 +124,30 @@ class EvidenceSelector:
         candidates = self._select_evidence_score_band_by_page(all_candidates)
         candidates = self._include_atomic_units_for_selected_refs(all_candidates, candidates)
         candidates.sort(key=lambda snippet: snippet.score, reverse=True)
+        first_by_page: dict[str, _EvidenceCandidate] = {}
+        for candidate in candidates:
+            first_by_page.setdefault(candidate.page_id, candidate)
+        retrieved_pages = {
+            item.page.id: item
+            for item in related_pages[: self._max_related_pages]
+        }
+        page_coverage = [
+            first_by_page[item.page.id]
+            for item in related_pages[: self._max_related_pages]
+            if item.page.id in first_by_page
+        ]
+        page_coverage.sort(
+            key=lambda candidate: (
+                retrieved_pages[candidate.page_id].score,
+                candidate.score,
+            ),
+            reverse=True,
+        )
+        covered_candidates = {id(candidate) for candidate in page_coverage}
+        candidates = [
+            *page_coverage,
+            *[candidate for candidate in candidates if id(candidate) not in covered_candidates],
+        ]
         return [
             EvidenceSnippet(
                 rank=index,
@@ -174,6 +247,8 @@ class EvidenceSelector:
             if not unit.source_block_ids or not unit.text:
                 continue
             source_refs = source_references_from_ids(unit.source_block_ids, unit.source_document_id)
+            if not source_refs:
+                continue
             legacy_document_id, legacy_block_ids = legacy_source_fields(source_refs, unit.source_document_id)
             raw_candidates.append(
                 _EvidenceCandidate(
@@ -362,33 +437,4 @@ class EvidenceSelector:
         )
 
     def _source_document_id(self, item: RetrievedPage) -> str | None:
-        if item.page.source_document_id:
-            return item.page.source_document_id
-        markdown = item.page.markdown or ""
-        if item.page.is_source:
-            return self._frontmatter_value(markdown, "document_id") or self._source_id_from_page_id(item.page.id)
-        if item.page.is_concept:
-            sources = self._frontmatter_value(markdown, "sources")
-            if not sources:
-                return None
-            source_ids = [part.strip() for part in re.split(r"[,\s]+", sources) if part.strip()]
-            if len(source_ids) == 1:
-                return source_ids[0]
-        return None
-
-    def _source_id_from_page_id(self, page_id: str) -> str | None:
-        if page_id.startswith("source:"):
-            return page_id.split(":", 1)[1]
-        return None
-
-    def _frontmatter_value(self, markdown: str, key: str) -> str | None:
-        if not markdown.startswith("---"):
-            return None
-        parts = markdown.split("---", 2)
-        if len(parts) < 3:
-            return None
-        for line in parts[1].splitlines():
-            match = re.match(rf"^{re.escape(key)}\s*:\s*(.+)$", line.strip(), flags=re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-        return None
+        return _source_document_id_for_page(item.page)

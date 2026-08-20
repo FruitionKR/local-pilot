@@ -1,3 +1,7 @@
+import json
+
+from app.modules.wiki_ingestion.application.models import WikiMaintenanceCommand
+from app.modules.wiki_ingestion.infrastructure import wiki_maintenance
 from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     merge_active_cluster_markdown,
     parse_active_cluster_lint,
@@ -13,6 +17,48 @@ from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repositor
     _delete_source_related_links,
     _resolve_or_create_wiki_page_id,
 )
+
+
+def test_promotion_generator_preserves_representative_and_allowed_refs(monkeypatch) -> None:
+    payloads = []
+
+    class FakeClient:
+        def complete_json(self, system_prompt, user_prompt):
+            payloads.append((system_prompt, json.loads(user_prompt)))
+            return {
+                "definition": {
+                    "text": "공급 계약의 운영 근거다.",
+                    "anchor_block_ids": ["B0001", "not-allowed"],
+                },
+                "evidence": [],
+            }
+
+    monkeypatch.setattr(wiki_maintenance, "_lint_api_client", lambda _command: FakeClient())
+    generator = wiki_maintenance.PostgresWikiMaintenance()._build_promotion_page_generator(
+        WikiMaintenanceCommand("user", "workspace", "provider", "model")
+    )
+
+    page = generator(
+        {
+            "id": "orchid-lease",
+            "representative": "Orchid Lease",
+            "claims": [
+                {
+                    "id": "claim_001",
+                    "claim": "Orchid Lease는 공급 계약이다.",
+                    "refs": ["doc_a:B0001"],
+                }
+            ],
+            "relations": [],
+            "source_blocks": [{"ref": "doc_a:B0001", "text": "Orchid Lease"}],
+        }
+    )
+
+    assert page["title"] == "Orchid Lease"
+    assert "# Orchid Lease" in page["markdown"]
+    assert "claim_001: Orchid Lease는 공급 계약이다. [doc_a:B0001]" in page["markdown"]
+    assert "not-allowed" not in page["markdown"]
+    assert payloads[0][1]["cluster"]["representative"] == "Orchid Lease"
 
 
 def test_lint_merge_does_not_overwrite_previous_operation_snapshot(
@@ -195,6 +241,8 @@ def test_parse_active_cluster_lint_reads_promotion_relations_and_refs() -> None:
 
 ## cluster: back-emf
 
+representative: Back EMF
+
 ### Evidence Claims
 - claim_001: Back EMF는 제조 공차의 영향을 받는다. [doc_a:B0001, doc_b:B0002]
 
@@ -215,6 +263,7 @@ reason: definition/evidence/relation이 충분함
     assert clusters == [
         {
             "id": "back-emf",
+            "representative": "Back EMF",
             "refs": ["doc_a:B0001", "doc_b:B0002"],
             "claims": [
                     {
@@ -279,6 +328,61 @@ def test_merge_active_cluster_markdown_deduplicates_claims_and_relations() -> No
     assert "claim_002: Back EMF는 토크 리플 분석에도 쓰인다. [doc_b:B0002]" in merged
     assert merged.count("target: concept:tolerance-analysis") == 1
     assert "target: concept:torque-ripple" in merged
+
+
+def test_merge_active_cluster_markdown_fills_missing_representative() -> None:
+    existing = """# Active Meaning Clusters
+
+## cluster: back-emf
+
+type: term_cluster
+
+### Evidence Claims
+- claim_001: 기존 근거 [doc_a:B0001]
+"""
+    incoming = """# Active Meaning Clusters
+
+## cluster: back-emf
+
+type: term_cluster
+representative: Back EMF
+
+### Evidence Claims
+- claim_002: 신규 근거 [doc_b:B0002]
+"""
+
+    merged = merge_active_cluster_markdown(existing, incoming)
+
+    assert parse_active_cluster_lint(merged)[0]["representative"] == "Back EMF"
+    assert merged.count("representative: Back EMF") == 1
+
+
+def test_merge_active_cluster_markdown_preserves_existing_representative() -> None:
+    existing = """# Active Meaning Clusters
+
+## cluster: back-emf
+
+type: term_cluster
+representative: Existing Back EMF
+
+### Evidence Claims
+- claim_001: 기존 근거 [doc_a:B0001]
+"""
+    incoming = """# Active Meaning Clusters
+
+## cluster: back-emf
+
+type: term_cluster
+representative: Incoming Back EMF
+
+### Evidence Claims
+- claim_002: 신규 근거 [doc_b:B0002]
+"""
+
+    merged = merge_active_cluster_markdown(existing, incoming)
+
+    assert parse_active_cluster_lint(merged)[0]["representative"] == "Existing Back EMF"
+    assert "representative: Incoming Back EMF" not in merged
 
 
 def test_materialize_active_relation_candidates_links_existing_concepts_only() -> None:

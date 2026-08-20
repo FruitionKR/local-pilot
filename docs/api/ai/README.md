@@ -1,14 +1,19 @@
-# ai-svc API
+# ai-svc 내부 API
 
 [API 문서](../README.md)
 
-Query·Agent·Wiki·Skill pipeline의 내부 API다. 로컬 base URL은 `http://localhost:8000`이다.
+Query·Agent·Wiki·Skill pipeline의 서비스 간·운영 API다. 로컬 base URL은
+`http://localhost:8000`이며 Gateway나 프론트엔드에서 직접 호출하지 않는다.
 
-| 도메인 | API 수 | 역할 |
+| 도메인 | API 수 | 현재 Gateway 연결 |
 |---|---:|---|
-| [Agent](agent.md) | 7 | Agent turn·run·artifact·Tool 인가 |
-| [Pipeline](pipeline.md) | 7 | pipeline 실행·상태·로그와 상태 점검 |
-| [Query](query.md) | 1 | Wiki 기반 질의 실행 |
-| [Skills](skills.md) | 8 | Skill 조회·작성·게시·설정 |
-| [Wiki](wiki.md) | 10 | Wiki 조회·ingest·lint·복구 |
-| [Wiki Schema](wiki-schema.md) | 4 | Wiki 스키마 조회·초안·미리보기·활성화 |
+| [Agent](agent.md) | 12 | turn은 Kafka, run·artifact 조회·Tool 인가는 내부 HTTP; artifact register는 현재 운영 호출자 없음 |
+| [Wiki Ingest](pipeline.md) | 7 | ingest는 Kafka, run 상태는 내부 HTTP, 나머지는 운영용 |
+| [Query](query.md) | 1 | 동기는 내부 HTTP, 비동기는 Kafka worker가 같은 로직 사용 |
+| [Skills](skills.md) | 9 | 7개는 내부 HTTP, draft·preview는 ai-svc 내부 기능 |
+| [Wiki](wiki.md) | 10 | 조회·페이지 관리는 내부 HTTP, lint·복구는 Kafka |
+| [Wiki Schema](wiki-schema.md) | 4 | 내부 HTTP |
+
+Agent 승인 run 5개와 실행 결과 기반 Skill 초안 API는 `AGENT_SKILLS_ENABLED=true`,
+나머지 Skill API 8개는 `SKILL_API_ENABLED=true`일 때 노출된다. 이 문서는 선택 기능을
+모두 켠 전체 계약을 기준으로 한다.

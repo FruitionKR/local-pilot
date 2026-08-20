@@ -23,7 +23,7 @@ need_cmd() {
 
 cleanup() {
   if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
-    kill "$FRONTEND_PID" >/dev/null 2>&1 || true
+    runtime_terminate_tree "$FRONTEND_PID" || true
   fi
   runtime_unregister "frontend"
 }

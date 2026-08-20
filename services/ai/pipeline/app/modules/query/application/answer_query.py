@@ -22,7 +22,10 @@ from app.modules.query.application.ports import (
 )
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
 from app.modules.query.application.query_event import publish_query_event
-from app.modules.query.application.query_evaluator_flow import QueryEvaluatorLoop
+from app.modules.query.application.query_evaluator_flow import (
+    QueryEvaluatorLoop,
+    apply_evidence_sufficiency_boundary,
+)
 from app.modules.query.application.query_graph_paths import (
     add_focus_concepts_to_related_pages,
     add_sources_connected_to_focus_concepts,
@@ -32,6 +35,7 @@ from app.modules.query.application.query_graph_paths import (
 from app.modules.query.application.query_page_scorer import QueryPageScorer
 from app.modules.query.application.query_web_answer_builder import QueryWebAnswerBuilder
 from app.modules.query.application.retrieval_summary import build_retrieval_summary
+from app.modules.query.application.evidence_selector import has_selectable_evidence
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
 from app.modules.query.domain.entities import (
     ConversationContext,
@@ -224,13 +228,14 @@ class AnswerQueryUseCase:
         )
 
         web_search_allowed = allow_web_search is not False
+        low_internal_relevance = self._should_use_web_fallback(
+            candidates.source_scores,
+            candidates.concept_scores,
+        )
         if (
             web_search_allowed
             and self._query_evaluator is None
-            and self._should_use_web_fallback(
-                candidates.source_scores,
-                candidates.concept_scores,
-            )
+            and low_internal_relevance
         ):
             self._mark_web_search_requested(web_search_telemetry)
             fallback_answer = self._answer_from_web_search(
@@ -262,7 +267,17 @@ class AnswerQueryUseCase:
             stop_reason=internal_context.stop_reason,
             event_publisher=event_publisher,
         )
+        if query_evaluation is None and low_internal_relevance:
+            query_evaluation = QueryEvaluation(
+                route="unsupported",
+                reason="내부 근거의 relevance가 정책 기준보다 낮고 웹 검색이 비활성화되었습니다.",
+            )
         if query_evaluation is not None:
+            query_evaluation = apply_evidence_sufficiency_boundary(
+                query_evaluation,
+                has_internal_evidence=bool(evidence_snippets),
+                web_search_available=web_search_allowed,
+            )
             if web_search_allowed and query_evaluation.route == "web_fallback":
                 self._mark_web_search_requested(web_search_telemetry)
                 fallback_answer = self._answer_from_web_search(
@@ -377,6 +392,72 @@ class AnswerQueryUseCase:
             response_length=response_length,
             allow_web_search=allow_web_search,
         )
+        related_page_ids = {item.page.id for item in related_pages}
+        top_concept_score = max(candidates.concept_scores.values(), default=0.0)
+        fallback_score_floor = (
+            0.0
+            if not query_context.evidence_snippets
+            else max(0.0, top_concept_score - 0.15)
+        )
+        if not query_context.evidence_snippets or any(
+            page.id not in related_page_ids
+            and candidates.concept_scores.get(page.id, 0.0) >= fallback_score_floor
+            for page in candidates.concept_pages
+        ):
+            fallback_concepts = [
+                RetrievedPage(
+                    page=page,
+                    score=candidates.concept_scores.get(page.id, 0.0),
+                    role="focus_concept",
+                )
+                for page in sorted(
+                    candidates.concept_pages,
+                    key=lambda item: candidates.concept_scores.get(item.id, 0.0),
+                    reverse=True,
+                )
+                if page.id not in related_page_ids
+                and candidates.concept_scores.get(page.id, 0.0) > 0
+                and candidates.concept_scores.get(page.id, 0.0) >= fallback_score_floor
+            ][: self._concept_candidate_limit]
+            if fallback_concepts:
+                fallback_concepts = self._load_markdown_for_related_pages(
+                    fallback_concepts
+                )
+                fallback_units = self._load_embedding_units_for_related_pages(
+                    fallback_concepts
+                ) or {}
+                fallback_concepts = [
+                    item
+                    for item in fallback_concepts
+                    if has_selectable_evidence(
+                        item.page,
+                        fallback_units.get(item.page.id, []),
+                    )
+                ]
+                if fallback_concepts:
+                    related_pages = [*related_pages, *fallback_concepts]
+                    graph_context = replace(graph_context, nodes=related_pages)
+                    query_context = self._build_query_context.execute(
+                        question=contextual_question,
+                        related_pages=related_pages,
+                        graph_context=graph_context,
+                        traversal_paths=retrieval_graph.traversal_paths,
+                        original_question=original_question,
+                        evidence_question=evidence_question(
+                            original_question,
+                            conversation_context,
+                            contextual_question,
+                        ),
+                        embedding_units_by_page_id={
+                            **self._load_embedding_units_for_related_pages(related_pages),
+                            **fallback_units,
+                        },
+                        workspace_id=workspace_id,
+                        user_id=user_id,
+                        output_language=output_language,
+                        response_length=response_length,
+                        allow_web_search=allow_web_search,
+                    )
         self._publish(
             event_publisher,
             "context_built",
@@ -787,7 +868,7 @@ class AnswerQueryUseCase:
         if not page_ids:
             return {}
         try:
-            return loader(page_ids)
+            return loader(page_ids) or {}
         except Exception:
             return {}
 

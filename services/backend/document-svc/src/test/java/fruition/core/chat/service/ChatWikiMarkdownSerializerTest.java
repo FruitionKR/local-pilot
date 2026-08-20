@@ -25,7 +25,7 @@ class ChatWikiMarkdownSerializerTest {
     }
 
     @Test
-    @DisplayName("§4 형식으로 문답을 [session:pair]Q/A 단위로 직렬화한다")
+    @DisplayName("문답을 Q/A 단위로 직렬화하고 일반 Ingest가 보존할 provenance를 본문에 담는다")
     void serializesPairInContractFormat() {
         ChatSession session = new ChatSession("session_1", "ws_1", "user_1", "제목");
         List<ChatMessage> messages = List.of(
@@ -33,11 +33,15 @@ class ChatWikiMarkdownSerializerTest {
                 message(session, "m2", "pair_1", "assistant", "traces 화면에서 확인합니다.", "completed", T2)
         );
 
-        String md = serializer.serialize(session, messages);
+        ChatWikiMarkdownSerializer.ChatWikiSource source = serializer.serialize(session, messages);
 
-        assertThat(md).startsWith("# Chat Export");
-        assertThat(md).contains("[session_1:pair_1]Q : LangSmith 연결은 어디서 봐?");
-        assertThat(md).contains("A : traces 화면에서 확인합니다.");
+        assertThat(source.markdown()).startsWith("# Chat Export");
+        assertThat(source.markdown()).contains("[session_1:pair_1]Q : LangSmith 연결은 어디서 봐?");
+        assertThat(source.markdown()).contains("A : traces 화면에서 확인합니다.");
+        assertThat(source.blocks()).singleElement().satisfies(block -> {
+            assertThat(block.blockId()).isEqualTo("session_1:pair_1");
+            assertThat(block.text()).isEqualTo("Q : LangSmith 연결은 어디서 봐?\nA : traces 화면에서 확인합니다.");
+        });
     }
 
     @Test
@@ -51,11 +55,12 @@ class ChatWikiMarkdownSerializerTest {
                 message(session, "m4", "pair_2", "assistant", "답변2", "completed", T4)
         );
 
-        String md = serializer.serialize(session, messages);
+        ChatWikiMarkdownSerializer.ChatWikiSource source = serializer.serialize(session, messages);
 
-        assertThat(md.indexOf("pair_1")).isLessThan(md.indexOf("pair_2"));
+        assertThat(source.blocks()).extracting(ChatWikiMarkdownSerializer.ChatSourceBlock::blockId)
+                .containsExactly("session_1:pair_1", "session_1:pair_2");
         // 문답 사이 빈 줄 구분
-        assertThat(md).contains("A : 답변1\n\n[session_1:pair_2]Q : 질문2");
+        assertThat(source.markdown()).contains("A : 답변1\n\n[session_1:pair_2]Q : 질문2");
     }
 
     @Test
@@ -69,10 +74,12 @@ class ChatWikiMarkdownSerializerTest {
                 message(session, "m4", "pair_2", "assistant", "실패답변", "failed", T4)
         );
 
-        String md = serializer.serialize(session, messages);
+        ChatWikiMarkdownSerializer.ChatWikiSource source = serializer.serialize(session, messages);
 
-        assertThat(md).contains("pair_1").contains("정상질문");
-        assertThat(md).doesNotContain("pair_2").doesNotContain("질문만있음").doesNotContain("실패답변");
+        assertThat(source.blocks()).extracting(ChatWikiMarkdownSerializer.ChatSourceBlock::blockId)
+                .containsExactly("session_1:pair_1");
+        assertThat(source.markdown()).contains("정상질문");
+        assertThat(source.markdown()).doesNotContain("질문만있음").doesNotContain("실패답변");
     }
 
     @Test
@@ -84,9 +91,10 @@ class ChatWikiMarkdownSerializerTest {
                 message(session, "m2", "pair_1", "assistant", "줄1\n\n줄2", "completed", T2)
         );
 
-        String md = serializer.serialize(session, messages);
+        ChatWikiMarkdownSerializer.ChatWikiSource source = serializer.serialize(session, messages);
 
-        assertThat(md).contains("A : 줄1\n줄2");
-        assertThat(md).doesNotContain("줄1\n\n줄2");
+        assertThat(source.markdown()).contains("A : 줄1\n줄2");
+        assertThat(source.markdown()).doesNotContain("줄1\n\n줄2");
+        assertThat(source.blocks().get(0).text()).contains("A : 줄1\n줄2");
     }
 }

@@ -10,7 +10,7 @@ import {
   type ReactNode
 } from "react";
 import { usePathname } from "next/navigation";
-import { getAccessToken, getSelectedWorkspaceId } from "@/shared/lib/auth";
+import { getSelectedWorkspaceId, isPublicAuthPath } from "@/shared/lib/auth";
 import { fetchMe } from "../api/auth";
 import {
   DEFAULT_USER_PREFERENCES,
@@ -57,19 +57,15 @@ export function UserPreferencesProvider({ children }: { children: ReactNode }) {
   const [systemReducesMotion, setSystemReducesMotion] = useState(false);
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      setPreferences(DEFAULT_USER_PREFERENCES);
-      setStorageKey(null);
-      setGraphStorageKey(null);
-      setPreferencesReady(true);
-      return;
-    }
-
     let ignore = false;
     setPreferences(DEFAULT_USER_PREFERENCES);
     setStorageKey(null);
     setGraphStorageKey(null);
     setPreferencesReady(false);
+    if (isPublicAuthPath(pathname)) {
+      setPreferencesReady(true);
+      return;
+    }
     fetchMe()
       .then((user) => {
         if (ignore) return;

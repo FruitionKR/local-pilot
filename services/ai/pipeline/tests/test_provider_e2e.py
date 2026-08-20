@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from provider_e2e import run_provider_e2e
@@ -28,12 +29,62 @@ class _Client:
                 "context_problem": None,
             }
         if "action" in system_prompt and "chat_answer" in system_prompt:
+            payload = json.loads(user_prompt)
+            if payload["has_selected_completed_work"]:
+                return {
+                    "action": "skill_draft_proposal",
+                    "confidence": 1.0,
+                    "retrieval_source": "none",
+                    "document_operation": "none",
+                    "persist": False,
+                    "required_capabilities": [],
+                    "reason": "완료 작업 일반화",
+                    "edit_goal": None,
+                }
+            if payload["message"].startswith("방금 완료한 작업"):
+                return {
+                    "action": "skill_draft_proposal",
+                    "confidence": 1.0,
+                    "retrieval_source": "none",
+                    "document_operation": "none",
+                    "persist": False,
+                    "required_capabilities": [],
+                    "reason": "완료 작업 일반화",
+                    "edit_goal": None,
+                }
+            if payload["message"].startswith("현재 문서를 요약"):
+                return {
+                    "action": "workspace_workflow",
+                    "confidence": 1.0,
+                    "retrieval_source": "none",
+                    "document_operation": "edit",
+                    "persist": True,
+                    "required_capabilities": (
+                        ["document-edit", "folder-organize"]
+                        if "보관 폴더" in payload["message"]
+                        else ["document-edit"]
+                    ),
+                    "reason": "문서 요약과 이동",
+                    "edit_goal": "shorten",
+                }
+            if payload["message"].startswith("Wiki 근거"):
+                return {
+                    "action": "markdown_edit",
+                    "confidence": 1.0,
+                    "retrieval_source": "workspace",
+                    "document_operation": "edit",
+                    "persist": False,
+                    "required_capabilities": ["document-edit"],
+                    "reason": "근거 기반 보완",
+                    "edit_goal": "other",
+                }
             return {
                 "action": "chat_answer",
                 "confidence": 1.0,
                 "retrieval_source": "workspace",
                 "document_operation": "none",
                 "persist": False,
+                "required_capabilities": [],
                 "reason": "질문 응답",
                 "edit_goal": None,
             }

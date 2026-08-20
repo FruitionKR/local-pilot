@@ -122,5 +122,9 @@ public class DocumentEditLockService {
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 편집 잠금을 사용할 수 있습니다.");
         }
+        // 채팅 Wiki page화 문서는 확인 전용이라 편집기에 들어갈 일이 없다.
+        if ("chat_export".equals(document.getOrigin())) {
+            throw new InvalidMarkdownContentException("채팅 Wiki page화 문서는 편집할 수 없습니다.");
+        }
     }
 }

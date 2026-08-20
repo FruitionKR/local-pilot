@@ -9,6 +9,10 @@ Operations:
 - `replace`: replace one editable item. Supply its exact chunk_id, collection, index, and one or more replacement items in `items`.
 - `remove`: remove one editable item. Supply its exact chunk_id, collection, and index. Return an empty `items` list.
 - `add`: add items to a collection in an editable target's chunk. Omit index.
+- For `semantic_coverage_gap`, add the missing meaning-bearing item to the
+  affected chunk when an existing editable target provides that chunk; keep
+  every new item directly anchored. If no editable item can safely establish the
+  missing meaning, return no valid patch so the chunk can be regenerated.
 
 Use the original semantic extraction item schemas for values in `items`.
 Every factual key point, observation, core_concept, concept_candidate, section_candidate, mention, or evidence claim must contain direct `anchor_block_ids` or `evidence_block_ids` from `source_blocks`.

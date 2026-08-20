@@ -136,6 +136,41 @@ def evaluate_answer_step(
     return {**state, "evaluation": evaluation}
 
 
+def apply_evidence_sufficiency_boundary(
+    evaluation: QueryEvaluation,
+    *,
+    has_internal_evidence: bool,
+    web_search_available: bool,
+) -> QueryEvaluation:
+    if not web_search_available and evaluation.route in {
+        "web_fallback",
+        "internal_web_augmented",
+    }:
+        if has_internal_evidence:
+            return replace(
+                evaluation,
+                route="revise_answer",
+                feedback=(
+                    "웹 검색을 사용할 수 없습니다. 현재 내부 문서가 직접 뒷받침하는 내용만 먼저 답하고, "
+                    "요청 중 확인할 수 없는 부분은 내부 문서에서 근거를 찾지 못했다고 명시하세요."
+                ),
+                web_query=None,
+            )
+        return replace(evaluation, route="unsupported", feedback="", web_query=None)
+    if evaluation.route == "internal_web_augmented" and not has_internal_evidence:
+        return replace(evaluation, route="web_fallback", feedback="")
+    if evaluation.route != "internal_supported":
+        return evaluation
+    if has_internal_evidence:
+        return evaluation
+    return replace(
+        evaluation,
+        route="web_fallback" if web_search_available else "unsupported",
+        feedback="",
+        web_query=evaluation.web_query if web_search_available else None,
+    )
+
+
 def route_after_evaluation(state: QueryEvaluationGraphState, max_attempts: int) -> str:
     evaluation = state.get("evaluation")
     if evaluation is None or evaluation.route == "internal_supported":

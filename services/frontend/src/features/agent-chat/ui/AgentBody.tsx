@@ -3,7 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
 import { AgentResultCard } from "./AgentResultCard";
 import { StatusList } from "./StatusList";
-import type { StatusStep } from "../lib/agentData";
+import { buildDocumentCommandSteps, type StatusStep } from "../lib/agentData";
+import { resolveChatTurnPresentation } from "../lib/markdownAgent";
 import type { QueryStageEvent } from "@/entities/wiki/api/wiki";
 import type { ActiveAgentTurn } from "../model/useChatThread";
 import { findSourceNodeByDocumentId } from "@/entities/graph/lib/graph";
@@ -75,9 +76,40 @@ function sourceTitle(nodes: GraphNode[] | undefined, documentId: string) {
   return findSourceNodeByDocumentId(nodes, documentId)?.label ?? documentId;
 }
 
+type ChatMessageGroup = {
+  key: string;
+  pairId: string | null;
+  messages: ChatMessageResponse[];
+};
+
+function groupMessagesByPair(messages: ChatMessageResponse[]): ChatMessageGroup[] {
+  const groups: ChatMessageGroup[] = [];
+  const groupByPairId = new Map<string, ChatMessageGroup>();
+
+  for (const message of messages) {
+    if (!message.pair_id) {
+      groups.push({ key: message.id, pairId: null, messages: [message] });
+      continue;
+    }
+
+    let group = groupByPairId.get(message.pair_id);
+    if (!group) {
+      group = { key: message.pair_id, pairId: message.pair_id, messages: [] };
+      groupByPairId.set(message.pair_id, group);
+      groups.push(group);
+    }
+    group.messages.push(message);
+  }
+
+  return groups;
+}
+
 export function AgentBody({
   messages,
   isLoading,
+  isDocumentCommandLoading,
+  documentCommandQuestion,
+  activeSessionId,
   activeTurn,
   queryErrorMessage,
   chatLoadErrorMessage,
@@ -85,10 +117,18 @@ export function AgentBody({
   queryStages = [],
   onOpenWikiPage,
   onOpenSourceBlocks,
+  isPairSelectionMode,
+  selectablePairIds,
+  excludedPairIds,
+  selectedPairIds,
+  onSelectPair,
   nodes
 }: {
   messages: ChatMessageResponse[];
   isLoading: boolean;
+  isDocumentCommandLoading: boolean;
+  documentCommandQuestion: string | null;
+  activeSessionId: string | null;
   activeTurn: ActiveAgentTurn | null;
   queryErrorMessage: string | null;
   chatLoadErrorMessage: string | null;
@@ -96,6 +136,11 @@ export function AgentBody({
   queryStages?: QueryStageEvent[];
   onOpenWikiPage: (pageId: string, title: string, pageType: string) => void;
   onOpenSourceBlocks: (documentId: string, title: string, highlights: SourceBlockHighlight[]) => void;
+  isPairSelectionMode: boolean;
+  selectablePairIds: string[];
+  excludedPairIds: string[];
+  selectedPairIds: string[];
+  onSelectPair: (pairId: string) => void;
   nodes?: GraphNode[];
 }) {
   const showAgentStatus = isLoading && activeTurn === null;
@@ -105,6 +150,11 @@ export function AgentBody({
   const animatedQuestionRef = useRef<HTMLDivElement | null>(null);
   const hasScrolledInitialMessagesRef = useRef(false);
   const { scrollToPosition } = useSmoothScroll(bodyRef);
+
+  useEffect(() => {
+    hasScrolledInitialMessagesRef.current = false;
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+  }, [activeSessionId]);
 
   const scrollToLatestMessage = useCallback(({ immediate = false } = {}) => {
     const body = bodyRef.current;
@@ -154,6 +204,15 @@ export function AgentBody({
     return () => window.cancelAnimationFrame(frameId);
   }, [animatedMessageId, visibleAnswerStage, isLoading, activeTurn, queryErrorMessage, scrollToLatestMessage, scrollToQuestionStart]);
 
+  // 전송 직후 추가된 질문·진행 UI가 화면 아래에 가려지지 않도록 한 번만 즉시 내린다.
+  // 이후 단계 갱신에는 반응하지 않아 사용자가 직접 올린 스크롤 위치를 방해하지 않는다.
+  useLayoutEffect(() => {
+    if (!isLoading && !isDocumentCommandLoading) return;
+
+    const frameId = window.requestAnimationFrame(() => scrollToLatestMessage({ immediate: true }));
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isDocumentCommandLoading, isLoading, scrollToLatestMessage]);
+
   useEffect(() => {
     if (messages.length === 0 || animatedMessageId || isLoading || queryErrorMessage) return;
     if (hasScrolledInitialMessagesRef.current) return;
@@ -172,6 +231,12 @@ export function AgentBody({
   const messagesToRender = activeTurn
     ? messages.filter((message) => message.id !== activeTurn.userMessageId && message.id !== activeTurn.assistantMessage?.id)
     : messages;
+  const messageGroups = groupMessagesByPair(messagesToRender);
+  const selectablePairIdSet = new Set(selectablePairIds);
+  const excludedPairIdSet = new Set(excludedPairIds);
+  const selectedPairIdSet = new Set(selectedPairIds);
+  const selectedRangeStart = selectedPairIds[0] ?? null;
+  const selectedRangeEnd = selectedPairIds.at(-1) ?? null;
   // SSE로 받은 실제 진행 단계를 상태 목록으로 표시한다. 마지막 단계는 아직 진행 중이면 active로 둔다.
   const stageSteps: StatusStep[] = queryStages.map((stage, index): StatusStep => [
     stage.message || stage.stage,
@@ -189,28 +254,63 @@ export function AgentBody({
   );
 
   return (
-    <div className={styles["agent-body"]} ref={bodyRef}>
-      {messagesToRender.map((message) => (
-        message.role === "user" ? (
+    <div className={cx(styles["agent-body"], isPairSelectionMode && styles["is-pair-selecting"])} ref={bodyRef}>
+      {messageGroups.map((group) => {
+        const isSelectable = group.pairId !== null && selectablePairIdSet.has(group.pairId);
+        const isExcluded = group.pairId !== null && excludedPairIdSet.has(group.pairId);
+        const isSelected = group.pairId !== null && selectedPairIdSet.has(group.pairId);
+        const isRangeStart = group.pairId !== null && group.pairId === selectedRangeStart;
+        const isRangeEnd = group.pairId !== null && group.pairId === selectedRangeEnd;
+
+        return (
           <div
-            className={styles["question-bubble"]}
-            key={message.id}
-            ref={message.id === animatedQuestionId ? animatedQuestionRef : undefined}
+            key={group.key}
+            className={cx(
+              styles["chat-pair"],
+              isPairSelectionMode && isSelectable && styles["is-selection-candidate"],
+              isPairSelectionMode && isExcluded && styles["is-excluded"],
+              isPairSelectionMode && !isSelected && !isExcluded && styles["is-dimmed"],
+              isSelected && styles["is-selected"],
+              isRangeStart && styles["is-range-start"],
+              isRangeEnd && styles["is-range-end"]
+            )}
+            aria-disabled={isPairSelectionMode && isExcluded ? true : undefined}
           >
-            {message.content}
+            {isPairSelectionMode && isSelectable && (
+              <button
+                type="button"
+                className={styles["chat-selection-overlay"]}
+                aria-pressed={isSelected}
+                aria-label="이 문답을 편입 범위로 선택"
+                onClick={() => onSelectPair(group.pairId as string)}
+              />
+            )}
+            <div className={styles["chat-pair-content"]} inert={isPairSelectionMode}>
+              {group.messages.map((message) => (
+              message.role === "user" ? (
+                <div
+                  className={styles["question-bubble"]}
+                  key={message.id}
+                  ref={message.id === animatedQuestionId ? animatedQuestionRef : undefined}
+                >
+                  {message.content}
+                </div>
+              ) : (
+                <AssistantThread
+                  key={message.id}
+                  message={message}
+                  isAnimated={message.id === animatedMessageId}
+                  visibleAnswerStage={visibleAnswerStage}
+                  nodes={nodes}
+                  onOpenWikiPage={onOpenWikiPage}
+                  onOpenSourceBlocks={onOpenSourceBlocks}
+                />
+              )
+              ))}
+            </div>
           </div>
-        ) : (
-          <AssistantThread
-            key={message.id}
-            message={message}
-            isAnimated={message.id === animatedMessageId}
-            visibleAnswerStage={visibleAnswerStage}
-            nodes={nodes}
-            onOpenWikiPage={onOpenWikiPage}
-            onOpenSourceBlocks={onOpenSourceBlocks}
-          />
-        )
-      ))}
+        );
+      })}
 
       {activeTurn && (
         <>
@@ -231,9 +331,15 @@ export function AgentBody({
       )}
       {showAgentStatus && pendingStatusThread}
 
+      {isDocumentCommandLoading && documentCommandQuestion && (
+        <>
+          <div className={styles["question-bubble"]}>{documentCommandQuestion}</div>
+          <div className={styles.typing}><i /><i /><i /> 명령을 해석 중입니다…</div>
+        </>
+      )}
+
       {queryErrorMessage && <p className={styles["query-error"]}>{queryErrorMessage}</p>}
       {chatLoadErrorMessage && <p className={styles["query-error"]}>{chatLoadErrorMessage}</p>}
-
       {isLoading && <div className={styles.typing}><i /><i /><i /> 답변을 작성하고 있어요…</div>}
       {shouldReserveScrollSpace && <div className={styles["agent-scroll-reserve"]} aria-hidden />}
     </div>
@@ -256,6 +362,9 @@ function AssistantThread({
   onOpenWikiPage: (pageId: string, title: string, pageType: string) => void;
   onOpenSourceBlocks: (documentId: string, title: string, highlights: SourceBlockHighlight[]) => void;
 }) {
+  const presentation = resolveChatTurnPresentation(message.action);
+  const documentCommandAction = presentation.kind === "document-command" ? presentation.action : null;
+  const isSearchAnswer = presentation.kind === "query" && presentation.grounded;
   const resultCards = buildRelatedPageCards(message, nodes);
   const ranksInAnswer = citedRanks(message.content);
   const citationReferenceByRank = new Map(
@@ -272,14 +381,21 @@ function AssistantThread({
   };
 
   return (
-    <div className={styles["agent-thread"]}>
-      {(!isAnimated || visibleAnswerStage >= STAGE_STATUS) && (
+    <div className={cx(styles["agent-thread"], documentCommandAction && styles["is-document-command"])}>
+      {(documentCommandAction || isSearchAnswer) && (!isAnimated || visibleAnswerStage >= STAGE_STATUS) && (
         <div className={isAnimated ? styles["agent-stage"] : undefined}>
-          <StatusList title={SEARCH_STATUS_TITLE} isLoading={false} hasResponse />
+          <StatusList
+            title={documentCommandAction ? "문서 명령 실행 완료" : SEARCH_STATUS_TITLE}
+            isLoading={false}
+            hasResponse
+            steps={documentCommandAction
+              ? buildDocumentCommandSteps(documentCommandAction, false, true)
+              : undefined}
+          />
         </div>
       )}
 
-      {resultCards.length > 0 && (!isAnimated || visibleAnswerStage >= STAGE_RESULTS) && (
+      {isSearchAnswer && resultCards.length > 0 && (!isAnimated || visibleAnswerStage >= STAGE_RESULTS) && (
         <div className={cx(styles.results, isAnimated && styles["agent-stage"])}>
           <p>찾은 자료 {resultCards.length}건</p>
           {resultCards.map((card) => (
@@ -295,11 +411,16 @@ function AssistantThread({
       )}
 
       {(!isAnimated || visibleAnswerStage >= STAGE_ANSWER) && (
-        <section className={cx(styles["agent-answer"], isAnimated && styles["agent-stage"])} aria-label="실행 중 발견 사항">
-          <div className={styles["answer-section-title"]}>
-            <span>실행 중 발견 사항</span>
-            <ChevronDown size={8} />
-          </div>
+        <section
+          className={cx(styles["agent-answer"], isAnimated && styles["agent-stage"])}
+          aria-label={isSearchAnswer ? "실행 중 발견 사항" : "답변"}
+        >
+          {isSearchAnswer && (
+            <div className={styles["answer-section-title"]}>
+              <span>실행 중 발견 사항</span>
+              <ChevronDown size={8} />
+            </div>
+          )}
           <MarkdownViewer
             markdown={formatAnswerMarkdown(message.content)}
             onCitationClick={openCitation}

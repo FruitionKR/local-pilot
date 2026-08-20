@@ -29,14 +29,27 @@ class WorkspaceAiModelSettingsControllerTest {
     }
 
     @Test
-    void get_memberCanReadSetting() {
+    void get_memberCanReadSettingButCannotUpdate() {
         when(client.get("ws_1")).thenReturn(
                 new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
+        when(accessGuard.isOwner("ws_1", "user_1")).thenReturn(false);
 
         var response = controller.get("user_1", "ws_1");
 
         verify(accessGuard).requireMember("ws_1", "user_1");
         assertThat(response.getBody().ingestLint().model()).isEqualTo("gpt-5-nano");
+        assertThat(response.getBody().canUpdate()).isFalse();
+    }
+
+    @Test
+    void get_ownerCanUpdate() {
+        when(client.get("ws_1")).thenReturn(
+                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
+        when(accessGuard.isOwner("ws_1", "owner_1")).thenReturn(true);
+
+        var response = controller.get("owner_1", "ws_1");
+
+        assertThat(response.getBody().canUpdate()).isTrue();
     }
 
     @Test
@@ -51,6 +64,7 @@ class WorkspaceAiModelSettingsControllerTest {
                                 "claude", "claude-sonnet-5")));
 
         assertThat(response.getBody().ingestLint().provider()).isEqualTo("claude");
+        assertThat(response.getBody().canUpdate()).isTrue();
     }
 
     @Test

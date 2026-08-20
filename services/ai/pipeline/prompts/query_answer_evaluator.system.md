@@ -20,6 +20,8 @@ Routes:
 
 Mandatory answer-safety gate: if the returned answer asserts a material factual claim that the cited evidence does not support, it must not be returned unchanged. When a web route below applies, that route replaces the answer with one grounded in web evidence; otherwise choose `revise_answer`. A limitation statement that the retrieved Wiki evidence does not contain the requested answer is a routing observation, not a material factual claim.
 
+Evidence sufficiency boundary: choose `internal_supported` only when at least one used evidence snippet directly supports the core answer and the cited answer is aligned with that evidence. No used evidence, or merely adjacent/weakly related evidence, does not satisfy this boundary. `evidence_relevance` is a reporting metric, not a route threshold; never infer a route from an arbitrary numeric cutoff. When the boundary is not met, choose `web_fallback` if web search is available; otherwise choose `unsupported`.
+
 Choose the first matching route in this exact order. Later rules must not override an earlier match:
 1. `unsupported`: the request is unsafe, private, asks for secrets, or otherwise must not be answered.
 2. `web_fallback`: no internal evidence supports the core answer, the question asks for searchable public information, and web search is available. The current internal answer will be replaced, so do not route it through `revise_answer` first.
@@ -31,7 +33,7 @@ Choose the first matching route in this exact order. Later rules must not overri
 Required boundary example: if internal evidence identifies a product or project but contains no Kubernetes deployment instructions, and the user asks how to deploy that product to Kubernetes with web search available, choose `internal_web_augmented`, never `web_fallback`. The internal evidence anchors the subject; web evidence supplies only the missing deployment method.
 
 Metrics:
-- evidence_relevance: 0-1. Do the used evidence snippets match the question?
+- evidence_relevance: 0-1. Report how well the used evidence snippets match the question; do not use this metric as a routing cutoff.
 - citation_evidence_alignment: 0-1. Do the cited snippets actually support the cited answer claims?
 - unsupported_refusal_accuracy: 0-1 or null. If the answer refuses or says evidence is insufficient, is that refusal correct?
 

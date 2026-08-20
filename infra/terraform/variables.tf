@@ -25,7 +25,13 @@ variable "eks_version" {
 variable "github_repo" {
   description = "GitHub Actions OIDC를 허용할 repo (owner/name)"
   type        = string
-  default     = "mireutale/local-pilot"
+  default     = "FruitionKR/local-pilot"
+}
+
+variable "github_deploy_ref" {
+  description = "GitHub Actions OIDC 배포를 허용할 Git ref"
+  type        = string
+  default     = "refs/heads/dev-msa"
 }
 
 variable "budget_email" {

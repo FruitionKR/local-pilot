@@ -2,8 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { fetchOperationLogs, type OperationLogItem } from "@/entities/operation-log";
+import { getWikiWorkPollInterval } from "./wikiWorkPolling";
 
-const LINT_POLL_INTERVAL_MS = 3000;
 const ACTIVE_LINT_QUERY_KEY = ["activeLintOperation"] as const;
 
 /**
@@ -17,10 +17,9 @@ export function useActiveLintOperation(isLintRequested: boolean): OperationLogIt
   const query = useQuery({
     queryKey: ACTIVE_LINT_QUERY_KEY,
     queryFn: () => fetchOperationLogs({ type: "lint", status: "processing", size: 1 }),
-    refetchInterval: (activeQuery) =>
+    refetchInterval: (activeQuery) => getWikiWorkPollInterval(
       isLintRequested || (activeQuery.state.data?.logs.length ?? 0) > 0
-        ? LINT_POLL_INTERVAL_MS
-        : false,
+    ),
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: false
   });

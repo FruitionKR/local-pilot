@@ -55,6 +55,7 @@ public class DocumentItemAssembler {
                 doc.getExtractedTextUri(),
                 doc.getUploadedAt(),
                 doc.getProcessedAt(),
+                doc.getProcessingStartedAt(),
                 doc.getErrorMessage(),
                 doc.getPipelineRunId(),
                 resolveProcessingState(doc),
@@ -94,13 +95,13 @@ public class DocumentItemAssembler {
 
     /**
      * 마지막 ingest 스냅샷(content_hash)과 현재 편집본(current_content_hash)이 다르면 재분석이 필요하다.
+     * 스냅샷이 없는 문서(content_hash null)는 아직 한 번도 ingest되지 않은 것이므로 재분석 대상이다.
      * 처리 중이면 이미 재분석이 진행 중이므로 제외한다. 실패(failed)는 기존 오류 표시가 담당한다.
      */
     static boolean needsReingest(Document document) {
         return document.getDocumentRole() == DocumentRole.EDITABLE
                 && document.getStatus() != DocumentStatus.processing
                 && document.getCurrentContentHash() != null
-                && document.getContentHash() != null
                 && !document.getCurrentContentHash().equals(document.getContentHash());
     }
 
@@ -110,6 +111,8 @@ public class DocumentItemAssembler {
                 && !document.getSourceUri().isBlank();
         return document.getDeletedAt() == null
                 && document.getDocumentRole() == DocumentRole.EDITABLE
+                // 채팅 Wiki page화 문서는 확인용으로만 노출한다. 본문을 고치면 문답 provenance가 끊긴다.
+                && !"chat_export".equals(document.getOrigin())
                 && (hasEditState || canInitializeEditState)
                 && (isMarkdown(document) || document.getStatus() == DocumentStatus.completed);
     }
