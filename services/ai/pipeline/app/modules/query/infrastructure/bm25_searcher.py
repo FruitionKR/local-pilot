@@ -1,7 +1,7 @@
 import math
+import re
 from collections import Counter
 
-from app.modules.query.application.evidence_text import tokens
 from app.modules.query.application.ports import TextSearchPort
 
 
@@ -71,4 +71,4 @@ class Bm25Searcher(TextSearchPort):
         return [score / maximum for score in scores]
 
     def _tokens(self, text: str) -> list[str]:
-        return tokens(text)
+        return re.findall(r"[A-Za-z0-9가-힣_.-]+", text.lower())
