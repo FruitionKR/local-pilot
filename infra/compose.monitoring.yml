@@ -28,6 +28,26 @@ services:
       timeout: 3s
       retries: 10
 
+  # Kafka 브로커에 직접 물어 consumer group별 lag을 낸다.
+  # 워커(services/ai)는 Python이라 자체 지표가 없다 — 브로커 바깥에서 관측하면 코드 변경 없이
+  # ingest·query·agent·maintenance 워커의 적체를 전부 볼 수 있다.
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: fruition-kafka-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # EXTERNAL 리스너는 localhost:9092로 광고돼 컨테이너에서 쓸 수 없다. INTERNAL로 붙는다.
+    command: ["--kafka.server=kafka:19092"]
+    networks:
+      - default
+      - infra
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9308/metrics"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   grafana:
     image: grafana/grafana-oss:12.0.0
     container_name: fruition-grafana
@@ -54,6 +74,13 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+
+networks:
+  default:
+  # compose.infra.yml(project: fruition-mvp-dev)이 만드는 네트워크. 먼저 떠 있어야 한다.
+  infra:
+    external: true
+    name: fruition-mvp-dev_default
 
 volumes:
   prometheus-data:

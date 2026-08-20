@@ -305,8 +305,11 @@ docker compose -f infra/compose.monitoring.yml up -d
 
 | 대상 | 주소 | 비고 |
 |---|---|---|
-| Prometheus | http://localhost:9090 | 15초마다 백엔드 관리 포트를 긁는다 |
+| Prometheus | http://localhost:9090 | 15초마다 백엔드 관리 포트와 kafka-exporter를 긁는다 |
 | Grafana | http://localhost:3001 | 초기 계정 `admin` / `admin` |
+| kafka-exporter | (내부 전용 :9308) | 브로커에 직접 물어 consumer group별 lag을 낸다 |
+
+kafka-exporter는 `compose.infra.yml`이 만드는 네트워크(`fruition-mvp-dev_default`)에 붙으므로 **인프라가 먼저 떠 있어야 한다**. Kafka의 EXTERNAL 리스너는 `localhost:9092`로 광고돼 컨테이너에서 쓸 수 없어 INTERNAL(`kafka:19092`)로 접속한다.
 
 동작 원리는 세 단계다. 백엔드가 `/actuator/prometheus`에 지표를 텍스트로 내걸고, Prometheus가 주기적으로 긁어 시계열로 쌓고, Grafana가 그것을 조회해 그린다. 세 프로세스는 HTTP로만 연결돼 있어 서로를 모른다.
 
@@ -321,12 +324,14 @@ docker compose -f infra/compose.monitoring.yml up -d
 
 | 패널 | 정상 | 이상 신호 |
 |---|---|---|
-| Kafka consumer lag | 0, 또는 올랐다가 0으로 복귀 | 안 내려오면 워커 정지·반복 실패, 계속 우상향이면 처리량 부족, 특정 partition만 쌓이면 그 문서가 문제 |
+| Kafka consumer lag | 0, 또는 올랐다가 0으로 복귀 | 안 내려오면 워커 정지·반복 실패, 계속 우상향이면 처리량 부족. consumer group별로 나오므로 어느 워커가 밀리는지 바로 보인다. KEDA `lagThreshold`(5)를 점선으로 표시한다 |
 | DB 커넥션 획득 대기 | 0에 가까움 | 0에서 떠오르면 Hikari 풀(기본 10개) 포화 — API 지연의 원인이 DB가 아니라 풀인 경우다 |
 | 응답 시간 p95 | 배포 전과 비슷 | 평소의 3~5배. 트래픽이 없으면 선이 끊기는데 이는 정상이다(rate 분모가 0) |
 | 5xx · ERROR 로그 | 둘 다 0 | 배포 직후 값이 뜨면 롤백을 판단한다. 비동기 워커 예외는 5xx가 아니라 ERROR 로그로 잡힌다 |
 
 여기서 이상이 잡히면 JVM 내부를 본다. Grafana → Dashboards → New → Import → ID `4701`(JVM Micrometer) → 데이터소스 `Prometheus`. 힙·GC·스레드를 `application` 단위로 보여준다. 다만 이 대시보드의 Heap used(%)는 로컬에서 의미가 없다 — `-Xmx`를 주지 않아 max heap이 12GB로 잡히므로 사용률이 항상 1%대다. 비율 대신 `JVM Heap` 패널의 톱니 모양을 본다. `Utilisation` 패널도 비어 있는데, Tomcat 스레드 지표에 `server.tomcat.mbeanregistry.enabled=true`가 필요하기 때문이다. 지금 규모에서는 DB 풀이 훨씬 먼저 막히므로 켜지 않았다.
+
+`prometheus.yml`을 고쳤다면 Prometheus를 재시작해야 반영된다(`docker restart fruition-prometheus`). 대시보드 JSON은 30초마다 자동으로 다시 읽으므로 재시작이 필요 없다.
 
 데이터소스·대시보드는 기동 시 자동 등록된다(`infra/monitoring/grafana/provisioning/`, `infra/monitoring/grafana/dashboards/`). 대시보드는 파일이 단일 소스라 UI에서 고쳐도 저장되지 않는다 — JSON을 고쳐 커밋한다. 스크레이프 대상은 `infra/monitoring/prometheus.yml`에 있고, 호스트에서 bootRun으로 도는 백엔드를 가리킨다. `compose.containerized.yml`로 백엔드를 컨테이너로 띄웠다면 대상 주소를 바꿔야 한다.
 
