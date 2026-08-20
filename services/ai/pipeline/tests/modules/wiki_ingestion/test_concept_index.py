@@ -385,6 +385,40 @@ representative: Incoming Back EMF
     assert "representative: Incoming Back EMF" not in merged
 
 
+def test_merge_active_cluster_markdown_accumulates_promotion_source_refs() -> None:
+    existing = """# Active Meaning Clusters
+
+## cluster: back-emf
+
+### Evidence Claims
+- claim_001: 기존 근거 [doc_a:B0001]
+
+### Promotion
+status: candidate
+source_refs: [doc_a]
+reason: 기존 누적 근거
+"""
+    incoming = """# Active Meaning Clusters
+
+## cluster: back-emf
+
+### Evidence Claims
+- claim_002: 추가 근거 [doc_b:B0002]
+
+### Promotion
+status: candidate
+source_refs: [doc_b]
+reason: 신규 누적 근거
+"""
+
+    merged = merge_active_cluster_markdown(existing, incoming)
+
+    assert merged.count("claim_001") == 1
+    assert merged.count("claim_002") == 1
+    assert merged.count("### Promotion") == 1
+    assert "source_refs: [doc_a, doc_b]" in merged
+
+
 def test_materialize_active_relation_candidates_links_existing_concepts_only() -> None:
     class FakeConn:
         def __init__(self) -> None:

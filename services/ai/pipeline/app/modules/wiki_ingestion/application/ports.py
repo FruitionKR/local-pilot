@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any, ContextManager, Protocol
 
 from app.modules.wiki_ingestion.application.models import (
     PipelineRunCommand,
@@ -18,6 +18,10 @@ class PipelineRunnerPort(Protocol):
         self,
         command: PipelineRunCommand,
         progress_callback: Callable[[], bool | None] | None = None,
+        finalization_callback: Callable[
+            [Callable[[], dict[str, Any]]], dict[str, Any]
+        ]
+        | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -39,6 +43,12 @@ class PipelineRunRepositoryPort(Protocol):
         manifest: dict[str, Any],
         expected_source_hash: str | None = None,
     ) -> list[str]: ...
+
+    def concept_write_lock(
+        self,
+        workspace_id: str,
+        run_id: str,
+    ) -> ContextManager[None]: ...
 
     def fail(self, run_id: str, error: str) -> None: ...
 

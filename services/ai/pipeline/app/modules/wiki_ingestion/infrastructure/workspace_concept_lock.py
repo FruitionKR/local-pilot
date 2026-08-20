@@ -2,23 +2,14 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from contextlib import contextmanager
 from functools import lru_cache
 from typing import Any, Iterator
-from uuid import uuid4
 
 import redis
 
 
-LOCK_TTL_MS = 120_000
 INDEX_TTL_SECONDS = 300
-_UNLOCK = """
-if redis.call('get', KEYS[1]) == ARGV[1] then
-  return redis.call('del', KEYS[1])
-end
-return 0
-"""
 
 
 @lru_cache(maxsize=1)
@@ -30,19 +21,35 @@ def _client() -> redis.Redis:
     return redis.Redis.from_url(url, decode_responses=True)
 
 
+def _connect():
+    import psycopg
+
+    url = os.environ.get("AI_DATABASE_URL")
+    if not url:
+        raise RuntimeError("Set AI_DATABASE_URL before using the workspace concept lock")
+    return psycopg.connect(url)
+
+
+def _lock_key(workspace_id: str) -> str:
+    return f"wiki:concept-lock:{workspace_id}"
+
+
 @contextmanager
 def concept_write_lock(workspace_id: str, run_id: str) -> Iterator[None]:
-    key = f"wiki:concept-lock:{workspace_id}"
-    token = f"{run_id}:{uuid4()}"
-    deadline = time.monotonic() + 60
-    while not _client().set(key, token, nx=True, px=LOCK_TTL_MS):
-        if time.monotonic() >= deadline:
-            raise TimeoutError(f"workspace concept lock timeout: {workspace_id}")
-        time.sleep(0.1)
-    try:
-        yield
-    finally:
-        _client().eval(_UNLOCK, 1, key, token)
+    del run_id
+    key = _lock_key(workspace_id)
+    with _connect() as connection:
+        connection.execute(
+            "SELECT pg_advisory_lock(hashtextextended(%s, 0))",
+            (key,),
+        )
+        try:
+            yield
+        finally:
+            connection.execute(
+                "SELECT pg_advisory_unlock(hashtextextended(%s, 0))",
+                (key,),
+            )
 
 
 def get_concept_index(user_id: str, workspace_id: str) -> list[dict[str, Any]] | None:
