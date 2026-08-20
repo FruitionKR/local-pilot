@@ -46,6 +46,8 @@ services:
       - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      # 저장소에 커밋한 대시보드. provisioning/dashboards/fruition.yml이 이 경로를 읽는다.
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]

@@ -313,9 +313,22 @@ docker compose -f infra/compose.monitoring.yml up -d
 확인 순서.
 
 1. http://localhost:9090/targets — `document-svc`와 `access-svc`가 모두 UP이어야 한다. DOWN이면 백엔드가 떠 있는지, 관리 포트(8082·8083)가 열렸는지 본다.
-2. Grafana 접속 → Dashboards → New → Import → ID `4701`(JVM Micrometer) 입력 → 데이터소스 `Prometheus` 선택.
+2. Grafana 접속 → Dashboards → **Fruition 운영**. 데이터소스와 대시보드 모두 기동 시 자동 등록되므로 import 절차가 없다.
 
-데이터소스는 기동 시 자동 등록된다(`infra/monitoring/grafana/provisioning/`). 스크레이프 대상은 `infra/monitoring/prometheus.yml`에 있고, 호스트에서 bootRun으로 도는 백엔드를 가리킨다. `compose.containerized.yml`로 백엔드를 컨테이너로 띄웠다면 대상 주소를 바꿔야 한다.
+#### 무엇을 보는가
+
+`Fruition 운영`은 장애 조사 1차 화면이다. 패널 4개를 위에서부터 순서대로 본다.
+
+| 패널 | 정상 | 이상 신호 |
+|---|---|---|
+| Kafka consumer lag | 0, 또는 올랐다가 0으로 복귀 | 안 내려오면 워커 정지·반복 실패, 계속 우상향이면 처리량 부족, 특정 partition만 쌓이면 그 문서가 문제 |
+| DB 커넥션 획득 대기 | 0에 가까움 | 0에서 떠오르면 Hikari 풀(기본 10개) 포화 — API 지연의 원인이 DB가 아니라 풀인 경우다 |
+| 응답 시간 p95 | 배포 전과 비슷 | 평소의 3~5배. 트래픽이 없으면 선이 끊기는데 이는 정상이다(rate 분모가 0) |
+| 5xx · ERROR 로그 | 둘 다 0 | 배포 직후 값이 뜨면 롤백을 판단한다. 비동기 워커 예외는 5xx가 아니라 ERROR 로그로 잡힌다 |
+
+여기서 이상이 잡히면 JVM 내부를 본다. Grafana → Dashboards → New → Import → ID `4701`(JVM Micrometer) → 데이터소스 `Prometheus`. 힙·GC·스레드를 `application` 단위로 보여준다. 다만 이 대시보드의 Heap used(%)는 로컬에서 의미가 없다 — `-Xmx`를 주지 않아 max heap이 12GB로 잡히므로 사용률이 항상 1%대다. 비율 대신 `JVM Heap` 패널의 톱니 모양을 본다. `Utilisation` 패널도 비어 있는데, Tomcat 스레드 지표에 `server.tomcat.mbeanregistry.enabled=true`가 필요하기 때문이다. 지금 규모에서는 DB 풀이 훨씬 먼저 막히므로 켜지 않았다.
+
+데이터소스·대시보드는 기동 시 자동 등록된다(`infra/monitoring/grafana/provisioning/`, `infra/monitoring/grafana/dashboards/`). 대시보드는 파일이 단일 소스라 UI에서 고쳐도 저장되지 않는다 — JSON을 고쳐 커밋한다. 스크레이프 대상은 `infra/monitoring/prometheus.yml`에 있고, 호스트에서 bootRun으로 도는 백엔드를 가리킨다. `compose.containerized.yml`로 백엔드를 컨테이너로 띄웠다면 대상 주소를 바꿔야 한다.
 
 종료는 다음과 같다. 볼륨을 지우지 않으면 수집한 지표와 대시보드가 남는다.
 
