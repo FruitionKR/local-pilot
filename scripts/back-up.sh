@@ -84,49 +84,6 @@ ensure_docker() {
   docker info >/dev/null 2>&1 || fail "Docker daemon에 연결할 수 없습니다."
 }
 
-java_home_version() {
-  local home="$1"
-  [[ -x "$home/bin/java" ]] || return 1
-  "$home/bin/java" -version 2>&1 | head -n 1 | grep -Eq 'version "21\.|openjdk version "21\.'
-}
-
-find_java21_home() {
-  local candidate
-
-  for candidate in "${JAVA_HOME_21:-}" "${JAVA_HOME:-}"; do
-    if [[ -n "$candidate" ]] && java_home_version "$candidate"; then
-      printf '%s\n' "$candidate"
-      return
-    fi
-  done
-
-  if command -v /usr/libexec/java_home >/dev/null 2>&1; then
-    candidate="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
-    if [[ -n "$candidate" ]] && java_home_version "$candidate"; then
-      printf '%s\n' "$candidate"
-      return
-    fi
-  fi
-
-  local common_paths=(
-    "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
-    "/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
-    "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"
-    "/usr/lib/jvm/temurin-21-jdk-amd64"
-    "/usr/lib/jvm/java-21-openjdk"
-    "/usr/lib/jvm/java-21-openjdk-amd64"
-  )
-
-  for candidate in "${common_paths[@]}"; do
-    if [[ -d "$candidate" ]] && java_home_version "$candidate"; then
-      printf '%s\n' "$candidate"
-      return
-    fi
-  done
-
-  return 1
-}
-
 wait_for_postgres() {
   local status
 

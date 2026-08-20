@@ -66,6 +66,7 @@ cd services/ai/pipeline
 | `scripts/dev-down.sh` | 이 프로젝트가 등록한 supervisor와 Compose 컨테이너를 종료한다. | 기본값은 로컬 볼륨을 유지한다. |
 | `scripts/front-up.sh` / `front-down.sh` | 프론트엔드만 시작하거나 종료한다. | 백엔드와 Compose 서비스는 유지한다. |
 | `scripts/back-up.sh` / `back-down.sh` | 공용 인프라와 호스트 백엔드를 시작하거나 백엔드만 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
+| `scripts/back-test.sh` | Java 21을 찾아 백엔드 Gradle 테스트를 실행한다. 인자가 없으면 CI와 같은 세 모듈 테스트를 실행한다. | 서비스를 시작하거나 종료하지 않는다. |
 | `scripts/ai-up.sh` / `ai-down.sh` | 백엔드 기동 후 AI image 하나로 Pipeline API와 워커 전체를 시작하거나 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
 
 전체 로컬 환경을 시작한다.
@@ -109,6 +110,13 @@ docker compose --env-file infra/.env \
 ```
 
 ### 3-2. 백엔드 (document-svc :8080 → access-svc :8081)
+
+백엔드 테스트는 Java 설치 경로를 직접 추측하지 말고 루트에서 스크립트로 실행한다.
+
+```sh
+./scripts/back-test.sh
+./scripts/back-test.sh :document-svc:test --tests 'fruition.core.aihistory.*'
+```
 
 스크립트 사용(인프라 기동 포함, Flyway 소유자인 document-svc를 먼저 시작).
 

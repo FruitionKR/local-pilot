@@ -1,5 +1,48 @@
 #!/usr/bin/env bash
 
+java_home_version() {
+  local java_home="$1"
+  [[ -x "$java_home/bin/java" ]] || return 1
+  "$java_home/bin/java" -version 2>&1 | head -n 1 | grep -Eq 'version "21\.|openjdk version "21\.'
+}
+
+find_java21_home() {
+  local candidate
+
+  for candidate in "${JAVA_HOME_21:-}" "${JAVA_HOME:-}"; do
+    if [[ -n "$candidate" ]] && java_home_version "$candidate"; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  if command -v /usr/libexec/java_home >/dev/null 2>&1; then
+    candidate="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
+    if [[ -n "$candidate" ]] && java_home_version "$candidate"; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  fi
+
+  local common_paths=(
+    "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
+    "/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
+    "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"
+    "/usr/lib/jvm/temurin-21-jdk-amd64"
+    "/usr/lib/jvm/java-21-openjdk"
+    "/usr/lib/jvm/java-21-openjdk-amd64"
+  )
+
+  for candidate in "${common_paths[@]}"; do
+    if [[ -d "$candidate" ]] && java_home_version "$candidate"; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  return 1
+}
+
 runtime_pid_file() {
   local name="$1"
   printf '%s/%s.pid\n' "$RUNTIME_DIR" "$name"
