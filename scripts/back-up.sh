@@ -123,16 +123,18 @@ main() {
   ensure_docker
 
   if runtime_is_running "backend" "back-up.sh"; then
-    if curl -fsS "http://localhost:8080/actuator/health" >/dev/null 2>&1 \
-      && curl -fsS "http://localhost:8081/actuator/health" >/dev/null 2>&1; then
+    if curl -fsS "http://localhost:8082/actuator/health" >/dev/null 2>&1 \
+      && curl -fsS "http://localhost:8083/actuator/health" >/dev/null 2>&1; then
       log "이 프로젝트가 관리하는 백엔드가 이미 실행 중입니다."
       return
     fi
     fail "관리 중인 백엔드 supervisor는 실행 중이지만 서비스 health check가 실패했습니다."
   fi
 
-  if runtime_port_in_use 8080 || runtime_port_in_use 8081; then
-    fail "8080 또는 8081 포트를 다른 프로세스가 사용 중입니다. 해당 프로세스를 먼저 종료하세요."
+  # 8082·8083은 actuator 전용 관리 포트다 (application.properties의 management.server.port).
+  if runtime_port_in_use 8080 || runtime_port_in_use 8081 \
+    || runtime_port_in_use 8082 || runtime_port_in_use 8083; then
+    fail "8080·8081·8082·8083 중 한 포트를 다른 프로세스가 사용 중입니다. 해당 프로세스를 먼저 종료하세요."
   fi
 
   local java21_home
@@ -154,7 +156,7 @@ main() {
   ) &
   DOCUMENT_PID="$!"
 
-  wait_for_service "http://localhost:8080/actuator/health" "document-svc" "$DOCUMENT_PID"
+  wait_for_service "http://localhost:8082/actuator/health" "document-svc" "$DOCUMENT_PID"
 
   log "access-svc를 시작합니다. Java 21: $java21_home"
   (
@@ -163,7 +165,7 @@ main() {
   ) &
   ACCESS_PID="$!"
 
-  wait_for_service "http://localhost:8081/actuator/health" "access-svc" "$ACCESS_PID"
+  wait_for_service "http://localhost:8083/actuator/health" "access-svc" "$ACCESS_PID"
   log "종료하려면 Ctrl-C를 누르거나 scripts/back-down.sh를 실행하세요."
   wait "$DOCUMENT_PID" "$ACCESS_PID"
 }

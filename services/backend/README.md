@@ -189,8 +189,10 @@ http://localhost:8080/swagger-ui.html
 
 ### Health check
 
+actuator는 업무 포트(8080)가 아니라 관리 포트(8082)에 있다. access-svc는 8083이다.
+
 ```bash
-curl http://localhost:8080/actuator/health
+curl http://localhost:8082/actuator/health
 ```
 
 정상 응답은 `{"status":"UP"}`입니다.
