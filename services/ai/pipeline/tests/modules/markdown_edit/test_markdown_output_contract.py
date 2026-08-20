@@ -477,6 +477,19 @@ class MarkdownOutputContractTest(unittest.TestCase):
         for anchor in ("1.2", "123", "02", "3", "64"):
             self.assertNotIn(f"shortening must preserve literal anchor: {anchor}", missing_failures)
 
+    def test_shorten_preserves_independent_decimal_number(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="짧게 줄여줘.",
+            markdown="독립 소수 1.2를 사용한다.",
+            target=TARGET,
+            edit_goal="shorten",
+        )
+
+        self.assertEqual(validate_markdown_output(request, "소수 1.2를 사용한다."), [])
+        missing_failures = validate_markdown_output(request, "독립 소수를 사용한다.")
+
+        self.assertIn("shortening must preserve literal anchor: 1.2", missing_failures)
+
     def test_rejects_unexpected_han_characters_in_korean_cleanup(self) -> None:
         request = MarkdownEditRequest(
             instruction="문장을 자연스럽게 다듬어줘.",
