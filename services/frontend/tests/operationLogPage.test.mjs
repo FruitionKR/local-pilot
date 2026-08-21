@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   appendLogPage,
   collectRestoredOperationIds,
+  filterVisibleOperationLogs,
   formatOperationLogDescription,
   groupOperationLogsByDate,
   mergeRefreshedLogPage,
@@ -88,7 +89,7 @@ test("작업 유형 라벨은 Figma 로그 화면의 한국어 명칭을 쓴다"
   assert.deepEqual(OPERATION_TYPE_LABELS, {
     document_edit: "AI 편집 반영",
     ingest: "위키 페이지 생성",
-    lint: "위키 다듬기",
+    lint: "Lint",
     restore: "롤백"
   });
 });
@@ -124,7 +125,27 @@ test("Ingest 로그 제목은 시작 시점의 문서 이름을 쓴다", () => {
     formatOperationLogTitle({ operation_type: "ingest", target_display_name: "회의록" }),
     "회의록"
   );
-  assert.equal(formatOperationLogTitle(log("op-lint", "lint")), "위키 다듬기");
+  assert.equal(formatOperationLogTitle(log("op-lint", "lint")), "Lint");
+});
+
+test("실제 바꾼 문서 없이 성공으로 끝난 lint 로그만 숨긴다", () => {
+  const lintLog = (operationId, status, changedResourceCount) => ({
+    ...log(operationId, "lint"),
+    status,
+    changed_resource_count: changedResourceCount
+  });
+  const visible = filterVisibleOperationLogs([
+    lintLog("lint-noop", "succeeded", 0),
+    lintLog("lint-changed", "succeeded", 3),
+    lintLog("lint-processing", "processing", 0),
+    lintLog("lint-failed", "failed", 0),
+    { ...log("edit-1"), status: "succeeded", changed_resource_count: 0 }
+  ]);
+
+  assert.deepEqual(
+    visible.map((item) => item.operation_id),
+    ["lint-changed", "lint-processing", "lint-failed", "edit-1"]
+  );
 });
 
 test("실행 시작 시각으로 경과 분을 표시한다", () => {
