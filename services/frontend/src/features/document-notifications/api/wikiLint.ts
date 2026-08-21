@@ -2,7 +2,7 @@ import { apiFetch, getWorkspaceId, parseJsonOrThrow, workspacePath } from "@/sha
 import { pollUntil } from "@/shared/lib/polling";
 
 /**
- * 위키 다듬기(lint) 요청. dryRun이면 실제 변경 없이 바뀔 페이지 수만 계산한다.
+ * Lint 요청. dryRun이면 실제 변경 없이 바뀔 페이지 수만 계산한다.
  * (backend는 dry_run을 명시적으로 false로 주지 않으면 dry-run으로 처리한다)
  */
 export type WikiMaintenanceStatus = {
@@ -31,7 +31,7 @@ export async function requestWikiLint(dryRun: boolean): Promise<{ changedPageCou
   );
   const queued = await parseJsonOrThrow<{ run_id: string }>(
     response,
-    "위키 다듬기 요청에 실패했습니다."
+    "Lint 요청에 실패했습니다."
   );
   return pollUntil({
     poll: async () => {
@@ -45,13 +45,13 @@ export async function requestWikiLint(dryRun: boolean): Promise<{ changedPageCou
         status: string;
         error?: string;
         manifest?: { task_result?: { changed_pages?: unknown[] } };
-      }>(polled, "위키 다듬기 상태를 불러오지 못했습니다.");
+      }>(polled, "Lint 상태를 불러오지 못했습니다.");
       if (run.status === "succeeded") {
         return { changedPageCount: run.manifest?.task_result?.changed_pages?.length ?? 0 };
       }
-      if (run.status === "failed") throw new Error(run.error || "위키 다듬기에 실패했습니다.");
+      if (run.status === "failed") throw new Error(run.error || "Lint에 실패했습니다.");
       return null;
     },
-    timeoutMessage: "위키 다듬기 처리 시간이 초과되었습니다."
+    timeoutMessage: "Lint 처리 시간이 초과되었습니다."
   });
 }

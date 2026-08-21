@@ -4,7 +4,7 @@ import type { OperationType } from "./types";
 export const OPERATION_TYPE_LABELS: Record<OperationType, string> = {
   document_edit: "AI 편집 반영",
   ingest: "위키 페이지 생성",
-  lint: "위키 다듬기",
+  lint: "Lint",
   restore: "롤백"
 };
 

@@ -5,6 +5,7 @@ import {
   appendLogPage,
   collectRestoredOperationIds,
   fetchOperationLogs,
+  filterVisibleOperationLogs,
   mergeRefreshedLogPage,
   pickSelectedOperationId,
   type OperationLogItem
@@ -49,9 +50,10 @@ export function useOperationLogFeed(isActive: boolean) {
     try {
       const response = await fetchOperationLogs({ size: PAGE_SIZE });
       if (requestIdRef.current !== requestId) return;
+      const visibleLogs = filterVisibleOperationLogs(response.logs);
       if (silent) {
         setItems((previous) => {
-          const merged = mergeRefreshedLogPage(previous, response.logs);
+          const merged = mergeRefreshedLogPage(previous, visibleLogs);
           setSelectedOperationId((current) => pickSelectedOperationId(
             merged,
             preferredOperationId ?? current
@@ -59,10 +61,10 @@ export function useOperationLogFeed(isActive: boolean) {
           return merged;
         });
       } else {
-        setItems(response.logs);
+        setItems(visibleLogs);
         setNextCursor(response.next_cursor);
         setSelectedOperationId((current) => pickSelectedOperationId(
-          response.logs,
+          visibleLogs,
           preferredOperationId ?? current
         ));
       }
@@ -109,7 +111,7 @@ export function useOperationLogFeed(isActive: boolean) {
     try {
       const response = await fetchOperationLogs({ cursor: nextCursor, size: PAGE_SIZE });
       if (requestIdRef.current !== requestId) return;
-      setItems((previous) => appendLogPage(previous, response.logs));
+      setItems((previous) => appendLogPage(previous, filterVisibleOperationLogs(response.logs)));
       setNextCursor(response.next_cursor);
     } catch (error: unknown) {
       if (requestIdRef.current === requestId) {
