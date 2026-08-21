@@ -10,13 +10,13 @@ import { publishNotice } from "@/features/document-notifications";
 import { fetchWikiPage } from "@/entities/wiki";
 import { fetchNoteDraft, waitForPendingDocumentSave, type DetachedNoteSaveResult } from "@/features/note-editing";
 import { getErrorMessage } from "@/shared/lib/errors";
-import { buildMarkdownDocumentFilename, getMarkdownDocumentTitle, splitEditableNoteMarkdown } from "@/entities/document/lib/note";
+import { buildMarkdownDocumentFilename, getMarkdownDocumentTitle, splitEditableNoteMarkdown, stripPageComments } from "@/entities/document/lib/note";
 import { cx } from "@/shared/lib/classNames";
 import { useDismissOnOutside } from "@/shared/lib/useDismissOnOutside";
 import styles from "./SourcePreviewPanel.module.css";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { DocumentRole, SourceBlockHighlight } from "@/entities/document";
-import type { NoteSaveStatus } from "@/entities/tree";
+import type { DocumentStatus, NoteSaveStatus } from "@/entities/tree";
 import type { WikiPageDetailResponse } from "@/entities/wiki";
 
 const SAVE_STATUS_LABELS: Partial<Record<NoteSaveStatus, string>> = {
@@ -38,6 +38,7 @@ export function SourcePreviewPanel({
   onRenameDocument,
   onRefreshDocuments,
   documentRole,
+  documentStatus,
   parentLabel = "업로드 문서",
   editedAt = null,
   isAgentPanelOpen,
@@ -57,6 +58,8 @@ export function SourcePreviewPanel({
   onRefreshDocuments?: () => void;
   /** 위키 반영 분기용 문서 역할. 문서 목록에서 아직 못 찾았으면 undefined. */
   documentRole?: DocumentRole;
+  /** 열린 문서의 처리 상태. processing→completed 전이 시 본문을 다시 불러온다. */
+  documentStatus?: DocumentStatus;
   parentLabel?: string;
   editedAt?: string | null;
   isAgentPanelOpen: boolean;
@@ -80,6 +83,15 @@ export function SourcePreviewPanel({
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   // 버전 복원 후 문서 본문·버전을 다시 불러오기 위한 카운터
   const [documentReloadCount, setDocumentReloadCount] = useState(0);
+  // 변환·분석 중(placeholder 본문)에 열어 둔 문서가 완료되면 실제 본문으로 다시 불러온다.
+  const previousStatusRef = useRef<{ id: string | null; status?: DocumentStatus }>({ id: null });
+  useEffect(() => {
+    const previous = previousStatusRef.current;
+    previousStatusRef.current = { id: documentId ?? null, status: documentStatus };
+    if (previous.id === documentId && previous.status === "processing" && documentStatus === "completed") {
+      setDocumentReloadCount((count) => count + 1);
+    }
+  }, [documentId, documentStatus]);
   // 현재 화면에 본문이 올라와 있는 문서. 같은 문서 재조회인지 판별해 깜빡임을 막는다.
   const loadedDocumentIdRef = useRef<string | null>(null);
   // 편집기의 즉시 저장 함수 (Cmd/Ctrl+S에서 호출)
@@ -109,10 +121,11 @@ export function SourcePreviewPanel({
   const saveStatusLabel = SAVE_STATUS_LABELS[noteSaveStatus];
   const editableNote = useMemo(() => {
     if (rawMarkdown === null || !documentId) return null;
-    return splitEditableNoteMarkdown(rawMarkdown) ?? {
+    const split = splitEditableNoteMarkdown(rawMarkdown) ?? {
       marker: `<!-- fruition-note: ${documentId} -->`,
       body: rawMarkdown
     };
+    return { ...split, body: stripPageComments(split.body) };
   }, [documentId, rawMarkdown]);
   const lastEditedLabel = useMemo(() => {
     if (!editedAt) return "마지막 편집";
@@ -476,7 +489,7 @@ export function SourcePreviewPanel({
         )}
         {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && selectedBlockHighlights.length === 0 && editableNote && documentId && (
           <DynamicNoteEditor
-            key={`${documentId}:${documentReloadCount}`}
+            key={`${documentId}:${documentReloadCount}:${noteContentVersion}`}
             documentId={documentId}
             marker={editableNote.marker}
             initialBody={editableNote.body}

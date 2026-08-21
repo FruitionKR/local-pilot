@@ -27,7 +27,7 @@ import { useDocumentUpload } from "@/features/document-upload/model/useDocumentU
 import { useProjectTree } from "../model/useProjectTree";
 import { useTreeSelection } from "../model/useTreeSelection";
 import { buildGraphFromBackend } from "@/entities/graph/lib/graph";
-import { reflectDocumentToWiki, uploadDocumentFile } from "@/entities/document";
+import { reflectDocumentToWiki, subscribeConvertStarted, uploadDocumentFile } from "@/entities/document";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { buildGeneratedMarkdownFilename } from "@/features/agent-chat/lib/markdownAgent";
 import type { GeneratedMarkdownDraft } from "@/features/agent-chat/lib/markdownAgent";
@@ -76,6 +76,7 @@ export function HomeWorkspace() {
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const [pendingExportDocumentId, setPendingExportDocumentId] = useState<string | null>(null);
+  const [pendingConvertDocumentId, setPendingConvertDocumentId] = useState<string | null>(null);
   const [wikiActionPending, setWikiActionPending] = useState<"ingest" | "lint" | null>(null);
   const operationLogFeed = useOperationLogFeed(activeView === "logs");
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
@@ -139,6 +140,31 @@ export function HomeWorkspace() {
     selection.selectTreeGraphNode(exportedTreeItem);
   }, [documents, pendingExportDocumentId, projectTree.projects, selection]);
 
+  // 어떤 경로로 변환을 시작했든(사이드바 메뉴·그래프/문서 화면 위키 반영) 시작 이벤트로 추적한다.
+  useEffect(() => subscribeConvertStarted(setPendingConvertDocumentId), []);
+
+  // PDF→Markdown 변환 완료를 폴링 결과로 감지해 변환된 markdown 문서를 홈 화면에 연다.
+  useEffect(() => {
+    if (!pendingConvertDocumentId) return;
+    const convertedDocument = documents.find((document) => document.id === pendingConvertDocumentId);
+    if (!convertedDocument) return;
+    // 실패 시 열기는 포기한다. 실패 알림은 DocumentProcessingNotifications가 담당한다.
+    if (convertedDocument.status === "failed") {
+      setPendingConvertDocumentId(null);
+      return;
+    }
+    if (convertedDocument.status !== "completed") return;
+    let convertedTreeItem: TreeItem | null = null;
+    for (const project of projectTree.projects) {
+      convertedTreeItem = findTreeItemByDocumentId(project.items, pendingConvertDocumentId);
+      if (convertedTreeItem) break;
+    }
+    if (!convertedTreeItem) return;
+    setPendingConvertDocumentId(null);
+    setActiveView("home");
+    selection.selectTreeGraphNode(convertedTreeItem);
+  }, [documents, pendingConvertDocumentId, projectTree.projects, selection]);
+
   const selectedDocumentParentLabel = useMemo(() => {
     if (!selection.selectedTreeItemId) return "업로드 문서";
     for (const project of projectTree.projects) {
@@ -156,6 +182,10 @@ export function HomeWorkspace() {
   const selectedDocumentRole = useMemo(() => {
     if (!selection.selectedDocumentId) return undefined;
     return documents.find((item) => item.id === selection.selectedDocumentId)?.document_role;
+  }, [documents, selection.selectedDocumentId]);
+  const selectedDocumentStatus = useMemo(() => {
+    if (!selection.selectedDocumentId) return undefined;
+    return documents.find((item) => item.id === selection.selectedDocumentId)?.status;
   }, [documents, selection.selectedDocumentId]);
   const firstSidebarNote = useMemo(() => {
     const documentIds = new Set(documents.map((document) => document.id));
@@ -377,6 +407,7 @@ export function HomeWorkspace() {
             onRenameDocument={projectTree.renameDocumentById}
             onRefreshDocuments={() => void refreshBackendData()}
             documentRole={selectedDocumentRole}
+            documentStatus={selectedDocumentStatus}
             parentLabel={selectedDocumentParentLabel}
             editedAt={selectedDocumentEditedAt}
             isAgentPanelOpen={isHomeAgentPanelOpen}
