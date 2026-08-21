@@ -28,7 +28,9 @@ export function formatWikiPageTitle(
     .join(" ");
 }
 
-// 답변에 새어 나오는 내부 블록 참조. `doc:B0001` 또는 `session_…:uuid` 형식만 매칭해
+// 답변에 새어 나오는 내부 블록 참조. B번호 부분은 백엔드 계약
+// (pipeline query/application/source_references.py의 `(?:[A-Za-z0-9_.-]+:)?B\d{4}`)과 동일하게
+// 접두사(원본 문서명)를 임의·생략 가능으로 두고, 실제 누출 사례인 `session_…:uuid` 형태를 더해 매칭한다.
 // 숫자 citation([1])과 wikilink([[…]])는 건드리지 않는다.
 const BLOCK_REF_SOURCE =
   "(?:[A-Za-z0-9_.-]+:)?(?:B\\d{4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})";

@@ -32,6 +32,8 @@ export function AgentHeader({
   const [searchTerm, setSearchTerm] = useState("");
   const [sessions, setSessions] = useState<ChatSessionResponse[]>([]);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
+  // 세션 생성 요청 진행 중 여부. 연타로 인한 중복 POST를 막는다.
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
   // 행 옵션 메뉴는 스크롤 컨테이너에 클리핑되지 않도록 portal(fixed)로 띄운다.
   const [rowMenu, setRowMenu] = useState<{ id: string; top: number; left: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -48,7 +50,9 @@ export function AgentHeader({
 
   // 성공 여부를 반환해 호출부가 실패 시 에러 표시 상태(목록 열림)를 유지할 수 있게 한다.
   async function startNewChat() {
+    if (isCreatingChat) return false;
     setIsMenuOpen(false);
+    setIsCreatingChat(true);
     try {
       const created = await createChatSession();
       onSelectSession(created.id, created.title);
@@ -56,6 +60,8 @@ export function AgentHeader({
     } catch (error: unknown) {
       setLoadErrorMessage(getErrorMessage(error, "새 채팅을 만들지 못했습니다."));
       return false;
+    } finally {
+      setIsCreatingChat(false);
     }
   }
 
@@ -164,7 +170,7 @@ export function AgentHeader({
           <button
             type="button"
             className={styles["chat-session-new"]}
-            disabled={isInteractionLocked}
+            disabled={isInteractionLocked || isCreatingChat}
             onClick={() => {
               // 실패 시 목록을 열어 둔 채 에러 문구를 보여주기 위해 성공했을 때만 닫는다.
               void startNewChat().then((created) => {
