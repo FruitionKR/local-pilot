@@ -25,6 +25,10 @@ def test_parse_json_object_uses_first_complete_object_when_model_appends_json() 
     assert parse_json_object(content) == {"result": "ok"}
 
 
+def test_parse_json_object_skips_array_prefix_before_object() -> None:
+    assert parse_json_object('[1]\n{"result": "ok"}') == {"result": "ok"}
+
+
 def test_parse_json_object_stays_available_from_chat_completions_module() -> None:
     assert compatible_parse_json_object('{"ok": true}') == {"ok": True}
 
