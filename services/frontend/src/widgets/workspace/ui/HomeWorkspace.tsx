@@ -61,6 +61,14 @@ function findParentLabel(items: TreeItem[], itemId: string, parentLabel: string)
   return null;
 }
 
+function findTreeItemInProjects(projects: ReadonlyArray<{ items: TreeItem[] }>, documentId: string): TreeItem | null {
+  for (const project of projects) {
+    const item = findTreeItemByDocumentId(project.items, documentId);
+    if (item) return item;
+  }
+  return null;
+}
+
 function findFirstSelectableNote(items: TreeItem[], documentIds: Set<string>): TreeItem | null {
   for (const item of items) {
     if ((item.documentId && documentIds.has(item.documentId)) || (!item.documentId && item.graphNodeId)) return item;
@@ -129,11 +137,7 @@ export function HomeWorkspace() {
     if (!pendingExportDocumentId) return;
     const exportedDocument = documents.find((document) => document.id === pendingExportDocumentId);
     if (!exportedDocument) return;
-    let exportedTreeItem: TreeItem | null = null;
-    for (const project of projectTree.projects) {
-      exportedTreeItem = findTreeItemByDocumentId(project.items, pendingExportDocumentId);
-      if (exportedTreeItem) break;
-    }
+    const exportedTreeItem = findTreeItemInProjects(projectTree.projects, pendingExportDocumentId);
     if (!exportedTreeItem) return;
     setPendingExportDocumentId(null);
     setActiveView("home");
@@ -158,11 +162,7 @@ export function HomeWorkspace() {
         continue;
       }
       if (convertedDocument.status !== "completed") continue;
-      let convertedTreeItem: TreeItem | null = null;
-      for (const project of projectTree.projects) {
-        convertedTreeItem = findTreeItemByDocumentId(project.items, pendingDocumentId);
-        if (convertedTreeItem) break;
-      }
+      const convertedTreeItem = findTreeItemInProjects(projectTree.projects, pendingDocumentId);
       if (!convertedTreeItem) continue;
       setPendingConvertDocumentIds((ids) => ids.filter((id) => id !== pendingDocumentId));
       setActiveView("home");
