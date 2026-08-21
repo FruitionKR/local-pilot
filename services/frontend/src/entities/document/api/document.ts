@@ -66,10 +66,14 @@ export async function deleteDocument(documentId: string): Promise<void> {
     workspacePath(workspaceId, "documents", documentId),
     { cache: "no-store" }
   );
-  const { current_version } = await parseJsonOrThrow<{ current_version: number }>(
+  const { current_version } = await parseJsonOrThrow<{ current_version: unknown }>(
     detailResponse,
     ERROR_MESSAGES.documentDeleteFailed
   );
+  // 상세 응답은 값이 없는 필드의 키가 빠질 수 있어 base_version 유실을 막기 위해 검증한다.
+  if (typeof current_version !== "number" || !Number.isFinite(current_version)) {
+    throw new Error(ERROR_MESSAGES.documentDeleteFailed);
+  }
   const response = await apiFetch(
     workspacePath(workspaceId, "documents", documentId),
     {
