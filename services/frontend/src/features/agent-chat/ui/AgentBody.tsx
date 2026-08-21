@@ -8,7 +8,6 @@ import { resolveChatTurnPresentation } from "../lib/markdownAgent";
 import type { QueryStageEvent } from "@/entities/wiki/api/wiki";
 import type { ActiveAgentTurn } from "../model/useChatThread";
 import { findSourceNodeByDocumentId } from "@/entities/graph/lib/graph";
-import { findLastUserMessage } from "@/shared/lib/messages";
 import { citedRanks, formatAnswerMarkdown, formatReferenceMeta, formatWikiPageTitle } from "../lib/agentFormatters";
 import type { ChatMessageResponse } from "@/entities/chat/model/chat";
 import type { GraphNode } from "@/entities/wiki/model/wiki";
@@ -17,7 +16,6 @@ import { cx } from "@/shared/lib/classNames";
 import { useSmoothScroll } from "../lib/useSmoothScroll";
 import styles from "./AgentChat.module.css";
 
-const SCROLL_OFFSET_PX = 20;
 const MAX_RESULT_CARDS = 3;
 const SEARCH_STATUS_TITLE = "서치 명령 실행 중";
 
@@ -146,8 +144,6 @@ export function AgentBody({
   const showAgentStatus = isLoading && activeTurn === null;
   const [visibleAnswerStage, setVisibleAnswerStage] = useState(STAGE_ANSWER);
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const activeQuestionRef = useRef<HTMLDivElement | null>(null);
-  const animatedQuestionRef = useRef<HTMLDivElement | null>(null);
   const hasScrolledInitialMessagesRef = useRef(false);
   const { scrollToPosition } = useSmoothScroll(bodyRef);
 
@@ -163,46 +159,25 @@ export function AgentBody({
     scrollToPosition(body.scrollHeight - body.clientHeight, { immediate });
   }, [scrollToPosition]);
 
-  const scrollToQuestionStart = useCallback((questionElement: HTMLDivElement | null, { immediate = false } = {}) => {
-    const body = bodyRef.current;
-    if (!body || !questionElement) return;
-
-    const bodyRect = body.getBoundingClientRect();
-    const questionRect = questionElement.getBoundingClientRect();
-    const targetTop = body.scrollTop + questionRect.top - bodyRect.top - SCROLL_OFFSET_PX;
-    scrollToPosition(targetTop, { immediate });
-  }, [scrollToPosition]);
-
   // 진행 단계는 SSE StatusList로 실시간 표시하므로, 답변 도착 시 지연 연출 없이 전체를 공개한다.
   useEffect(() => {
     setVisibleAnswerStage(STAGE_ANSWER);
   }, [animatedMessageId]);
 
+  // 질문·답변이 항상 채팅창 맨 아래에 붙어 보이도록 최신 메시지로 스크롤한다.
   useLayoutEffect(() => {
     if (!activeTurn) return;
 
-    const frameId = window.requestAnimationFrame(() => scrollToQuestionStart(activeQuestionRef.current));
+    const frameId = window.requestAnimationFrame(() => scrollToLatestMessage());
     return () => window.cancelAnimationFrame(frameId);
-  }, [activeTurn, scrollToQuestionStart]);
+  }, [activeTurn, scrollToLatestMessage]);
 
   useLayoutEffect(() => {
     if (!animatedMessageId && !isLoading && !queryErrorMessage) return;
 
-    const frameId = window.requestAnimationFrame(() => {
-      if (activeTurn) {
-        scrollToQuestionStart(activeQuestionRef.current);
-        return;
-      }
-
-      if (animatedQuestionRef.current) {
-        scrollToQuestionStart(animatedQuestionRef.current);
-        return;
-      }
-
-      scrollToLatestMessage();
-    });
+    const frameId = window.requestAnimationFrame(() => scrollToLatestMessage());
     return () => window.cancelAnimationFrame(frameId);
-  }, [animatedMessageId, visibleAnswerStage, isLoading, activeTurn, queryErrorMessage, scrollToLatestMessage, scrollToQuestionStart]);
+  }, [animatedMessageId, visibleAnswerStage, isLoading, activeTurn, queryErrorMessage, scrollToLatestMessage]);
 
   // 전송 직후 추가된 질문·진행 UI가 화면 아래에 가려지지 않도록 한 번만 즉시 내린다.
   // 이후 단계 갱신에는 반응하지 않아 사용자가 직접 올린 스크롤 위치를 방해하지 않는다.
@@ -222,12 +197,7 @@ export function AgentBody({
     return () => window.cancelAnimationFrame(frameId);
   }, [messages.length, animatedMessageId, isLoading, queryErrorMessage, scrollToLatestMessage]);
 
-  const animatedMessageIndex = messages.findIndex((message) => message.id === animatedMessageId);
-  const animatedQuestionId = animatedMessageIndex > 0
-    ? findLastUserMessage(messages.slice(0, animatedMessageIndex))?.id ?? null
-    : null;
   const activeAssistantMessage = activeTurn?.assistantMessage;
-  const shouldReserveScrollSpace = activeTurn !== null && (!activeAssistantMessage || visibleAnswerStage < STAGE_ANSWER);
   const messagesToRender = activeTurn
     ? messages.filter((message) => message.id !== activeTurn.userMessageId && message.id !== activeTurn.assistantMessage?.id)
     : messages;
@@ -288,11 +258,7 @@ export function AgentBody({
             <div className={styles["chat-pair-content"]} inert={isPairSelectionMode}>
               {group.messages.map((message) => (
               message.role === "user" ? (
-                <div
-                  className={styles["question-bubble"]}
-                  key={message.id}
-                  ref={message.id === animatedQuestionId ? animatedQuestionRef : undefined}
-                >
+                <div className={styles["question-bubble"]} key={message.id}>
                   {message.content}
                 </div>
               ) : (
@@ -314,7 +280,7 @@ export function AgentBody({
 
       {activeTurn && (
         <>
-          <div className={styles["question-bubble"]} ref={activeQuestionRef}>{activeTurn.question}</div>
+          <div className={styles["question-bubble"]}>{activeTurn.question}</div>
           {activeAssistantMessage
             ? (
               <AssistantThread
@@ -341,7 +307,6 @@ export function AgentBody({
       {queryErrorMessage && <p className={styles["query-error"]}>{queryErrorMessage}</p>}
       {chatLoadErrorMessage && <p className={styles["query-error"]}>{chatLoadErrorMessage}</p>}
       {isLoading && <div className={styles.typing}><i /><i /><i /> 답변을 작성하고 있어요…</div>}
-      {shouldReserveScrollSpace && <div className={styles["agent-scroll-reserve"]} aria-hidden />}
     </div>
   );
 }
@@ -404,7 +369,10 @@ function AssistantThread({
               title={card.title}
               meta={card.meta}
               pageType={card.pageType}
-              onClick={() => onOpenWikiPage(card.pageId, card.title, card.pageType)}
+              // source/concept wiki page는 내부 구성(블록 참조 등)이 그대로 노출되므로 미리보기를 열지 않는다.
+              onClick={["source", "concept"].includes(card.pageType.toLowerCase())
+                ? undefined
+                : () => onOpenWikiPage(card.pageId, card.title, card.pageType)}
             />
           ))}
         </div>

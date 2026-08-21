@@ -28,9 +28,15 @@ export function formatWikiPageTitle(
     .join(" ");
 }
 
+// 답변에 새어 나오는 내부 블록 참조. `doc:B0001` 또는 `session_…:uuid` 형식만 매칭해
+// 숫자 citation([1])과 wikilink([[…]])는 건드리지 않는다.
+const BLOCK_REF_SOURCE =
+  "(?:[A-Za-z0-9_.-]+:)?(?:B\\d{4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})";
+const BLOCK_REF_TOKEN = new RegExp(`\\s*\\[${BLOCK_REF_SOURCE}(?:\\s*,\\s*${BLOCK_REF_SOURCE})*\\]`, "g");
+
 /** 문장 끝 마침표 뒤에 빈 줄을 넣어 답변 가독성을 높인다(소수점은 제외). */
 export function formatAnswerMarkdown(content: string): string {
-  return content.replace(/(?<!\d)\.(?!\d)\s+/g, ".\n\n");
+  return content.replace(BLOCK_REF_TOKEN, "").replace(/(?<!\d)\.(?!\d)\s+/g, ".\n\n");
 }
 
 /** citation 근거의 block id와 본문을 합쳐 메타 문자열을 만든다. */

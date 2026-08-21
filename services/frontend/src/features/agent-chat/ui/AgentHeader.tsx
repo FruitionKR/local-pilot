@@ -1,11 +1,11 @@
-import { ChevronDown, Folder, MoreHorizontal, MoreVertical, Search } from "lucide-react";
+import { ChevronDown, MoreHorizontal, MoreVertical, Plus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createChatSession, deleteChatSession, fetchChatSessions } from "@/entities/chat/api/chat";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useDismissOnOutside } from "@/shared/lib/useDismissOnOutside";
 import type { ChatSessionResponse } from "@/entities/chat/model/chat";
-import { fruitionLogo, sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { chatBubbleIcon, fruitionLogo, sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import { cx } from "@/shared/lib/classNames";
 import styles from "./AgentChat.module.css";
 
@@ -158,6 +158,18 @@ export function AgentHeader({
               onChange={(event) => setSearchTerm(event.target.value)}
             />
           </label>
+          <button
+            type="button"
+            className={styles["chat-session-new"]}
+            disabled={isInteractionLocked}
+            onClick={() => {
+              setIsListOpen(false);
+              void startNewChat();
+            }}
+          >
+            <Plus size={12} />
+            <span>새 채팅</span>
+          </button>
           {loadErrorMessage ? (
             <p className={styles["chat-session-error"]} role="alert">{loadErrorMessage}</p>
           ) : visibleSessions.length === 0 ? (
@@ -183,7 +195,7 @@ export function AgentHeader({
                   >
                     {isActive
                       ? <SvgIcon src={fruitionLogo} className={styles["chat-session-logo"]} />
-                      : <Folder size={12} />}
+                      : <SvgIcon src={chatBubbleIcon} className={styles["chat-session-icon"]} />}
                     <span>{session.title ?? fallbackTitle}</span>
                   </button>
                   {isActive && (
