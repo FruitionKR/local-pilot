@@ -83,15 +83,6 @@ export function SourcePreviewPanel({
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   // 버전 복원 후 문서 본문·버전을 다시 불러오기 위한 카운터
   const [documentReloadCount, setDocumentReloadCount] = useState(0);
-  // 변환·분석 중(placeholder 본문)에 열어 둔 문서가 완료되면 실제 본문으로 다시 불러온다.
-  const previousStatusRef = useRef<{ id: string | null; status?: DocumentStatus }>({ id: null });
-  useEffect(() => {
-    const previous = previousStatusRef.current;
-    previousStatusRef.current = { id: documentId ?? null, status: documentStatus };
-    if (previous.id === documentId && previous.status === "processing" && documentStatus === "completed") {
-      setDocumentReloadCount((count) => count + 1);
-    }
-  }, [documentId, documentStatus]);
   // 현재 화면에 본문이 올라와 있는 문서. 같은 문서 재조회인지 판별해 깜빡임을 막는다.
   const loadedDocumentIdRef = useRef<string | null>(null);
   // 편집기의 즉시 저장 함수 (Cmd/Ctrl+S에서 호출)
@@ -102,6 +93,21 @@ export function SourcePreviewPanel({
   const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
   const noteSaveStatusRef = useRef<NoteSaveStatus>("saved");
   const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
+  // 변환·분석 중(placeholder 본문)에 열어 둔 문서가 완료되면 실제 본문으로 다시 불러온다.
+  // 단, 미저장 편집이 있으면(ingest 완료 시점에 편집 중) 리로드하지 않는다 — remount로 입력이 유실될 수 있다.
+  const previousStatusRef = useRef<{ id: string | null; status?: DocumentStatus }>({ id: null });
+  useEffect(() => {
+    const previous = previousStatusRef.current;
+    previousStatusRef.current = { id: documentId ?? null, status: documentStatus };
+    if (
+      previous.id === documentId &&
+      previous.status === "processing" &&
+      documentStatus === "completed" &&
+      noteSaveStatusRef.current === "saved"
+    ) {
+      setDocumentReloadCount((count) => count + 1);
+    }
+  }, [documentId, documentStatus]);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // 복원 완료 콜백이 도착한 시점에 보고 있는 문서를 판별하기 위한 ref
   const activeDocumentIdRef = useRef(documentId);
