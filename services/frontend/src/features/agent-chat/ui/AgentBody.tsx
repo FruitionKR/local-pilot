@@ -369,10 +369,10 @@ function AssistantThread({
               title={card.title}
               meta={card.meta}
               pageType={card.pageType}
-              // source/concept wiki page는 내부 구성(블록 참조 등)이 그대로 노출되므로 미리보기를 열지 않는다.
-              onClick={["source", "concept"].includes(card.pageType.toLowerCase())
-                ? undefined
-                : () => onOpenWikiPage(card.pageId, card.title, card.pageType)}
+              // raw 외 wiki page(source/concept·미지 타입)는 내부 구성(블록 참조 등)이 그대로 노출되므로 미리보기를 열지 않는다.
+              onClick={card.pageType.toLowerCase() === "raw"
+                ? () => onOpenWikiPage(card.pageId, card.title, card.pageType)
+                : undefined}
             />
           ))}
         </div>

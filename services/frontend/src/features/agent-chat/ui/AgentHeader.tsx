@@ -46,13 +46,16 @@ export function AgentHeader({
 
   useDismissOnOutside(menuRef, isMenuOpen, () => setIsMenuOpen(false));
 
+  // 성공 여부를 반환해 호출부가 실패 시 에러 표시 상태(목록 열림)를 유지할 수 있게 한다.
   async function startNewChat() {
     setIsMenuOpen(false);
     try {
       const created = await createChatSession();
       onSelectSession(created.id, created.title);
+      return true;
     } catch (error: unknown) {
       setLoadErrorMessage(getErrorMessage(error, "새 채팅을 만들지 못했습니다."));
+      return false;
     }
   }
 
@@ -163,8 +166,10 @@ export function AgentHeader({
             className={styles["chat-session-new"]}
             disabled={isInteractionLocked}
             onClick={() => {
-              setIsListOpen(false);
-              void startNewChat();
+              // 실패 시 목록을 열어 둔 채 에러 문구를 보여주기 위해 성공했을 때만 닫는다.
+              void startNewChat().then((created) => {
+                if (created) setIsListOpen(false);
+              });
             }}
           >
             <Plus size={12} />
