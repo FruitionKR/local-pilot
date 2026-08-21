@@ -149,9 +149,12 @@ export function LogView({
 
   async function handleRestore() {
     if (!detail || !canRestore || isRestoring) return;
+    // 작업 전환 후 늦게 도착한 응답이 새 작업의 상태를 덮어쓰지 않게 세대 값을 잡아둔다.
+    const requestId = requestIdRef.current;
     setIsRestoring(true);
     try {
       const preview = await fetchRestorePreview(detail.operation_id);
+      if (requestIdRef.current !== requestId) return;
       const affectedCount = preview.delete_count + preview.restore_count + preview.rebuild_count;
       setPendingRestore({
         operationId: detail.operation_id,
@@ -161,6 +164,7 @@ export function LogView({
           : `${description} 작업을 롤백하면 ${affectedCount}개 Wiki 페이지에 영향을 줍니다.`
       });
     } catch (error: unknown) {
+      if (requestIdRef.current !== requestId) return;
       publishNotice({
         kind: "failed",
         title: "롤백 실패",
@@ -177,6 +181,7 @@ export function LogView({
 
   async function executeRestore() {
     if (!pendingRestore) return;
+    const requestId = requestIdRef.current;
     const { operationId: restoreOperationId, previewToken } = pendingRestore;
     setPendingRestore(null);
     try {
@@ -195,7 +200,8 @@ export function LogView({
         message: getErrorMessage(error, "롤백 요청에 실패했습니다.")
       });
     } finally {
-      setIsRestoring(false);
+      // 실행 중 다른 작업으로 이동해 새 요청이 시작됐다면, 늦은 해제가 새 작업의 "처리 중" 표시를 풀지 않게 한다.
+      if (requestIdRef.current === requestId) setIsRestoring(false);
     }
   }
 
