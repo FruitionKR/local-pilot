@@ -56,12 +56,30 @@ export async function reflectDocumentToWiki(
   await convertDocumentToMarkdown(documentId);
 }
 
-/** 문서를 삭제한다. 성공 시 204를 반환한다. */
+/**
+ * 문서를 소프트 삭제한다.
+ * 낙관적 잠금 계약이라 현재 버전을 조회해 base_version으로 보낸다(불일치 시 409).
+ */
 export async function deleteDocument(documentId: string): Promise<void> {
   const workspaceId = getWorkspaceId();
+  const detailResponse = await apiFetch(
+    workspacePath(workspaceId, "documents", documentId),
+    { cache: "no-store" }
+  );
+  const { current_version } = await parseJsonOrThrow<{ current_version: number }>(
+    detailResponse,
+    ERROR_MESSAGES.documentDeleteFailed
+  );
   const response = await apiFetch(
     workspacePath(workspaceId, "documents", documentId),
-    { method: "DELETE" }
+    {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": crypto.randomUUID()
+      },
+      body: JSON.stringify({ base_version: current_version })
+    }
   );
   await throwIfNotOk(response, ERROR_MESSAGES.documentDeleteFailed);
 }
