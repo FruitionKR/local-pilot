@@ -62,7 +62,7 @@ cd services/ai/pipeline
 | 스크립트 | 역할 | 유지되는 항목 |
 |---|---|---|
 | `scripts/bootstrap.sh` | 필수 도구와 프론트엔드 의존성을 준비한다. `dev-up.sh`가 자동 호출한다. | 해당 없음 |
-| `scripts/dev-up.sh` | 공용 인프라, 호스트 백엔드, AI API·워커, 프론트엔드를 순서대로 시작한다. | 실행 중인 supervisor가 전체 호스트 프로세스를 관리한다. |
+| `scripts/dev-up.sh` | 공용 인프라, PDF 변환기, 호스트 백엔드, AI API·워커, 프론트엔드를 순서대로 시작한다. | 실행 중인 supervisor가 전체 호스트 프로세스를 관리한다. |
 | `scripts/dev-down.sh` | 이 프로젝트가 등록한 supervisor와 Compose 컨테이너를 종료한다. | 기본값은 로컬 볼륨을 유지한다. |
 | `scripts/front-up.sh` / `front-down.sh` | 프론트엔드만 시작하거나 종료한다. | 백엔드와 Compose 서비스는 유지한다. |
 | `scripts/back-up.sh` / `back-down.sh` | 공용 인프라와 호스트 백엔드를 시작하거나 백엔드만 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
@@ -82,7 +82,7 @@ cd services/ai/pipeline
 ./scripts/dev-down.sh
 ```
 
-PDF 변환기 `markitdown`은 선택 서비스이므로 `dev-up.sh`에 포함되지 않는다. PDF 업로드를 검증할 때 별도로 시작한다.
+PDF 변환기 `markitdown`(:8010)은 `dev-up.sh`가 함께 시작하고 `dev-down.sh`가 함께 종료한다. 단독으로 다룰 때는 다음 명령을 쓴다.
 
 ```sh
 docker compose -f infra/compose.converter.yml up -d
