@@ -40,7 +40,10 @@ def parse_json_object(content: str) -> JsonDict:
                 value = json.loads(repaired)
             except json.JSONDecodeError as exc:
                 last_error = exc
-                continue
+                try:
+                    value, _ = json.JSONDecoder().raw_decode(repaired)
+                except json.JSONDecodeError:
+                    continue
             if not isinstance(value, dict):
                 raise JsonParseError("Model output must be a JSON object")
             return value

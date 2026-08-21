@@ -62,6 +62,18 @@ class JudgeCandidatesTest(unittest.TestCase):
         self.assertEqual(completion.payload["existing_active_clusters"], "# Active")
         self.assertIn("MeaningClusterJudge", completion.system_prompt)
 
+    def test_concept_update_keeps_related_subtopics_out_of_same_concept(self) -> None:
+        completion = FakeCompletion({"decisions": []})
+
+        judge_concept_update_candidates(
+            completion=completion,
+            concepts=[{"slug": "irrigation-control", "title": "관수 제어"}],
+            candidates=[candidate()],
+        )
+
+        self.assertIn("A procedure, record, metric, property, evidence, or subtopic", completion.system_prompt)
+        self.assertIn("is not same_concept", completion.system_prompt)
+
     def test_rejects_relation_to_unknown_concept(self) -> None:
         completion = FakeCompletion(
             {

@@ -7,6 +7,7 @@ PDF_FILE="${1:-}"
 RUN_KEY="$(date +%Y%m%d%H%M%S)-$$"
 OUTPUT_DIR="${AI_E2E_OUTPUT_DIR:-$ROOT_DIR/.tmp/ai-e2e/$RUN_KEY}"
 CONVERTER_OUTPUT="$OUTPUT_DIR/converter.md"
+PROMOTION_OUTPUT="$OUTPUT_DIR/promotion.md"
 FIXTURE_DIR="$ROOT_DIR/services/ai/pipeline/examples/ai-e2e"
 COMPOSE_FILES=(
   -f "$ROOT_DIR/infra/compose.infra.yml"
@@ -188,11 +189,16 @@ for fixture_path in sorted(fixture_dir.glob("*.md")):
         fixture_path.stem,
     )
     fixtures.append((title, markdown))
-if len(fixtures) != 4:
-    raise RuntimeError(f"스마트팜 Markdown fixture 4개가 필요합니다: {fixture_dir}")
+if len(fixtures) != 10:
+    raise RuntimeError(f"스마트팜 Markdown fixture 10개가 필요합니다: {fixture_dir}")
 document_ids = []
 ingest_run_ids = []
 for index, (display_name, markdown) in enumerate(fixtures, start=1):
+    token = request(
+        "POST",
+        f"{access_base}/api/auth/login",
+        {"email": email, "password": password},
+    )["access_token"]
     document = request(
         "POST",
         f"{document_base}/api/workspaces/{workspace_id}/documents/markdown",
@@ -291,8 +297,6 @@ promotions = [
     *(lint_task_result.get("materialized_promotions") or []),
     *(lint_task_result.get("merged_promotions") or []),
 ]
-if not promotions:
-    raise RuntimeError("lint 결과에 materialized_promotions 또는 merged_promotions가 없습니다.")
 promotion_candidates = lint_task_result.get("promotion_candidates") or []
 materialized_promotions = lint_task_result.get("materialized_promotions") or []
 merged_promotions = lint_task_result.get("merged_promotions") or []
@@ -317,9 +321,31 @@ result = {
 (output_dir / "ai-tasks.json").write_text(
     json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
 )
+if not promotions:
+    raise RuntimeError("lint 결과에 materialized 또는 merged promotion이 없습니다.")
 print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
 PY
+
+: >"$PROMOTION_OUTPUT"
+while IFS= read -r markdown_key; do
+  docker exec fruition-pipeline-api-dev python -c \
+    'import sys; from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object; print(read_text_object(sys.argv[1]))' \
+    "$markdown_key" >>"$PROMOTION_OUTPUT"
+done < <(
+  python3 - "$OUTPUT_DIR/ai-tasks.json" <<'PY'
+import json
+import sys
+
+result = json.load(open(sys.argv[1], encoding="utf-8"))
+page_ids = {item["page_id"] for item in result["promotions"] if item.get("page_id")}
+for artifact in result["lint_task_result"].get("operation_artifacts", []):
+    if artifact.get("page_id") in page_ids and artifact.get("markdown_key"):
+        print(artifact["markdown_key"])
+PY
+)
+grep -Fxq '# 과습 관리' "$PROMOTION_OUTPUT" || fail "과습 관리 promotion 문서를 찾지 못했습니다."
 
 "${COMPOSE[@]}" ps --format json >"$OUTPUT_DIR/compose-ps.json"
 log "전체 AI E2E를 완료했습니다: $OUTPUT_DIR"
 log "converter Markdown: $CONVERTER_OUTPUT"
+log "promotion Markdown: $PROMOTION_OUTPUT"

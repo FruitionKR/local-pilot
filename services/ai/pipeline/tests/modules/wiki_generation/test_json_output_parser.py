@@ -19,6 +19,12 @@ def test_parse_json_object_repairs_fence_surrounding_text_and_trailing_comma() -
     assert parsed == {"title": "테스트", "items": [1, 2]}
 
 
+def test_parse_json_object_uses_first_complete_object_when_model_appends_json() -> None:
+    content = '{"result": "ok"}\n{"explanation": "duplicate output"}'
+
+    assert parse_json_object(content) == {"result": "ok"}
+
+
 def test_parse_json_object_stays_available_from_chat_completions_module() -> None:
     assert compatible_parse_json_object('{"ok": true}') == {"ok": True}
 

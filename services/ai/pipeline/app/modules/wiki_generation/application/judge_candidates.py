@@ -118,7 +118,8 @@ You decide whether section/mention evidence claims already belong to or have an 
 
 Rules:
 - Return JSON only.
-- Use same_concept when the candidate is a synonym, translation, abbreviation, direct property, or evidence for an existing/current concept.
+- Use same_concept only when the candidate has the same identity as an existing/current concept, such as a synonym, translation, abbreviation, or spelling variant.
+- A procedure, record, metric, property, evidence, or subtopic that merely belongs to or supports an existing concept is not same_concept. Use relation_candidate when its relation is grounded; otherwise use not_same_concept.
 - Use relation_candidate when the candidate is not the same concept but has an evidence-backed relation to an existing/current concept.
 - Use not_same_concept when it should remain available for active cluster judging.
 - Do not create new concepts or clusters.

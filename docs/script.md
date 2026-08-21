@@ -171,20 +171,22 @@ Markdown과 복원 summary를 저장소의 `.tmp/converter-e2e/`에 저장한다
 
 converter뿐 아니라 컨테이너형 백엔드와 모든 AI worker를 함께 검증하려면 통합 E2E를 실행한다.
 이 명령은 로컬 고정 이메일 인증번호로 격리된 계정·워크스페이스를 생성하고 실제
-스마트팜 문서 4개를 누적 ingest한 뒤 query·agent·lint 완료까지 기다리고 promotion 결과도
-기록한다. 결과는 `.tmp/ai-e2e/<실행 ID>/`에 남으며
+스마트팜 문서 10개를 누적 ingest한 뒤 query·agent·lint 완료까지 기다리고 `과습 관리`
+promotion 결과도 Markdown으로 기록한다. 결과는 `.tmp/ai-e2e/<실행 ID>/`에 남으며
 기존 개발 DB를 마이그레이션하거나 지우지 않도록 `fruition-ai-e2e` Compose project의
 별도 볼륨을 쓴다. 고정 컨테이너 이름 충돌을 막기 위해 기존 개발 컨테이너는 내리지만
 그 볼륨은 보존하며, E2E 컨테이너와 볼륨도 후속 점검을 위해 유지한다. 성공 기준은
-lint 결과의 `materialized_promotions` 또는 `merged_promotions`가 1건 이상인 것이다.
+lint 결과에 materialized 또는 merged promotion이 있고, 해당 산출물 `promotion.md`에
+`# 과습 관리` 제목이 포함되는 것이다.
 
 ```sh
 ./scripts/ai-e2e.sh /path/to/input.pdf
 ```
 
-저장소에 포함된 합성 PDF와 스마트팜 Markdown 4개로 실행하려면 다음 명령을 사용한다.
+저장소에 포함된 합성 PDF와 스마트팜 Markdown 10개로 실행하려면 다음 명령을 사용한다.
 스크립트는 PDF 경로는 인자로 받고, Markdown 입력은
-`services/ai/pipeline/examples/ai-e2e/*.md`에서 읽는다.
+`services/ai/pipeline/examples/ai-e2e/*.md`에서 읽는다. 각 문서의 운영 기록에 언급된
+`과습 관리`가 의미 cluster에 누적되고 실제 concept로 승격되어야 성공한다.
 
 ```sh
 ./scripts/ai-e2e.sh services/ai/pipeline/examples/ai-e2e/synthetic-smart-farm.pdf
