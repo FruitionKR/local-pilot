@@ -266,7 +266,7 @@ ensure_ports_available() {
   local port
 
   # 8082·8083은 backend actuator 전용 관리 포트다.
-  for port in 3000 8000 8080 8081 8082 8083; do
+  for port in 3000 8000 8010 8080 8081 8082 8083; do
     if runtime_port_in_use "$port"; then
       fail "다른 실행 환경이 이미 포트를 사용 중입니다: $port. 해당 환경을 먼저 종료하세요."
     fi
