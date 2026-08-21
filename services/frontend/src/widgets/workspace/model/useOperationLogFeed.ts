@@ -50,10 +50,10 @@ export function useOperationLogFeed(isActive: boolean) {
     try {
       const response = await fetchOperationLogs({ size: PAGE_SIZE });
       if (requestIdRef.current !== requestId) return;
-      const visibleLogs = filterVisibleOperationLogs(response.logs);
       if (silent) {
         setItems((previous) => {
-          const merged = mergeRefreshedLogPage(previous, visibleLogs);
+          // 원본 응답으로 먼저 병합해 숨김 전환된 기존 항목까지 갱신한 뒤 필터링한다.
+          const merged = filterVisibleOperationLogs(mergeRefreshedLogPage(previous, response.logs));
           setSelectedOperationId((current) => pickSelectedOperationId(
             merged,
             preferredOperationId ?? current
@@ -61,6 +61,7 @@ export function useOperationLogFeed(isActive: boolean) {
           return merged;
         });
       } else {
+        const visibleLogs = filterVisibleOperationLogs(response.logs);
         setItems(visibleLogs);
         setNextCursor(response.next_cursor);
         setSelectedOperationId((current) => pickSelectedOperationId(
@@ -111,7 +112,7 @@ export function useOperationLogFeed(isActive: boolean) {
     try {
       const response = await fetchOperationLogs({ cursor: nextCursor, size: PAGE_SIZE });
       if (requestIdRef.current !== requestId) return;
-      setItems((previous) => appendLogPage(previous, filterVisibleOperationLogs(response.logs)));
+      setItems((previous) => filterVisibleOperationLogs(appendLogPage(previous, response.logs)));
       setNextCursor(response.next_cursor);
     } catch (error: unknown) {
       if (requestIdRef.current === requestId) {
