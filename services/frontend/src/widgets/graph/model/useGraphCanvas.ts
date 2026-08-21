@@ -24,11 +24,12 @@ const GRAPH_CACHE_DEBOUNCE_MS = 700;
 /** graph cache signature의 레이아웃 버전 prefix */
 const GRAPH_LAYOUT_VERSION = "d3-layout-v1";
 
-export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNodePreview }: {
+export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNodePreview, onClearNodeFocus }: {
   nodes: GraphNode[];
   links: GraphLink[];
   focusedNodeId: string | null;
   onOpenNodePreview: (node: GraphNode) => void;
+  onClearNodeFocus?: () => void;
 }) {
   const graphSignature = useMemo(
     () => {
@@ -280,10 +281,17 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     requestAnimationRef.current();
   }, []);
 
+  // 같은 focusedNodeId로는 한 번만 선택을 적용한다. 데이터 refresh로 nodeById가
+  // 새로 만들어져도 사용자가 캔버스에서 해제한 선택이 되살아나지 않게 한다.
+  const appliedFocusedNodeIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (focusedNodeId && nodeById.has(focusedNodeId)) {
-      setSelectedNode(focusedNodeId);
-    } else {
+      if (appliedFocusedNodeIdRef.current !== focusedNodeId) {
+        appliedFocusedNodeIdRef.current = focusedNodeId;
+        setSelectedNode(focusedNodeId);
+      }
+    } else if (!focusedNodeId) {
+      appliedFocusedNodeIdRef.current = null;
       setSelectedNode(null);
     }
   }, [focusedNodeId, nodeById, setSelectedNode]);
@@ -447,6 +455,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     scheduleGraphCacheWrite,
     setDraggingNodeId,
     onOpenNodePreview,
+    onClearNodeFocus,
     setHoveredNode,
     setSelectedNode,
     stopDragging

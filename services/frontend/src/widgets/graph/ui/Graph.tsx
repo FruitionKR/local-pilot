@@ -15,6 +15,7 @@ export function Graph({
   rawDocumentCount,
   focusedNodeId,
   onOpenNodePreview,
+  onClearNodeFocus,
   loading = false,
   errorMessage = null
 }: {
@@ -23,6 +24,7 @@ export function Graph({
   rawDocumentCount: number;
   focusedNodeId: string | null;
   onOpenNodePreview: (node: GraphNode) => void;
+  onClearNodeFocus?: () => void;
   loading?: boolean;
   errorMessage?: string | null;
 }) {
@@ -67,6 +69,7 @@ export function Graph({
         links={visibleLinks}
         focusedNodeId={focusedNodeId}
         onOpenNodePreview={onOpenNodePreview}
+        onClearNodeFocus={onClearNodeFocus}
         loading={loading}
         errorMessage={errorMessage}
       />

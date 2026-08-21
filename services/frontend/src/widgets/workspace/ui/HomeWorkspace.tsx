@@ -176,6 +176,9 @@ export function HomeWorkspace() {
   }, [firstSidebarNote, isGraphLoading, isHomeView, selection]);
 
   function handleViewChange(view: RailView) {
+    // 다른 화면에서 열어 둔 문서(홈 자동 열기 포함)의 포커스가 그래프 선택으로 이어지지 않게 한다.
+    // 그래프 화면 안에서의 노드 선택(사이드바·더블클릭)은 전환 이후 동작이라 영향 없다.
+    if (view === "graph") selection.clearGraphFocus();
     setActiveView(view);
   }
 
@@ -397,6 +400,7 @@ export function HomeWorkspace() {
             rawDocumentCount={documents.length}
             focusedNodeId={selection.focusedGraphNodeId}
             onOpenNodePreview={selection.openGraphNodePreview}
+            onClearNodeFocus={selection.clearGraphFocus}
             loading={isGraphLoading}
             errorMessage={apiError}
           />
