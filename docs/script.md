@@ -82,10 +82,10 @@ cd services/ai/pipeline
 ./scripts/dev-down.sh
 ```
 
-PDF 변환기 `markitdown`(:8010)은 `dev-up.sh`가 함께 시작하고 `dev-down.sh`가 함께 종료한다. 단독으로 다룰 때는 다음 명령을 쓴다.
+PDF 변환기 `markitdown`(:8010)은 `dev-up.sh`가 함께 시작하고 `dev-down.sh`가 함께 종료한다. 단독으로 다룰 때는 다음 명령을 쓴다. `--env-file`을 생략하면 LLM API key 없이 기동되어 `dev-up.sh`와 동작이 달라진다.
 
 ```sh
-docker compose -f infra/compose.converter.yml up -d
+docker compose --env-file infra/.env -f infra/compose.converter.yml up -d
 ```
 
 지표 확인용 Prometheus·Grafana도 선택 스택이다. 자세한 절차는 3-6을 본다.
