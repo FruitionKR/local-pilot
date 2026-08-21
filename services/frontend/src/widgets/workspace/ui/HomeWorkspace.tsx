@@ -76,7 +76,7 @@ export function HomeWorkspace() {
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const [pendingExportDocumentId, setPendingExportDocumentId] = useState<string | null>(null);
-  const [pendingConvertDocumentId, setPendingConvertDocumentId] = useState<string | null>(null);
+  const [pendingConvertDocumentIds, setPendingConvertDocumentIds] = useState<readonly string[]>([]);
   const [wikiActionPending, setWikiActionPending] = useState<"ingest" | "lint" | null>(null);
   const operationLogFeed = useOperationLogFeed(activeView === "logs");
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
@@ -141,29 +141,35 @@ export function HomeWorkspace() {
   }, [documents, pendingExportDocumentId, projectTree.projects, selection]);
 
   // 어떤 경로로 변환을 시작했든(사이드바 메뉴·그래프/문서 화면 위키 반영) 시작 이벤트로 추적한다.
-  useEffect(() => subscribeConvertStarted(setPendingConvertDocumentId), []);
+  // 병렬 변환도 각각 자동으로 열리도록 대기 목록으로 쌓는다.
+  useEffect(() => subscribeConvertStarted((documentId) => {
+    setPendingConvertDocumentIds((ids) => (ids.includes(documentId) ? ids : [...ids, documentId]));
+  }), []);
 
   // PDF→Markdown 변환 완료를 폴링 결과로 감지해 변환된 markdown 문서를 홈 화면에 연다.
+  // 한 실행에 하나만 열고, 나머지 완료 건은 대기 목록 변경으로 재실행될 때 처리한다.
   useEffect(() => {
-    if (!pendingConvertDocumentId) return;
-    const convertedDocument = documents.find((document) => document.id === pendingConvertDocumentId);
-    if (!convertedDocument) return;
-    // 실패 시 열기는 포기한다. 실패 알림은 DocumentProcessingNotifications가 담당한다.
-    if (convertedDocument.status === "failed") {
-      setPendingConvertDocumentId(null);
+    for (const pendingDocumentId of pendingConvertDocumentIds) {
+      const convertedDocument = documents.find((document) => document.id === pendingDocumentId);
+      if (!convertedDocument) continue;
+      // 실패 시 열기는 포기한다. 실패 알림은 DocumentProcessingNotifications가 담당한다.
+      if (convertedDocument.status === "failed") {
+        setPendingConvertDocumentIds((ids) => ids.filter((id) => id !== pendingDocumentId));
+        continue;
+      }
+      if (convertedDocument.status !== "completed") continue;
+      let convertedTreeItem: TreeItem | null = null;
+      for (const project of projectTree.projects) {
+        convertedTreeItem = findTreeItemByDocumentId(project.items, pendingDocumentId);
+        if (convertedTreeItem) break;
+      }
+      if (!convertedTreeItem) continue;
+      setPendingConvertDocumentIds((ids) => ids.filter((id) => id !== pendingDocumentId));
+      setActiveView("home");
+      selection.selectTreeGraphNode(convertedTreeItem);
       return;
     }
-    if (convertedDocument.status !== "completed") return;
-    let convertedTreeItem: TreeItem | null = null;
-    for (const project of projectTree.projects) {
-      convertedTreeItem = findTreeItemByDocumentId(project.items, pendingConvertDocumentId);
-      if (convertedTreeItem) break;
-    }
-    if (!convertedTreeItem) return;
-    setPendingConvertDocumentId(null);
-    setActiveView("home");
-    selection.selectTreeGraphNode(convertedTreeItem);
-  }, [documents, pendingConvertDocumentId, projectTree.projects, selection]);
+  }, [documents, pendingConvertDocumentIds, projectTree.projects, selection]);
 
   const selectedDocumentParentLabel = useMemo(() => {
     if (!selection.selectedTreeItemId) return "업로드 문서";
