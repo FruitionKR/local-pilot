@@ -57,10 +57,14 @@ class MarkdownSyntaxValidationTest(unittest.TestCase):
     def test_rejects_raw_html_and_mdx(self) -> None:
         cases = (
             "<script>alert('xss')</script>",
+            "<style>body { color: red; }</style>",
+            "<div>일반 raw HTML</div>",
+            "본문 <span>inline raw HTML</span>",
             "<Callout>내용</Callout>",
             "import Callout from './Callout'",
             "export const metadata = { title: '문서' }",
             "본문 {user.name}",
+            "<!-- 닫히지 않은 주석",
         )
 
         for markdown in cases:
@@ -69,6 +73,34 @@ class MarkdownSyntaxValidationTest(unittest.TestCase):
                     "raw HTML and MDX are not supported",
                     validate_markdown_syntax(markdown),
                 )
+
+    def test_rejects_comments_combined_with_raw_html_or_mdx(self) -> None:
+        cases = (
+            "<!-- ok --><script>alert(1)</script><!-- end -->",
+            "<!-- ok --><style>body { color: red; }</style>",
+            "<!-- ok --><Callout>{user.name}</Callout>",
+            "<!-- ok -->\n<div>raw HTML</div>",
+            "본문 <!-- ok --> <span>raw HTML</span>",
+            "<!-- ok <!-- nested -->",
+        )
+
+        for markdown in cases:
+            with self.subTest(markdown=markdown):
+                self.assertIn(
+                    "raw HTML and MDX are not supported",
+                    validate_markdown_syntax(markdown),
+                )
+
+    def test_allows_closed_html_comments_in_standalone_and_inline_markdown(self) -> None:
+        cases = (
+            "<!-- page 1 -->\n\n본문",
+            "본문 <!-- page 1 --> 계속",
+            "<!-- fruition-note: note-1 -->\n# 제목",
+        )
+
+        for markdown in cases:
+            with self.subTest(markdown=markdown):
+                self.assertEqual(validate_markdown_syntax(markdown), [])
 
     def test_allows_html_and_mdx_examples_inside_code_fence(self) -> None:
         markdown = "```mdx\n<Callout>{user.name}</Callout>\n```"

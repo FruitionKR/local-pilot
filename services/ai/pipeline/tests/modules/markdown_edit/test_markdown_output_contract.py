@@ -454,6 +454,42 @@ class MarkdownOutputContractTest(unittest.TestCase):
         self.assertIn("shortening must preserve literal anchor: API", failures)
         self.assertIn("shortening must preserve literal anchor: 10분", failures)
 
+    def test_shorten_ignores_short_unitless_numbers_only(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="짧게 줄여줘.",
+            markdown=(
+                "NTP, MQTT, TLS 1.3과 1.2.3 버전을 사용한다. 5분마다 30초 동안 8883 포트로 연결하며 "
+                "123abc 토큰과 02, 3, 64는 내부 순번이다. retry_count 값을 기록한다."
+            ),
+            target=TARGET,
+            edit_goal="shorten",
+        )
+
+        failures = validate_markdown_output(
+            request,
+            "NTP, MQTT, TLS 1.3과 1.2.3으로 5분마다 30초 동안 8883 포트에 연결하고 retry_count 값을 기록한다.",
+        )
+        missing_failures = validate_markdown_output(request, "연결 설정과 내부 순번을 기록한다.")
+
+        self.assertEqual(failures, [])
+        for anchor in ("NTP", "MQTT", "TLS", "1.3", "1.2.3", "5분", "30초", "8883", "retry_count"):
+            self.assertIn(f"shortening must preserve literal anchor: {anchor}", missing_failures)
+        for anchor in ("1.2", "123", "02", "3", "64"):
+            self.assertNotIn(f"shortening must preserve literal anchor: {anchor}", missing_failures)
+
+    def test_shorten_preserves_independent_decimal_number(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="짧게 줄여줘.",
+            markdown="독립 소수 1.2를 사용한다.",
+            target=TARGET,
+            edit_goal="shorten",
+        )
+
+        self.assertEqual(validate_markdown_output(request, "소수 1.2를 사용한다."), [])
+        missing_failures = validate_markdown_output(request, "독립 소수를 사용한다.")
+
+        self.assertIn("shortening must preserve literal anchor: 1.2", missing_failures)
+
     def test_rejects_unexpected_han_characters_in_korean_cleanup(self) -> None:
         request = MarkdownEditRequest(
             instruction="문장을 자연스럽게 다듬어줘.",
