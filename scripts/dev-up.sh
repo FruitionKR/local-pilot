@@ -144,9 +144,12 @@ wait_for_url() {
   local label="$2"
   local attempts="${3:-60}"
   local pid="${4:-}"
+  # attempts는 사실상 초 단위 상한이다. curl이 응답 없는 서버에 매달리지 않도록
+  # 요청별 --max-time을 두고, 전체는 wall-clock deadline으로 제한한다.
+  local deadline=$((SECONDS + attempts))
 
-  for _ in $(seq 1 "$attempts"); do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+  while (( SECONDS < deadline )); do
+    if curl -fsS --max-time 5 "$url" >/dev/null 2>&1; then
       log "$label 응답 확인: $url"
       return 0
     fi
