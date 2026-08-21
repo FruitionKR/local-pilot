@@ -56,7 +56,8 @@ export function useDocumentSearch(projects: Project[]) {
 
   const normalizedQuery = query.trim().toLowerCase();
   const matched = useMemo(() => {
-    if (!normalizedQuery) return [];
+    // 검색어가 없으면 현재 있는 문서를 전부 보여준다.
+    if (!normalizedQuery) return allItems;
     const isChoseongMode = isChoseongQuery(normalizedQuery);
     return allItems.filter((item) => {
       const label = item.label.toLowerCase();
