@@ -35,8 +35,8 @@ class WorkspaceAiModelServiceTest {
 
         var response = service.getInternal("ws_1");
 
-        assertThat(response.ingestLint().provider()).isEqualTo("openai");
-        assertThat(response.ingestLint().model()).isEqualTo("gpt-5-nano");
+        assertThat(response.ingestLint().provider()).isEqualTo("gemini");
+        assertThat(response.ingestLint().model()).isEqualTo("gemini-3.1-flash-lite");
     }
 
     @Test

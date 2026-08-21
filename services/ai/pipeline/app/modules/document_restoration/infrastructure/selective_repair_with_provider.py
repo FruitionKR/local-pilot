@@ -4,9 +4,9 @@ import argparse
 import base64
 import json
 import mimetypes
-import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -14,6 +14,7 @@ from typing import Any
 
 import fitz
 
+from app.core.llm_env import api_key_from_env, inference_profile, resolve_llm_selection
 from app.modules.document_restoration.domain.markdown_text import (
     has_balanced_braces,
     is_valid_markdown_table,
@@ -47,6 +48,11 @@ OUTPUT_SCHEMA = {
     },
     "required": ["results"],
 }
+OPENAI_ENDPOINT = "https://api.openai.com/v1/responses"
+GEMINI_ENDPOINT = (
+    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+)
+CLAUDE_ENDPOINT = "https://api.anthropic.com/v1/messages"
 
 
 def select_candidates(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -104,12 +110,31 @@ def page_markdown(markdown: str) -> dict[int, str]:
     return pages
 
 
+def block_markdown(
+    block: dict[str, Any],
+    fragments: dict[str, str] | None = None,
+) -> str:
+    candidates = []
+    if fragments is not None and block["id"] in fragments:
+        candidates.append(fragments[block["id"]])
+    candidates.extend(
+        block.get(field)
+        for field in ("markdown", "source_text", "fallback_text")
+    )
+    return max(
+        (str(candidate or "") for candidate in candidates),
+        key=lambda value: len(re.sub(r"\s+", "", value)),
+        default="",
+    )
+
+
 def valid_replacement(
     block_type: str,
     replacement: str,
     required_tokens: list[str] | None = None,
     *,
     scope: str = "block",
+    source_text: str = "",
 ) -> bool:
     if block_type == "equation_candidate":
         normalized = normalize_replacement(block_type, replacement)
@@ -122,6 +147,11 @@ def valid_replacement(
         scope != "page_body" and "```" in replacement
     ):
         return False
+    if scope == "page_body":
+        source_length = len(re.sub(r"\s+", "", source_text))
+        replacement_length = len(re.sub(r"\s+", "", replacement))
+        if source_length and replacement_length < source_length / 2:
+            return False
     return all(replacement.count(token) == 1 for token in required_tokens or [])
 
 
@@ -181,7 +211,7 @@ def block_image(
     return render_crop(pdf_file, block)
 
 
-def response_text(response: dict[str, Any]) -> str:
+def openai_response_text(response: dict[str, Any]) -> str:
     for output in response.get("output", []):
         if output.get("type") != "message":
             continue
@@ -191,12 +221,38 @@ def response_text(response: dict[str, Any]) -> str:
     raise ValueError("Responses API output_text가 없습니다.")
 
 
-def call_page(
-    *,
+def image_source(data_url: str) -> tuple[str, str]:
+    match = re.fullmatch(r"data:([^;]+);base64,(.+)", data_url, re.DOTALL)
+    if match is None:
+        raise ValueError("지원하지 않는 image data URL입니다.")
+    return match.group(1), match.group(2)
+
+
+def post_json(
     endpoint: str,
+    body: dict[str, Any],
+    headers: dict[str, str],
+    api_name: str,
+) -> dict[str, Any]:
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json", **headers},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=180) as raw:
+            return json.loads(raw.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 429 or exc.code >= 500:
+            raise
+        raise RuntimeError(f"{api_name} HTTP {exc.code}") from exc
+
+
+def call_openai(
+    *,
     api_key: str,
     model: str,
-    reasoning_effort: str,
     prompt: str,
     payload: dict[str, Any],
     images: list[str],
@@ -216,15 +272,15 @@ def call_page(
             {
                 "type": "input_image",
                 "image_url": image,
-                "detail": (
-                    "original" if page_body or sequence > 0 else "auto"
-                ),
+                "detail": "original" if page_body or sequence > 0 else "auto",
             }
         )
     body = {
         "model": model,
         "store": False,
-        "reasoning": {"effort": reasoning_effort},
+        "reasoning": {
+            "effort": inference_profile("openai", model)["reasoning_effort"]
+        },
         "input": [
             {"role": "system", "content": prompt},
             {"role": "user", "content": content},
@@ -238,24 +294,132 @@ def call_page(
             }
         },
     }
-    request = urllib.request.Request(
-        endpoint,
-        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
+    response = post_json(
+        OPENAI_ENDPOINT,
+        body,
+        {"Authorization": f"Bearer {api_key}"},
+        "OpenAI Responses API",
+    )
+    return json.loads(openai_response_text(response)), response.get("usage") or {}
+
+
+def call_gemini(
+    *,
+    api_key: str,
+    model: str,
+    prompt: str,
+    payload: dict[str, Any],
+    images: list[str],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    parts: list[dict[str, Any]] = [
+        {
+            "text": "INPUT PAYLOAD:\n"
+            + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        }
+    ]
+    for image in images:
+        media_type, data = image_source(image)
+        parts.append(
+            {"inline_data": {"mime_type": media_type, "data": data}}
+        )
+    body = {
+        "system_instruction": {"parts": [{"text": prompt}]},
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseJsonSchema": OUTPUT_SCHEMA,
+            "thinkingConfig": {"thinkingLevel": "LOW"},
         },
-        method="POST",
+    }
+    endpoint = GEMINI_ENDPOINT.format(model=urllib.parse.quote(model, safe=""))
+    response = post_json(
+        endpoint,
+        body,
+        {"x-goog-api-key": api_key},
+        "Gemini API",
     )
     try:
-        with urllib.request.urlopen(request, timeout=180) as raw:
-            response = json.loads(raw.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        if exc.code == 429 or exc.code >= 500:
-            raise
-        raise RuntimeError(f"Responses API HTTP {exc.code}") from exc
-    result = json.loads(response_text(response))
-    return result, response.get("usage") or {}
+        text = response["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError("Gemini API response text가 없습니다.") from exc
+    return json.loads(text), response.get("usageMetadata") or {}
+
+
+def call_claude(
+    *,
+    api_key: str,
+    model: str,
+    prompt: str,
+    payload: dict[str, Any],
+    images: list[str],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    content: list[dict[str, Any]] = []
+    for image in images:
+        media_type, data = image_source(image)
+        content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": data,
+                },
+            }
+        )
+    content.append(
+        {
+            "type": "text",
+            "text": "INPUT PAYLOAD:\n"
+            + json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        }
+    )
+    body = {
+        "model": model,
+        "max_tokens": 16384,
+        "system": prompt,
+        "messages": [{"role": "user", "content": content}],
+        "output_config": {
+            "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}
+        },
+    }
+    response = post_json(
+        CLAUDE_ENDPOINT,
+        body,
+        {"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+        "Claude Messages API",
+    )
+    try:
+        text = next(
+            block["text"]
+            for block in response["content"]
+            if block.get("type") == "text"
+        )
+    except (KeyError, StopIteration, TypeError) as exc:
+        raise ValueError("Claude Messages API response text가 없습니다.") from exc
+    return json.loads(text), response.get("usage") or {}
+
+
+def call_page(
+    *,
+    provider: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    payload: dict[str, Any],
+    images: list[str],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    callers = {
+        "openai": call_openai,
+        "gemini": call_gemini,
+        "claude": call_claude,
+    }
+    return callers[provider](
+        api_key=api_key,
+        model=model,
+        prompt=prompt,
+        payload=payload,
+        images=images,
+    )
 
 
 def clean_previous_results(
@@ -277,12 +441,14 @@ def save_replacements(
     output_dir: Path,
     blocks: list[dict[str, Any]],
     result: dict[str, Any],
+    provider: str,
+    fragments: dict[str, str] | None = None,
 ) -> dict[str, int]:
     expected = {block["id"]: block for block in blocks}
     returned = result.get("results") or []
     ids = [item.get("block_id") for item in returned]
     if len(ids) != len(set(ids)) or set(ids) != set(expected):
-        raise ValueError("Responses API result ID mismatch")
+        raise ValueError("Provider result ID mismatch")
     counts = {"replace": 0, "keep": 0, "rejected": 0}
     layout = output_dir / "layout" / "auto"
     for item in returned:
@@ -302,6 +468,7 @@ def save_replacements(
             replacement,
             block.get("required_tokens"),
             scope=str(block.get("scope", "block")),
+            source_text=block_markdown(block, fragments),
         ):
             counts["rejected"] += 1
             continue
@@ -320,7 +487,7 @@ def save_replacements(
                     "accepted": True,
                     "score": 1.0,
                     "reasons": [],
-                    "recovery_source": "openai_selective_repair",
+                    "recovery_source": f"{provider}_selective_repair",
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -335,6 +502,7 @@ def save_replacements(
 def rejected_candidates(
     blocks: list[dict[str, Any]],
     result: dict[str, Any],
+    fragments: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     returned = {item["block_id"]: item for item in result["results"]}
     return [
@@ -351,25 +519,25 @@ def rejected_candidates(
                 str(returned[block["id"]]["replacement"]),
                 block.get("required_tokens"),
                 scope=str(block.get("scope", "block")),
+                source_text=block_markdown(block, fragments),
             )
         )
     ]
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    provider, model = resolve_llm_selection(args.provider, args.model)
     manifest = json.loads(args.manifest_file.read_text(encoding="utf-8"))
     selected = select_candidates(manifest)
     clean_previous_results(args.output_dir)
     summary_file = (
         args.output_dir / "final" / "selective_repair_summary.json"
     )
-    api_key = os.environ.get("DOCUMENT_REPAIR_OPENAI_API_KEY") or os.environ.get(
-        "OPENAI_API_KEY"
-    )
+    api_key = api_key_from_env(provider=provider, strip=True)
     if not api_key:
         summary = {
-            "model": args.model,
-            "reasoning_effort": args.reasoning_effort,
+            "provider": provider,
+            "model": model,
             "calls": 0,
             "group_calls": 0,
             "fallback_calls": 0,
@@ -414,22 +582,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     "crop_sequence": sequence,
                     "scope": block.get("scope", "block"),
                     "required_tokens": block.get("required_tokens", []),
-                    "current_markdown": fragments.get(
-                        block["id"],
-                        str(
-                            block.get("markdown")
-                            or block.get("source_text")
-                            or ""
-                        ),
-                    ),
+                    "current_markdown": block_markdown(block, fragments),
                 }
                 for sequence, block in enumerate(request_blocks, 1)
             ]
             return call_page(
-                endpoint=args.endpoint,
+                provider=provider,
                 api_key=api_key,
-                model=args.model,
-                reasoning_effort=args.reasoning_effort,
+                model=model,
                 prompt=prompt,
                 payload={
                     "page_context": (
@@ -454,20 +614,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         batch_error: str | None = None
         try:
             result, usage = request(blocks)
-            batch_counts = save_replacements(args.output_dir, blocks, result)
+            batch_counts = save_replacements(
+                args.output_dir, blocks, result, provider, fragments
+            )
             for name, count in batch_counts.items():
                 counts[name] += count
-            fallback_blocks = rejected_candidates(blocks, result)
+            fallback_blocks = rejected_candidates(blocks, result, fragments)
             counts["rejected"] -= len(fallback_blocks)
-        except (TimeoutError, urllib.error.URLError, ValueError) as exc:
+        except (TimeoutError, urllib.error.URLError, RuntimeError, ValueError) as exc:
             batch_error = type(exc).__name__
             fallback_blocks = blocks
 
         for block in fallback_blocks:
             try:
                 result, item_usage = request([block])
-                item_counts = save_replacements(args.output_dir, [block], result)
-            except (TimeoutError, urllib.error.URLError, ValueError):
+                item_counts = save_replacements(
+                    args.output_dir, [block], result, provider, fragments
+                )
+            except (TimeoutError, urllib.error.URLError, RuntimeError, ValueError):
                 counts["failed"] += 1
                 continue
             fallback_usage.append(item_usage)
@@ -488,8 +652,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
         page_results = list(executor.map(process, grouped))
     summary = {
-        "model": args.model,
-        "reasoning_effort": args.reasoning_effort,
+        "provider": provider,
+        "model": model,
         "calls": sum(1 + result["fallback_calls"] for result in page_results),
         "group_calls": len(page_results),
         "fallback_calls": sum(result["fallback_calls"] for result in page_results),
@@ -510,9 +674,12 @@ def main() -> None:
     parser.add_argument("--manifest-file", type=Path, required=True)
     parser.add_argument("--detected-markdown", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--endpoint", required=True)
+    parser.add_argument(
+        "--provider",
+        choices=["openai", "gemini", "claude"],
+        required=True,
+    )
     parser.add_argument("--model", required=True)
-    parser.add_argument("--reasoning-effort", required=True)
     parser.add_argument("--max-workers", type=int, required=True)
     args = parser.parse_args()
     args.pdf_file = args.pdf_file.resolve()

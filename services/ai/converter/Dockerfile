@@ -1,4 +1,5 @@
-FROM rust:1.88.0-slim AS heron-builder
+# ONNX Runtime이 요구하는 GLIBCXX_3.4.31을 제공하는 Debian 13을 사용한다.
+FROM rust:1.88.0-slim-trixie AS heron-builder
 
 WORKDIR /build/heron-special-regions
 
@@ -20,7 +21,8 @@ FROM node:20-slim AS anydoc
 
 RUN npm install --global @firecrawl/anydoc@0.1.7
 
-FROM python:3.12-slim
+# Heron 실행 파일도 같은 libstdc++ ABI가 필요하다.
+FROM python:3.12-slim-trixie
 
 WORKDIR /app
 
@@ -54,8 +56,8 @@ COPY --from=heron-builder /build/heron-special-regions/target/release/raw-specia
 COPY --from=anydoc /usr/local/bin/node /usr/local/bin/node
 COPY --from=anydoc /usr/local/bin/npm /usr/local/bin/npm
 COPY --from=anydoc /usr/local/bin/npx /usr/local/bin/npx
-COPY --from=anydoc /usr/local/bin/anydoc /usr/local/bin/anydoc
 COPY --from=anydoc /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/@firecrawl/anydoc/cli.js /usr/local/bin/anydoc
 
 RUN mkdir -p /opt/docling-rs/models \
     && curl -fsSL \

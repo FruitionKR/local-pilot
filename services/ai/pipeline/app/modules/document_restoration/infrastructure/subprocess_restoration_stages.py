@@ -201,8 +201,8 @@ class SubprocessDocumentRestorationStages(DocumentRestorationStagesPort):
                     ignore_recovered_results=True,
                 ),
             ),
-            RestorationStage.SELECTIVE_REPAIR_WITH_OPENAI: (
-                "selective_repair_with_openai",
+            RestorationStage.SELECTIVE_REPAIR_WITH_PROVIDER: (
+                "selective_repair_with_provider",
                 [
                     "--pdf-file",
                     str(prepared.pdf_file),
@@ -216,12 +216,10 @@ class SubprocessDocumentRestorationStages(DocumentRestorationStagesPort):
                     ),
                     "--output-dir",
                     str(command.output_dir),
-                    "--endpoint",
-                    command.selective_endpoint,
+                    "--provider",
+                    command.selective_provider,
                     "--model",
                     command.selective_model,
-                    "--reasoning-effort",
-                    command.selective_reasoning_effort,
                     "--max-workers",
                     str(command.selective_max_workers),
                 ],

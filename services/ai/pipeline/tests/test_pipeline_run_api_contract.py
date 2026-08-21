@@ -672,6 +672,19 @@ def test_pipeline_route_rejects_missing_internal_token(monkeypatch) -> None:
     assert response.status_code == 401
 
 
+def test_metrics_route_is_open_without_internal_token(monkeypatch) -> None:
+    """/metrics는 Prometheus가 인증 없이 긁어야 한다.
+
+    계측 등록이 INTERNAL_TOKEN_ROUTE_PATTERNS보다 앞으로 옮겨지면 /metrics가 보호 목록에
+    잘못 들어가 401이 되고 수집이 통째로 끊긴다. 그 회귀를 막는다.
+    """
+    monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "expected-token")
+
+    response = TestClient(api.app).get("/metrics")
+
+    assert response.status_code == 200
+
+
 def test_pipeline_route_authenticates_before_parsing_body(monkeypatch) -> None:
     monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "expected-token")
 

@@ -48,6 +48,8 @@ Agent turn과 run·artifact·Tool 인가 내부 API다. 공개 Gateway 계약은
 <a id="detail-post-agent-turn"></a>
 ### `POST /agent/turn` 상세
 
+문서에 내용만 추가하거나 보강하는 편집은 기존의 비어 있지 않은 Markdown 줄을 순서대로 보존해야 하며, 누락된 모델 출력은 한 번 재시도한 뒤 실패로 처리합니다.
+
 #### 1. Method + Path
 
 `POST /agent/turn`

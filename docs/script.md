@@ -68,6 +68,7 @@ cd services/ai/pipeline
 | `scripts/back-up.sh` / `back-down.sh` | 공용 인프라와 호스트 백엔드를 시작하거나 백엔드만 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
 | `scripts/back-test.sh` | Java 21을 찾아 백엔드 Gradle 테스트를 실행한다. 인자가 없으면 CI와 같은 세 모듈 테스트를 실행한다. | 서비스를 시작하거나 종료하지 않는다. |
 | `scripts/ai-up.sh` / `ai-down.sh` | 백엔드 기동 후 AI image 하나로 Pipeline API와 워커 전체를 시작하거나 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
+| `scripts/ai-e2e.sh` | 배포용 Compose 조합을 빌드하고 converter·ingest·query·agent·lint를 Gemini로 실제 실행한다. | 전체 컨테이너와 DB 볼륨을 유지해 결과를 재확인할 수 있다. |
 
 전체 로컬 환경을 시작한다.
 
@@ -85,6 +86,12 @@ PDF 변환기 `markitdown`은 선택 서비스이므로 `dev-up.sh`에 포함되
 
 ```sh
 docker compose -f infra/compose.converter.yml up -d
+```
+
+지표 확인용 Prometheus·Grafana도 선택 스택이다. 자세한 절차는 3-6을 본다.
+
+```sh
+docker compose -f infra/compose.monitoring.yml up -d
 ```
 
 up 스크립트는 `.runtime/`에 supervisor PID를 등록한다. down 스크립트는 등록된 supervisor만 종료하며, 같은 포트를 사용하는 다른 프로젝트 프로세스는 종료하지 않는다. 이미 다른 프로세스가 필요한 포트를 사용 중이면 up 스크립트는 즉시 실패한다.
@@ -134,9 +141,13 @@ cd services/backend
 
 확인.
 
+actuator는 업무 포트와 분리된 관리 포트에 있다(document 8082, access 8083).
+ALB Ingress가 업무 포트만 라우팅하므로 `/actuator/prometheus`가 외부에 노출되지 않는다.
+
 ```sh
-curl http://localhost:8080/actuator/health   # document-svc {"status":"UP"}
-curl http://localhost:8081/actuator/health   # access-svc  {"status":"UP"}
+curl http://localhost:8082/actuator/health   # document-svc {"status":"UP"}
+curl http://localhost:8083/actuator/health   # access-svc  {"status":"UP"}
+curl http://localhost:8082/actuator/prometheus   # Prometheus 스크레이프용 지표
 ```
 
 ### 3-3. ai-svc (converter → pipeline-api·워커)
@@ -146,6 +157,47 @@ PDF→Markdown 변환기(markitdown, :8010).
 ```sh
 docker compose -f infra/compose.converter.yml up -d
 curl http://localhost:8010/health
+```
+
+실제 PDF를 Gemini로 변환하는 Docker E2E는 공용 스크립트로 실행한다. 스크립트는
+`infra/.env`의 `GEMINI_API_KEY`를 사용해 이미지를 다시 빌드하고, health 확인 후
+Markdown과 복원 summary를 저장소의 `.tmp/converter-e2e/`에 저장한다. 출력 경로를
+명시하면 그 위치를 사용한다. 별도 worktree의 env 파일을
+사용하려면 `CONVERTER_ENV_FILE`을 지정한다.
+
+```sh
+./scripts/converter-e2e.sh /path/to/input.pdf [/path/to/output.md]
+```
+
+converter뿐 아니라 컨테이너형 백엔드와 모든 AI worker를 함께 검증하려면 통합 E2E를 실행한다.
+이 명령은 로컬 고정 이메일 인증번호로 격리된 계정·워크스페이스를 생성하고 실제
+스마트팜 문서 10개를 누적 ingest한 뒤 query·agent·lint 완료까지 기다리고 `과습 관리`
+promotion 결과도 Markdown으로 기록한다. 결과는 `.tmp/ai-e2e/<실행 ID>/`에 남으며
+기존 개발 DB를 마이그레이션하거나 지우지 않도록 `fruition-ai-e2e` Compose project의
+별도 볼륨을 쓴다. 고정 컨테이너 이름 충돌을 막기 위해 기존 개발 컨테이너는 내리지만
+그 볼륨은 보존하며, E2E 컨테이너와 볼륨도 후속 점검을 위해 유지한다. 성공 기준은
+lint 결과에 materialized 또는 merged promotion이 있고, 해당 산출물 `promotion.md`에
+`# 과습 관리` 제목이 포함되는 것이다.
+
+```sh
+./scripts/ai-e2e.sh /path/to/input.pdf
+```
+
+저장소에 포함된 합성 PDF와 스마트팜 Markdown 10개로 실행하려면 다음 명령을 사용한다.
+스크립트는 PDF 경로는 인자로 받고, Markdown 입력은
+`services/ai/pipeline/examples/ai-e2e/*.md`에서 읽는다. 각 문서의 운영 기록에 언급된
+`과습 관리`가 의미 cluster에 누적되고 실제 concept로 승격되어야 성공한다.
+
+```sh
+./scripts/ai-e2e.sh services/ai/pipeline/examples/ai-e2e/synthetic-smart-farm.pdf
+```
+
+다른 env 또는 결과 디렉터리를 쓰려면 `AI_E2E_ENV_FILE`, `AI_E2E_OUTPUT_DIR`을 지정한다.
+
+검증 후 converter를 종료한다.
+
+```sh
+docker compose --env-file infra/.env -f infra/compose.converter.yml down
 ```
 
 pipeline-api(:8000)와 워커(ingest/query/agent/maintenance task worker, edit-event-consumer). 백엔드 기동 후 실행(스키마 순서 보장).
@@ -285,6 +337,75 @@ grep -iE "error|exception" logs/*.log   # 에러만 확인
 
 워커 로그 수집만 따로 제어하려면 `./scripts/logs-up.sh [start|stop|status]`를 쓴다. 수집을 시작할 때 `workers.log`가 100MB를 넘었으면 `workers.log.1`로 밀고 새로 쌓는다(수집 중에는 회전하지 않는다).
 
+### 3-6. 모니터링 (선택)
+
+백엔드 지표를 그래프로 보는 스택이다. 업무 기능과 무관하므로 `dev-up.sh`는 띄우지 않는다.
+
+```sh
+docker compose -f infra/compose.monitoring.yml up -d
+```
+
+| 대상 | 주소 | 비고 |
+|---|---|---|
+| Prometheus | http://localhost:9090 | 15초마다 백엔드 관리 포트와 kafka-exporter를 긁는다 |
+| Grafana | http://localhost:3001 | 초기 계정 `admin` / `admin` |
+| kafka-exporter | (내부 전용 :9308) | 브로커에 직접 물어 consumer group별 lag을 낸다 |
+| pipeline-api | http://localhost:8000/metrics | FastAPI 요청 지표. Prometheus는 infra 네트워크에서 컨테이너 이름으로 긁는다 |
+
+kafka-exporter는 `compose.infra.yml`이 만드는 네트워크(`fruition-mvp-dev_default`)에 붙으므로 **인프라가 먼저 떠 있어야 한다**. Kafka의 EXTERNAL 리스너는 `localhost:9092`로 광고돼 컨테이너에서 쓸 수 없어 INTERNAL(`kafka:19092`)로 접속한다.
+
+동작 원리는 세 단계다. 백엔드가 `/actuator/prometheus`에 지표를 텍스트로 내걸고, Prometheus가 주기적으로 긁어 시계열로 쌓고, Grafana가 그것을 조회해 그린다. 세 프로세스는 HTTP로만 연결돼 있어 서로를 모른다.
+
+확인 순서.
+
+1. http://localhost:9090/targets — `document-svc`와 `access-svc`가 모두 UP이어야 한다. DOWN이면 백엔드가 떠 있는지, 관리 포트(8082·8083)가 열렸는지 본다.
+2. Grafana 접속 → Dashboards → **Fruition 운영**. 데이터소스와 대시보드 모두 기동 시 자동 등록되므로 import 절차가 없다.
+
+#### 무엇을 보는가
+
+`Fruition 운영`은 장애 조사 1차 화면이다. Google SRE의 Four Golden Signals를 인과 순서대로 배치했으므로
+왼쪽 위에서 시작해 시계 방향으로 읽는다.
+
+| 순서 | 패널 | 정상 | 이상 신호 |
+|---|---|---|---|
+| ① | **Traffic** | 평소 수준 | 다른 세 신호를 해석하는 기준선이다. 이것 없이는 지연·에러가 유입 증가 탓인지 코드 탓인지 구분할 수 없다 |
+| ② | **Saturation** | lag 0(또는 올랐다 복귀), DB 사용률 0.5 이하 | lag이 안 내려오면 워커 정지·반복 실패. 점선은 KEDA `lagThreshold`(5). DB 사용률이 1.0에 붙으면 풀(기본 10개)이 마른 것으로, API 지연의 원인이 DB가 아니라 풀인 경우다 |
+| ③ | **Latency** | 배포 전과 비슷 | p95·p99가 평소의 3~5배. 트래픽이 없으면 선이 끊기는데 정상이다(rate 분모가 0) |
+| ④ | **Errors** | 0 | 건수가 아니라 **비율**이다. 4xx는 뺀다 — 미로그인 401은 정상 동작이라 신호가 되지 않는다 |
+
+네 신호 아래에는 드릴다운 패널이 하나 더 있다. **partition별 lag**은 ②에서 특정 consumer group이
+밀릴 때 어느 partition인지 좁힌다. 메시지 key가 `document_id`라 partition은 문서 단위로 묶이므로,
+한 partition만 쌓여 있으면 그 partition에 걸린 특정 문서가 반복 실패하는 것이고, 전 partition이
+고르게 쌓이면 처리량 부족이다. 상단 `Consumer group` 드롭다운으로 대상을 바꾼다.
+
+그래프의 세로선은 **프로세스 재시작(배포) 시각**이다. 배포 전후로 지표가 어떻게 달라졌는지 눈으로
+맞출 수 있다. `process_start_time_seconds`로 감지하며, 재시작 후 5분 이내 구간을 표시하므로
+실제 시각과 최대 5분 차이가 날 수 있다.
+
+④에는 한계가 있다. 여기 잡히는 것은 프로토콜 수준의 **명시적 실패**뿐이다. AI 처리는 202로 즉시 응답한 뒤
+비동기로 실패할 수 있어, 이 그래프가 평평해도 사용자는 결과를 못 받을 수 있다. 그런 **묵시적 실패**는 현재
+ERROR 로그로만 간접 관측된다. 처리 실패율을 직접 세려면 워커에 도메인 지표를 심어야 한다.
+
+여기서 이상이 잡히면 JVM 내부를 본다. Grafana → Dashboards → New → Import → ID `4701`(JVM Micrometer) → 데이터소스 `Prometheus`. 힙·GC·스레드를 `application` 단위로 보여준다. 다만 이 대시보드의 Heap used(%)는 로컬에서 의미가 없다 — `-Xmx`를 주지 않아 max heap이 12GB로 잡히므로 사용률이 항상 1%대다. 비율 대신 `JVM Heap` 패널의 톱니 모양을 본다. `Utilisation` 패널도 비어 있는데, Tomcat 스레드 지표에 `server.tomcat.mbeanregistry.enabled=true`가 필요하기 때문이다. 지금 규모에서는 DB 풀이 훨씬 먼저 막히므로 켜지 않았다.
+
+`prometheus.yml`을 고쳤다면 Prometheus를 재시작해야 반영된다(`docker restart fruition-prometheus`). 대시보드 JSON은 30초마다 자동으로 다시 읽으므로 재시작이 필요 없다.
+
+단, `git rebase`나 브랜치 전환처럼 디렉터리를 지웠다 다시 만드는 작업 뒤에는 bind mount가 옛 inode를
+가리켜 컨테이너에서 파일이 보이지 않는다. 대시보드 수정이 반영되지 않으면 이것부터 의심한다.
+
+```sh
+docker exec fruition-grafana ls /var/lib/grafana/dashboards/   # 비어 있으면 마운트가 끊긴 것
+docker compose -f infra/compose.monitoring.yml up -d --force-recreate grafana
+```
+
+데이터소스·대시보드는 기동 시 자동 등록된다(`infra/monitoring/grafana/provisioning/`, `infra/monitoring/grafana/dashboards/`). 대시보드는 파일이 단일 소스라 UI에서 고쳐도 저장되지 않는다 — JSON을 고쳐 커밋한다. 스크레이프 대상은 `infra/monitoring/prometheus.yml`에 있고, 호스트에서 bootRun으로 도는 백엔드를 가리킨다. `compose.containerized.yml`로 백엔드를 컨테이너로 띄웠다면 대상 주소를 바꿔야 한다.
+
+종료는 다음과 같다. 볼륨을 지우지 않으면 수집한 지표와 대시보드가 남는다.
+
+```sh
+docker compose -f infra/compose.monitoring.yml down
+```
+
 ## 4. 데모 시나리오
 
 1. 로그인 — `http://localhost:3000` 접속, 이메일 가입/로그인. 인증 코드는 `infra/.env`의 `AUTH_EMAIL_DEV_FIXED_CODE` 값 입력. (OAuth 키 설정 시 소셜 로그인도 가능)
@@ -307,6 +428,12 @@ converter 종료.
 
 ```sh
 docker compose -f infra/compose.converter.yml down
+```
+
+모니터링 종료.
+
+```sh
+docker compose -f infra/compose.monitoring.yml down
 ```
 
 데이터까지 초기화(DB·MinIO·pipeline 산출물과 이 project의 orphan 볼륨 삭제, 재현 환경 초기화 시에만).

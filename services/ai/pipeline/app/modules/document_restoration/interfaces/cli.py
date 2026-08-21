@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+from app.core.llm_env import SUPPORTED_LLM_MODELS
 from app.modules.document_restoration.application.models import RestoreDocumentCommand
 from app.modules.document_restoration.application.restore_document import (
     RestoreDocumentUseCase,
@@ -39,15 +40,11 @@ def main() -> None:
     parser.add_argument("--max-vision-attempts", type=int, default=3)
     parser.add_argument("--docling-command", default="docling")
     parser.add_argument(
-        "--selective-endpoint",
-        default="https://api.openai.com/v1/responses",
+        "--selective-provider",
+        choices=["openai", "gemini", "claude"],
+        default="gemini",
     )
-    parser.add_argument("--selective-model", default="gpt-5.6-luna")
-    parser.add_argument(
-        "--selective-reasoning-effort",
-        choices=["none", "low", "medium", "high", "xhigh", "max"],
-        default="medium",
-    )
+    parser.add_argument("--selective-model")
     parser.add_argument("--selective-max-workers", type=int, default=16)
     parser.add_argument("--anydoc-command", default="anydoc")
     parser.add_argument("--heron-command", default="raw-special-regions")
@@ -74,9 +71,11 @@ def main() -> None:
             vision_model=args.vision_model,
             max_vision_attempts=args.max_vision_attempts,
             docling_command=args.docling_command,
-            selective_endpoint=args.selective_endpoint,
-            selective_model=args.selective_model,
-            selective_reasoning_effort=args.selective_reasoning_effort,
+            selective_provider=args.selective_provider,
+            selective_model=(
+                args.selective_model
+                or SUPPORTED_LLM_MODELS[args.selective_provider]
+            ),
             selective_max_workers=args.selective_max_workers,
             anydoc_command=args.anydoc_command,
             heron_command=args.heron_command,

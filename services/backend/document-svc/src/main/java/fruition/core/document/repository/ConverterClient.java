@@ -56,7 +56,7 @@ public class ConverterClient {
     }
 
     /** PDF 원본을 변환기에 보내 Markdown 본문을 받는다. 실패는 상태 코드를 담아 DocumentConvertException으로 알린다. */
-    public String convertPdf(String filename, byte[] pdfBytes) {
+    public String convertPdf(String filename, byte[] pdfBytes, String provider, String model) {
         HttpHeaders fileHeaders = new HttpHeaders();
         fileHeaders.setContentType(MediaType.APPLICATION_PDF);
         MultiValueMap<String, Object> parts = new LinkedMultiValueMap<>();
@@ -66,6 +66,8 @@ public class ConverterClient {
                 return filename;
             }
         }, fileHeaders));
+        parts.add("provider", provider);
+        parts.add("model", model);
 
         try {
             ConvertResponse response = restClient.post()

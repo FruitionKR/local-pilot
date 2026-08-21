@@ -1,4 +1,5 @@
 import base64
+import json
 import mimetypes
 import os
 import re
@@ -11,7 +12,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+
+from app.core.llm_env import resolve_llm_selection
 
 
 app = FastAPI(title="Fruition PDF Converter")
@@ -127,7 +130,15 @@ def run(
             raise HTTPException(status_code=422, detail=f"Command failed: {command[0]}")
 
 
-def process_pdf(content: bytes) -> dict[str, str]:
+def process_pdf(
+    content: bytes,
+    provider: str = "gemini",
+    model: str = "gemini-3.1-flash-lite",
+) -> dict[str, Any]:
+    try:
+        provider, model = resolve_llm_selection(provider, model)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if missing := missing_commands():
         raise HTTPException(
             status_code=503,
@@ -143,6 +154,7 @@ def process_pdf(content: bytes) -> dict[str, str]:
         fonts_txt = job_dir / "fonts.txt"
         output_dir = job_dir / "restoration"
         output_md = output_dir / "final" / f"{job_dir.name}.restored.md"
+        repair_summary = output_dir / "final" / "selective_repair_summary.json"
         process_log = job_dir / "process.log"
 
         input_pdf.write_bytes(content)
@@ -172,6 +184,10 @@ def process_pdf(content: bytes) -> dict[str, str]:
                 job_dir.name,
                 "--mode",
                 "crop-first",
+                "--selective-provider",
+                provider,
+                "--selective-model",
+                model,
             ],
             job_dir,
             RESTORATION_TIMEOUT_SECONDS,
@@ -185,11 +201,16 @@ def process_pdf(content: bytes) -> dict[str, str]:
             "pdfinfo": info_txt.read_text(encoding="utf-8", errors="replace"),
             "pdffonts": fonts_txt.read_text(encoding="utf-8", errors="replace"),
             "process_log": process_log.read_text(encoding="utf-8", errors="replace"),
+            "repair_summary": json.loads(repair_summary.read_text(encoding="utf-8")),
         }
 
 
 @app.post("/convert")
-async def convert(file: UploadFile = File(...)) -> dict[str, str]:
+async def convert(
+    file: UploadFile = File(...),
+    provider: str = Form("gemini"),
+    model: str = Form("gemini-3.1-flash-lite"),
+) -> dict[str, Any]:
     content = await file.read()
     if len(content) > max_upload_bytes():
         raise HTTPException(status_code=413, detail="File is too large")
@@ -198,7 +219,7 @@ async def convert(file: UploadFile = File(...)) -> dict[str, str]:
     if suffix != ".pdf" and file.content_type != "application/pdf":
         raise HTTPException(status_code=415, detail="Only PDF files are supported in the MVP")
 
-    result = process_pdf(content)
+    result = process_pdf(content, provider, model)
 
     return {
         "filename": file.filename or "document.pdf",

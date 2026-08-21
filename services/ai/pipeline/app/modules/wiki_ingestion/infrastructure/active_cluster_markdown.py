@@ -282,6 +282,17 @@ def merge_cluster_section(existing: str, incoming: str) -> str:
             if merged_lines and merged_lines[-1].strip():
                 merged_lines.append("")
             merged_lines.extend(promotion)
+    if "### Promotion" in merged_lines:
+        source_refs = _unique_keep_order(
+            ref.split(":", 1)[0]
+            for claim in cluster_claims("\n".join(merged_lines))
+            for ref in claim.get("refs", [])
+            if ":" in ref
+        )
+        for index, line in enumerate(merged_lines):
+            if line.strip().startswith("source_refs:"):
+                merged_lines[index] = f"source_refs: [{', '.join(source_refs)}]"
+                break
     return "\n".join(merged_lines).strip()
 
 

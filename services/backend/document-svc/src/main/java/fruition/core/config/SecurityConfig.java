@@ -68,7 +68,10 @@ public class SecurityConfig {
                         // 인가를 다시 걸면 Access Denied가 나고, 응답이 이미 커밋된 뒤라 오류도 못 내보낸다.
                         // 최초 요청에서 이미 인가를 통과한 같은 요청의 연장이다.
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
-                        .requestMatchers("/actuator/health").permitAll()
+                        // actuator는 management.server.port로 분리돼 있고 이 필터 체인은 두 포트에
+                        // 모두 걸린다. 업무 포트에는 엔드포인트가 매핑되지 않아(404) 여기서 열어도
+                        // 공개 범위는 관리 포트로 한정된다.
+                        .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
                         // "/swagger-ui/**"는 "/swagger-ui.html"을 매칭하지 않는다 — 진입 URL을 따로 연다.
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // access(인증 서비스)가 호출하는 내부 API: 컨트롤러에서 X-Internal-Token을 검증한다

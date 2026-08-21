@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator, metrics
 
 from app.modules.agent.interfaces.http.routes import router as agent_router
 from app.modules.agent_run.interfaces.http.routes import internal_router as agent_run_status_router
@@ -158,4 +159,37 @@ def get_document(document_id: str) -> dict:
 
 
 # app에 직접 붙인 route는 include_internal_router를 타지 않으므로 여기서 검사 대상에 넣는다.
-INTERNAL_TOKEN_ROUTE_PATTERNS.append(app.routes[-1].path_regex)
+# 인덱스(app.routes[-1])는 아래에서 /metrics를 더 등록하는 순간 다른 route를 가리킨다.
+# 인증 자체는 route의 dependencies가 담당하고 이 등록은 판정 순서(401 먼저)를 맞출 뿐이지만,
+# 어긋나면 조용히 무의미해지므로 경로로 못박는다.
+_DOCUMENT_ROUTE_PATH = "/documents/{document_id}"
+_document_route = next(
+    (route for route in app.routes if getattr(route, "path", None) == _DOCUMENT_ROUTE_PATH),
+    None,
+)
+if _document_route is None:
+    raise RuntimeError(f"내부 토큰 검사 대상 route를 찾지 못했습니다: {_DOCUMENT_ROUTE_PATH}")
+INTERNAL_TOKEN_ROUTE_PATTERNS.append(_document_route.path_regex)
+
+
+# Prometheus 지표 수집과 /metrics 노출.
+# 파일 맨 끝에서 등록하는 이유: FastAPI middleware는 나중에 추가한 것이 바깥에서 돈다.
+# 내부 토큰 middleware가 401로 끊는 요청도 지표에 남기려면 계측이 바깥에 있어야 한다.
+# /metrics 자체는 INTERNAL_TOKEN_ROUTE_PATTERNS에 넣지 않으므로 /health와 같이 인증 없이 열린다.
+#
+# 버킷을 기본값에서 바꾸는 이유: handler별 기본 버킷이 0.1/0.5/1초 세 개뿐이라
+# 1초를 넘는 요청이 전부 +Inf로 뭉쳐 p95를 낼 수 없다.
+# 범위를 5ms~60초로 넓게 잡는다. 이 API는 두 종류의 요청이 섞여 있다 —
+# LLM을 끼는 무거운 처리(document-svc의 타임아웃 기준 query 30초, wiki-schema 60초)와
+# document-svc가 3초 주기로 폴링하는 가벼운 상태 조회(타임아웃 5초)다.
+# 하한이 높으면 후자의 p95가 첫 버킷 보간값으로 고정돼 쓸모가 없어진다.
+_LATENCY_BUCKETS = (
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
+)
+
+Instrumentator(excluded_handlers=["/metrics"]).add(
+    metrics.default(
+        latency_highr_buckets=_LATENCY_BUCKETS,
+        latency_lowr_buckets=_LATENCY_BUCKETS,
+    )
+).instrument(app).expose(app, include_in_schema=False)

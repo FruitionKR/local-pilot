@@ -5966,7 +5966,7 @@ components:
       - ingest_lint
     SettingsResponse:
       type: object
-      description: AI 모델 설정. 기본값은 openai + gpt-5-nano다.
+      description: AI 모델 설정. 기본값은 gemini + gemini-3.1-flash-lite다.
       properties:
         can_update:
           type: boolean

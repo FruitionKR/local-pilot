@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import fruition.access.workspace.domain.Workspace;
 
 /**
- * 워크스페이스 AI 모델 설정 응답. 기본값은 openai + gpt-5-nano다.
+ * 워크스페이스 AI 모델 설정 응답. 기본값은 gemini + gemini-3.1-flash-lite다.
  *
  * <p>이 타입은 생성된 명세에 실리지 않는다. 응답을 내는 {@code InternalWorkspaceAiModelController}의
  * get/update가 401 본문과 성공 본문을 함께 내보내려고 {@code ResponseEntity<?>}를 반환해 타입이 지워지고,

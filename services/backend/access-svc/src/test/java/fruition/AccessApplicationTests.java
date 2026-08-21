@@ -21,7 +21,6 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Import(TestcontainersConfiguration.class)
@@ -36,13 +35,6 @@ class AccessApplicationTests {
 
 	@Test
 	void contextLoads() {
-	}
-
-	@Test
-	void health_unauthenticated_returnsUp() throws Exception {
-		mockMvc.perform(get("/actuator/health"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.status").value("UP"));
 	}
 
 	/** dev-up.sh와 README가 안내하는 진입 URL이다. permit 목록에서 빠지면 401이 되므로 회귀를 막는다. */

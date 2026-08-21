@@ -848,27 +848,25 @@ def finish_pipeline_run(
     document_id = row["document_id"] if row else None
     user_id = row["user_id"] if row else None
     workspace_id = row["workspace_id"] if row else None
-    lock = concept_write_lock(str(workspace_id), run_id) if document_id else nullcontext()
-    with lock:
-        with connect() as conn:
-            if document_id:
-                embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
-                manifest["source_contribution"] = _source_contribution_payload(manifest)
-                manifest = _stored_manifest(manifest)
-            conn.execute(
-                """
-                UPDATE pipeline_runs
-                SET status = 'succeeded', manifest = %s,
-                    updated_at = now(), finished_at = now()
-                WHERE id = %s
-                """,
-                (Json(manifest), run_id),
-            )
+    with connect() as conn:
         if document_id:
-            try:
-                invalidate_concept_index(str(user_id), str(workspace_id))
-            except Exception:
-                logger.warning("concept index cache invalidation failed", exc_info=True)
+            embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
+            manifest["source_contribution"] = _source_contribution_payload(manifest)
+            manifest = _stored_manifest(manifest)
+        conn.execute(
+            """
+            UPDATE pipeline_runs
+            SET status = 'succeeded', manifest = %s,
+                updated_at = now(), finished_at = now()
+            WHERE id = %s
+            """,
+            (Json(manifest), run_id),
+        )
+    if document_id:
+        try:
+            invalidate_concept_index(str(user_id), str(workspace_id))
+        except Exception:
+            logger.warning("concept index cache invalidation failed", exc_info=True)
     # core 트랜잭션 커밋 후 ai_db 파생 추적을 갱신한다.
     # 파생 추적은 best-effort — 원자성 비대상. 실패해도 ingest 결과에 영향 없다.
     if document_id:

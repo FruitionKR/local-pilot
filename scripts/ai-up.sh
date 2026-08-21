@@ -107,7 +107,7 @@ main() {
   ensure_env_file
   ensure_docker
 
-  curl -fsS "http://localhost:8080/actuator/health" >/dev/null 2>&1 \
+  curl -fsS "http://localhost:8082/actuator/health" >/dev/null 2>&1 \
     || fail "backend가 실행 중이어야 합니다. scripts/back-up.sh를 먼저 실행하세요."
 
   cleanup_stale_pipeline_orphans
