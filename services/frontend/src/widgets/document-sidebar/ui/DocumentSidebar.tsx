@@ -160,7 +160,16 @@ export function DocumentSidebar({
         onChange={onUploadPickerChange}
       />
 
-      <div className={styles["sidebar-content"]}>
+      <div
+        className={styles["sidebar-content"]}
+        onContextMenu={(event) => {
+          // 문서 관리 뷰에서는 트리 밖 빈 영역 우클릭도 프로젝트 메뉴(새 노트 등)를 연다.
+          // 폴더·프로젝트에서 이미 연 메뉴(preventDefault됨)는 덮어쓰지 않는다.
+          if (activeView === "graph" || activeView === "logs") return;
+          if (event.defaultPrevented || projects.length === 0) return;
+          onContextMenuProject(event, projects[0].id);
+        }}
+      >
         {activeView === "graph" && graphActions ? (
           <GraphSidebarActions {...graphActions} />
         ) : activeView === "logs" && logEntries ? (
