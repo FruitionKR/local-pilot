@@ -154,6 +154,15 @@ public class OperationLog {
         this.completedAt = completedAt;
     }
 
+    /**
+     * 미리보기 토큰 선점을 푼다. 실패로 끝난 복구는 아무것도 반영하지 못했으므로,
+     * 같은 미리보기로 다시 시도할 수 있어야 한다. unique index가 부분 인덱스라
+     * null로 만들면 선점에서 빠지고 감사 행은 그대로 남는다.
+     */
+    public void releaseRestoreClaim() {
+        this.restoreTokenHash = null;
+    }
+
     /** 아직 끝나지 않은 중간 상태로 옮긴다(복구의 notify_pending, rebuilding). */
     public void moveTo(OperationStatus status) {
         this.status = status;

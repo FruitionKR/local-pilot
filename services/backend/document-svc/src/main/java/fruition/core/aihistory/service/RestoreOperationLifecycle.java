@@ -71,13 +71,19 @@ public class RestoreOperationLifecycle {
 
     /**
      * Kafka 결과 receipt와 같은 트랜잭션에서 실패 상태를 확정한다.
+     *
+     * <p>여기까지 온 복구는 Wiki를 하나도 바꾸지 못했다. 반영은 워커가 succeeded를 보고했을 때만
+     * 일어나기 때문이다. 그래서 선점을 풀어 같은 미리보기로 다시 시도할 수 있게 한다.
+     * 풀지 않으면 미리보기 토큰이 계획의 결정적 해시라 그 복구를 영영 다시 시도할 수 없다.
      */
     @Transactional
     public void fail(String restoreOperationId, String reason, Instant now) {
         operationLogRepository.findById(restoreOperationId).ifPresent(restore -> {
             log.warn("[복구 실패 확정] operationId={} reason={}", restoreOperationId, reason);
-            restore.complete(OperationStatus.failed, reason,
+            restore.complete(OperationStatus.failed,
+                    OperationFailureSummary.of(OperationType.restore, OperationStatus.failed),
                     restore.getChangedResourceCount(), null, now);
+            restore.releaseRestoreClaim();
         });
     }
 

@@ -26,7 +26,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
@@ -62,8 +63,9 @@ class OperationQueryServiceTest {
                 "Wiki lint로 페이지 2개를 변경했습니다.", 2,
                 Instant.parse("2026-08-04T01:00:00Z"));
         when(operationLogRepository.findPage(eq(WORKSPACE_ID), eq(OperationType.lint),
-                eq(null), any(Instant.class), eq(OperationType.document_edit),
-                eq(OperationStatus.succeeded), anyList(), any(Pageable.class)))
+                eq(null), any(Instant.class), anyString(), anyCollection(),
+                eq(OperationStatus.succeeded), eq(OperationType.document_edit), anyCollection(),
+                any(Pageable.class)))
                 .thenReturn(List.of(lint));
 
         var response = service.list(WORKSPACE_ID, USER_ID, "lint", null, null, 20);
@@ -283,6 +285,50 @@ class OperationQueryServiceTest {
     }
 
     @Test
+    void list_nextCursorCarriesOperationIdSoSameInstantIsNotSkipped() {
+        doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+        Instant sameInstant = Instant.parse("2026-08-20T05:33:40.036572Z");
+        OperationLog first = OperationLog.completed(
+                "op_zzz", WORKSPACE_ID, USER_ID, OperationType.ingest, null, "A", 1, sameInstant);
+        OperationLog second = OperationLog.completed(
+                "op_aaa", WORKSPACE_ID, USER_ID, OperationType.ingest, null, "B", 1, sameInstant);
+        // size+1건을 돌려주면 서비스가 다음 페이지가 있다고 판단한다.
+        when(operationLogRepository.findPage(eq(WORKSPACE_ID), eq(null), eq(null),
+                any(Instant.class), anyString(), anyCollection(),
+                eq(OperationStatus.succeeded), eq(OperationType.document_edit), anyCollection(),
+                any(Pageable.class)))
+                .thenReturn(List.of(first, second));
+
+        var response = service.list(WORKSPACE_ID, USER_ID, null, null, null, 1);
+
+        assertThat(response.nextCursor()).isEqualTo(sameInstant + ",op_zzz");
+    }
+
+    @Test
+    void list_splitsCursorIntoInstantAndOperationId() {
+        doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+        when(operationLogRepository.findPage(eq(WORKSPACE_ID), eq(null), eq(null),
+                eq(Instant.parse("2026-08-20T05:33:40.036572Z")), eq("op__hIetMtPO1nVEXY3cBvAdw"),
+                anyCollection(), eq(OperationStatus.succeeded), eq(OperationType.document_edit),
+                anyCollection(), any(Pageable.class)))
+                .thenReturn(List.of());
+
+        var response = service.list(WORKSPACE_ID, USER_ID, null, null,
+                "2026-08-20T05:33:40.036572Z,op__hIetMtPO1nVEXY3cBvAdw", 20);
+
+        assertThat(response.logs()).isEmpty();
+    }
+
+    @Test
+    void list_rejectsCursorWithoutOperationId() {
+        doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+
+        assertThatThrownBy(() -> service.list(
+                WORKSPACE_ID, USER_ID, null, null, "2026-08-20T05:33:40.036572Z", 20))
+                .hasMessageContaining("커서 형식이 올바르지 않습니다");
+    }
+
+    @Test
     void list_rejectsNonMemberBeforeReadingLogs() {
         doThrow(new WorkspaceNotFoundException(WORKSPACE_ID))
                 .when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
@@ -292,6 +338,6 @@ class OperationQueryServiceTest {
                 .isInstanceOf(WorkspaceNotFoundException.class);
 
         verify(operationLogRepository, never()).findPage(
-                any(), any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 }

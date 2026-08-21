@@ -4,6 +4,7 @@ import fruition.core.aihistory.domain.ChangeType;
 import fruition.core.aihistory.domain.OperationChange;
 import fruition.core.aihistory.domain.OperationLog;
 import fruition.core.aihistory.domain.OperationStatus;
+import fruition.core.aihistory.domain.OperationType;
 import fruition.core.aihistory.domain.ResourceType;
 import fruition.core.aihistory.dto.OperationResultRequest;
 import fruition.core.aihistory.dto.OperationResultResponse;
@@ -15,6 +16,8 @@ import fruition.core.wiki.domain.WikiPageVersion;
 import fruition.core.wiki.repository.WikiPageContributionRepository;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.wiki.repository.WikiPageVersionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +29,8 @@ import java.util.Optional;
 /** lint 결과를 새 Wiki revision과 작업 변경 이력으로 저장한다. */
 @Component
 public class LintOperationApplier {
+
+    private static final Logger log = LoggerFactory.getLogger(LintOperationApplier.class);
 
     private final OperationLogRepository operationLogRepository;
     private final OperationChangeRepository operationChangeRepository;
@@ -64,7 +69,14 @@ public class LintOperationApplier {
         OperationStatus status = request.isFailure()
                 ? OperationStatus.partially_succeeded
                 : OperationStatus.succeeded;
-        operation.complete(status, request.summary(), ordered.size(), payloadHash, now);
+        if (status != OperationStatus.succeeded) {
+            // 오류 원문은 운영자용이라 로그로만 남기고, 저장하는 요약은 사용자용 문구로 쓴다.
+            log.warn("[lint 부분 실패] operationId={} reason={}", operationId, request.summary());
+        }
+        String summary = status == OperationStatus.succeeded
+                ? request.summary()
+                : OperationFailureSummary.of(OperationType.lint, status);
+        operation.complete(status, summary, ordered.size(), payloadHash, now);
         return new OperationResultResponse(operationId, status.name(), ordered.size());
     }
 
