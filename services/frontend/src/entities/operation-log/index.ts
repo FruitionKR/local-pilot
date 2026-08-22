@@ -9,6 +9,7 @@ export type { OperationLogQuery } from "./model/operationLogQuery";
 export {
   appendLogPage,
   collectRestoredOperationIds,
+  filterVisibleOperationLogs,
   formatOperationLogDescription,
   groupOperationLogsByDate,
   mergeRefreshedLogPage,

@@ -242,24 +242,24 @@ export function usePendingWorkNotifications(documents: DocumentItemResponse[]) {
         if (!needs_lint) return;
         publishNotice({
           kind: "info",
-          title: "위키 다듬기 제안",
-          message: "새 문서 반영 후 위키 페이지가 변경되었습니다. 다듬기를 실행할 수 있습니다.",
+          title: "Lint 제안",
+          message: "새 문서 반영 후 위키 페이지가 변경되었습니다. Lint를 실행할 수 있습니다.",
           action: {
-            label: "다듬기",
+            label: "Lint",
             onAction: () => {
               requestWikiLint(false)
                 .then(({ changedPageCount }) => {
                   publishNotice({
                     kind: "completed",
-                    title: "위키 다듬기 완료",
+                    title: "Lint 완료",
                     message: `${changedPageCount}개 페이지를 다듬었습니다.`
                   });
                 })
                 .catch((error: unknown) => {
                   publishNotice({
                     kind: "failed",
-                    title: "위키 다듬기 실패",
-                    message: error instanceof Error ? error.message : "위키 다듬기 요청에 실패했습니다."
+                    title: "Lint 실패",
+                    message: error instanceof Error ? error.message : "Lint 요청에 실패했습니다."
                   });
                 });
             }

@@ -36,6 +36,17 @@ export function groupOperationLogsByDate(
   return groups;
 }
 
+/** 실제 바꾼 문서 없이 성공으로 끝난 lint 작업은 로그 목록에 노출하지 않는다. */
+export function filterVisibleOperationLogs(items: OperationLogItem[]): OperationLogItem[] {
+  return items.filter(
+    (item) => !(
+      item.operation_type === "lint" &&
+      item.status === "succeeded" &&
+      item.changed_resource_count === 0
+    )
+  );
+}
+
 /** 목록과 상세 헤더가 같은 문서·작업 설명을 사용한다. */
 export function formatOperationLogDescription(
   item: Pick<OperationLogItem, "summary">,

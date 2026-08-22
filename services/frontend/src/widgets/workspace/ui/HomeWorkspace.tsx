@@ -291,14 +291,14 @@ export function HomeWorkspace() {
       void refreshBackendData();
       publishNotice({
         kind: "completed",
-        title: "위키 다듬기 완료",
+        title: "Lint 완료",
         message: `${changedPageCount}개 페이지를 다듬었습니다.`
       });
     } catch (error: unknown) {
       publishNotice({
         kind: "failed",
-        title: "위키 다듬기 실패",
-        message: getErrorMessage(error, "위키 다듬기 요청에 실패했습니다.")
+        title: "Lint 실패",
+        message: getErrorMessage(error, "Lint 요청에 실패했습니다.")
       });
     } finally {
       setWikiActionPending(null);
