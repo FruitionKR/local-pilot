@@ -417,6 +417,23 @@ def test_post_ingest_command_retries_in_process() -> None:
     durable.assert_called_once_with(command)
 
 
+def test_post_ingest_command_does_not_retry_durable_failure() -> None:
+    command = {"run_id": "post-run-1", "kind": "post_ingest"}
+
+    with (
+        patch.object(
+            task_worker,
+            "_handle_post_ingest",
+            side_effect=RuntimeError("post_ingest run failed"),
+        ) as handle,
+        patch.object(task_worker, "_failure_is_durable", return_value=True),
+        pytest.raises(RuntimeError, match="post_ingest run failed"),
+    ):
+        task_worker._handle(command)
+
+    handle.assert_called_once_with(command)
+
+
 @pytest.mark.parametrize(
     ("embedding_mode", "runs_embedding"),
     [("bge-m3", True), ("text-only", False)],
@@ -476,7 +493,7 @@ def test_post_ingest_runs_configured_embedding_before_quality_evaluation(
             side_effect=lambda **_kwargs: calls.append("cluster") or artifact,
         ),
         patch.object(task_worker, "_post_ingest_client", return_value=MagicMock()),
-        patch.object(task_worker, "read_text_object", return_value=""),
+        patch.object(task_worker, "read_optional_text_object", return_value=""),
         patch.object(
             task_worker.database,
             "persist_post_ingest_clusters",
@@ -830,7 +847,7 @@ def test_post_ingest_requires_source_and_wiki_quality_to_be_ready(
         patch.object(task_worker.database, "update_pipeline_run_cluster_contribution"),
         patch.object(task_worker, "build_post_ingest_cluster_artifact", return_value={}),
         patch.object(task_worker, "_post_ingest_client", return_value=MagicMock()),
-        patch.object(task_worker, "read_text_object", return_value=""),
+        patch.object(task_worker, "read_optional_text_object", return_value=""),
         patch.object(task_worker.database, "persist_post_ingest_clusters", return_value=[]),
         patch.object(
             task_worker,

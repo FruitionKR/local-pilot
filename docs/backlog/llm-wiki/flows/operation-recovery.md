@@ -18,13 +18,13 @@
 
 주요 기준 코드:
 
-- ingest 기여 생성: `llmPipeline/app/modules/wiki_ingestion/application/concept_contribution.py`
-- ingest operation 저장: `llmPipeline/app/modules/wiki_ingestion/infrastructure/operation_artifacts.py`
-- lint operation 저장: `llmPipeline/app/modules/wiki_ingestion/infrastructure/lint_operation_artifacts.py`
-- Concept 재조립: `llmPipeline/app/modules/wiki_ingestion/infrastructure/concept_contribution_rebuild.py`
-- 복구 실행: `llmPipeline/app/modules/wiki_ingestion/application/restore_wiki_pages.py`
-- 고아 간선 판정: `llmPipeline/app/modules/wiki_ingestion/domain/orphan_link_lint.py`
-- Kafka worker: `llmPipeline/app/workers/ingest_worker.py`, `llmPipeline/app/workers/task_worker.py`
+- ingest 기여 생성: `services/ai/pipeline/app/modules/wiki_ingestion/application/concept_contribution.py`
+- ingest operation 저장: `services/ai/pipeline/app/modules/wiki_ingestion/infrastructure/operation_artifacts.py`
+- lint operation 저장: `services/ai/pipeline/app/modules/wiki_ingestion/infrastructure/lint_operation_artifacts.py`
+- Concept 재조립: `services/ai/pipeline/app/modules/wiki_ingestion/infrastructure/concept_contribution_rebuild.py`
+- 복구 실행: `services/ai/pipeline/app/modules/wiki_ingestion/application/restore_wiki_pages.py`
+- 고아 간선 판정: `services/ai/pipeline/app/modules/wiki_ingestion/domain/orphan_link_lint.py`
+- Kafka worker: `services/ai/pipeline/app/workers/ingest_worker.py`, `services/ai/pipeline/app/workers/task_worker.py`
 - Backend 결과 반영: `services/backend/document-svc/.../AiTaskResultApplier.java`
 
 ## 2. 전체 생명주기
@@ -441,8 +441,7 @@ Content-Type: application/json
     {
       "page_id": "page_concept_C2",
       "keep_contributions": [
-        {"operation_id": "op_ingest_A", "document_id": "doc_A"},
-        {"operation_id": "op_lint_C", "document_id": "lint:op_lint_C"}
+        {"operation_id": "op_ingest_A", "document_id": "doc_A"}
       ]
     }
   ],
@@ -465,7 +464,7 @@ Content-Type: application/json
 | `rebuild_pages` | restore point와 현재 상태의 Concept 합집합 중 다시 조립할 page다. 남은 기여가 없는 page는 넣지 않고 `deleted_pages`에 넣는다. |
 | `keep_contributions` | 취소 대상을 제외하고 남길 ingest 기여다. 배열 순서가 재생 순서다. lint artifact는 별도 link action 재생에 사용한다. |
 | `keep_contributions[].operation_id` | 읽을 Concept `{operation_id}.json`을 지정한다. |
-| `keep_contributions[].document_id` | 기여 출처인 원문 document id다. 이 값은 현재 llmPipeline schema에서 전달하지만 Backend `OperationIngestService.load`는 제공된 `contributionKey`의 identity·prefix를 별도 검증하지 않고 사용한다. |
+| `keep_contributions[].document_id` | 기여 출처인 원문 document id다. Backend는 ingest 결과의 `contribution_key`가 등록된 workspace·page·operation prefix와 일치할 때만 저장한다. |
 | `deleted_pages` | 남은 활성 기여가 없어 Backend가 삭제 처리할 page id다. 기본값은 빈 배열이다. |
 
 llmPipeline은 restore point의 Source `.md`를 읽어 restore operation의 새 `.md`로
@@ -817,8 +816,8 @@ event payload로 발행한다. Backend는 이를 `AiTaskResultApplier.applyInges
 operation과 document 상태에 반영한다. Kafka consumer 재전달은 정상 경로이며,
 Backend는 `ai_task_result_receipts(event_id, run_id, task_kind)`로 중복을 제거한다.
 결과 payload의 operation id·scope·target document가 등록값과 다르면 Backend가
-거부하고, object key prefix·본문 hash가 다르면 422 계약 오류로 거부한다. 제공된
-`contributionKey`의 identity·prefix는 별도 검증하지 않는다. 같은 확정 payload를 다시 받으면 기존 결과를 반환하고 다른
+거부하고, Markdown·기여 object key의 workspace·page·operation prefix 또는 본문 hash가
+다르면 422 계약 오류로 거부한다. 같은 확정 payload를 다시 받으면 기존 결과를 반환하고 다른
 payload는 409 충돌이다.
 
 ## 7. Operation 취소와 Concept 페이지 재조립

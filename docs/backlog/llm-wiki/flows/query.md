@@ -139,7 +139,7 @@ rule-based rewrite는 영문·숫자·한글·`_.-` 토큰을 소문자화하고
 
 `workspace_id`가 검색 범위를 결정한다. 기본 후보 상한은 source 15개, concept 10개이며 candidate pool multiplier 4가 적용되어 초기 DB 조회는 각각 최대 60개·40개까지 넓힌다. DB lexical 후보는 title/slug/summary metadata와 embedding unit text의 full-text 검색을 합치고, embedding mode가 `text-only`·`bm25`·`lexical`이 아니면 원 질문을 page embedding 검색에도 사용한다. active 상태·workspace·page type·embedding model/dimension/status 조건을 모두 적용한다.
 
-초기 후보에서 시작해 기본 최대 depth 3, link 200개까지 workspace 범위의 연결 page를 추가로 읽는다. scoring은 configured embedding/text search를 사용하며 현재 `AnswerQueryUseCase` 기본 호출은 embedding weight 1.0이라 embedding search 결과를 사용하고, embedding이 text search와 같은 경우에는 BM25 결과가 된다. source page는 `Categories`·`Core Concepts`·`Section Candidates`·`Mentions` section을 각각 0.10·0.20·0.25·0.15 가중치로 추가 반영한다. concept title·slug·Markdown aliases가 질문과 직접 일치하면 직접 일치 후보로 보강한다.
+초기 후보에서 시작해 기본 최대 depth 3, link 200개까지 workspace 범위의 연결 page를 추가로 읽는다. scoring은 configured embedding/text search를 사용하며 현재 `AnswerQueryUseCase` 기본 호출은 embedding weight 0.8이라 embedding과 BM25 결과를 함께 반영한다. embedding이 text search와 같은 경우에는 BM25 결과가 된다. source page는 `Categories`·`Core Concepts`·`Section Candidates`·`Mentions` section을 각각 0.10·0.20·0.25·0.15 가중치로 추가 반영한다. concept title·slug·Markdown aliases가 질문과 직접 일치하면 직접 일치 후보로 보강한다.
 
 구현은 `postgres_wiki_repository.py`, `stored_wiki_page_embedding_search.py`, `query_page_scorer.py`, `minio_wiki_markdown_reader.py`에 있다.
 

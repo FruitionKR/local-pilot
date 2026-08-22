@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.application.ports import (
@@ -83,6 +84,11 @@ def _build_embedding_search(text_search: Bm25Searcher):
     mode = os.environ.get("QUERY_EMBEDDING_MODE", "bge-m3").strip().lower()
     if mode in {"text-only", "bm25", "lexical"}:
         return text_search
+    return _stored_embedding_search()
+
+
+@lru_cache(maxsize=1)
+def _stored_embedding_search() -> StoredWikiPageEmbeddingSearch:
     return StoredWikiPageEmbeddingSearch()
 
 

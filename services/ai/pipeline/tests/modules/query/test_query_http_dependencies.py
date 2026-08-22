@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from app.modules.query.domain.entities import GeneratedAnswer, WikiPage
 from app.modules.query.infrastructure.in_memory_wiki_repository import InMemoryWikiRepository
+from app.modules.query.interfaces.http import dependencies
 from app.modules.query.interfaces.http.dependencies import build_answer_query_use_case
 
 
@@ -56,6 +57,15 @@ def _build_production_use_case(score: float):
 
 
 class QueryHttpDependenciesTest(unittest.TestCase):
+    def test_semantic_search_is_reused_across_use_cases(self) -> None:
+        dependencies._stored_embedding_search.cache_clear()
+        with patch.dict(os.environ, {"QUERY_EMBEDDING_MODE": "bge-m3"}):
+            first = dependencies._build_embedding_search(FixedScoreSearch(0.1))
+            second = dependencies._build_embedding_search(FixedScoreSearch(0.2))
+
+        self.assertIs(first, second)
+        dependencies._stored_embedding_search.cache_clear()
+
     def test_production_web_disabled_weak_evidence_returns_grounded_no_answer(self) -> None:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("QUERY_MIN_INTERNAL_RELEVANCE_SCORE", None)

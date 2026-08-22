@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -80,6 +81,29 @@ class OperationIngestServiceTest {
         givenObject("# 개념 C1", "sha256:actual");
 
         assertThatThrownBy(() -> service.accept(OPERATION_ID, request("sha256:reported")))
+                .isInstanceOf(InvalidCallbackPayloadException.class);
+
+        verify(applier, never()).apply(anyString(), any(), anyList(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("다른 작업의 기여 key는 거절하고 적재하지 않는다")
+    void rejectsForeignContributionKey() {
+        givenProcessingOperation();
+        givenObject("# 개념 C1", "sha256:aaa");
+        when(objectReader.validateContributionKey(
+                eq("wiki/ws_1/pages/C1/ops/op_other.json"),
+                anyString(), anyString(), anyString()))
+                .thenThrow(new InvalidCallbackPayloadException("허용되지 않은 기여 경로입니다"));
+        OperationResultRequest forged = new OperationResultRequest(
+                OPERATION_ID, "ingest", "succeeded", WORKSPACE_ID, USER_ID, DOCUMENT_ID,
+                "요약", List.of(new OperationResultRequest.ChangedPage(
+                        PAGE_ID, "concept",
+                        "wiki/ws_1/pages/C1/ops/" + OPERATION_ID + ".md",
+                        "wiki/ws_1/pages/C1/ops/op_other.json",
+                        "sha256:aaa", true)), null);
+
+        assertThatThrownBy(() -> service.accept(OPERATION_ID, forged))
                 .isInstanceOf(InvalidCallbackPayloadException.class);
 
         verify(applier, never()).apply(anyString(), any(), anyList(), anyString(), any());
@@ -256,6 +280,8 @@ class OperationIngestServiceTest {
         when(objectReader.sha256(markdown)).thenReturn(hash);
         when(objectReader.contributionKey(anyString(), anyString(), anyString()))
                 .thenReturn("wiki/ws_1/pages/C1/ops/" + OPERATION_ID + ".json");
+        when(objectReader.validateContributionKey(anyString(), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     private OperationResultRequest request(String reportedHash) {

@@ -42,7 +42,9 @@ from app.modules.wiki_generation.infrastructure.post_ingest_quality import (
     retrieval_reference_metrics,
 )
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
-from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
+from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
+    read_optional_text_object,
+)
 from app.modules.wiki_ingestion.interfaces.http.dependencies import (
     get_restore_wiki_pages_use_case,
     get_wiki_embedding_job,
@@ -534,7 +536,7 @@ def _run_post_ingest_wiki_quality_evaluation(
     )
     evaluations = [
         {**retrieved, **judgment}
-        for retrieved, judgment in zip(retrieved_cases, judgments)
+        for retrieved, judgment in zip(retrieved_cases, judgments, strict=True)
     ]
     state["wiki_quality_evaluations"] = evaluations
     database.checkpoint_pipeline_run(str(command["run_id"]), state)
@@ -610,10 +612,7 @@ def _handle_post_ingest(command: dict[str, Any]) -> dict[str, Any]:
                 f"wiki/{command['user_id']}/{command['workspace_id']}"
                 "/clusters/active.md"
             )
-            try:
-                existing_active = read_text_object(object_name)
-            except Exception:
-                existing_active = ""
+            existing_active = read_optional_text_object(object_name)
             state["cluster_artifact"] = build_post_ingest_cluster_artifact(
                 completion=_post_ingest_client(command),
                 normalized=dict(command["cluster_normalized"]),

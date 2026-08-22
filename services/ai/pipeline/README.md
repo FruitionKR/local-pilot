@@ -392,7 +392,7 @@ concept 후보의 의미적 병합/링킹을 정규화하고 적용합니다.
 - concept page skeleton 생성
 - optional concept section polish 반영
 - source key point ref를 concept key point로 내려보냄
-- 같은 evidence/source key point/LLM resolution 기반 related concept 생성
+- 같은 evidence와 source key point 기반 related concept 생성
 - `wiki/links.json`, `review_report.md` 생성
 
 ### `app/modules/wiki_ingestion/infrastructure/postgres_wiki_ingestion_repository.py`

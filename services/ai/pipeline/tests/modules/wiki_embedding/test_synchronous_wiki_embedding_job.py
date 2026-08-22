@@ -13,13 +13,15 @@ def test_restore_embedding_failure_prevents_success() -> None:
 
     with (
         patch.object(
-                threaded_wiki_embedding_job,
-                "build_wiki_page_embeddings",
+            threaded_wiki_embedding_job,
+            "build_wiki_embeddings",
             return_value={"failed_count": 1},
-        ),
+        ) as build_embeddings,
         pytest.raises(RuntimeError, match="embedding failed"),
     ):
         job.start("restore-1", ["page-1"])
+
+    build_embeddings.assert_called_once_with(["page-1"])
 
 
 def test_threaded_job_recovers_reserved_pages_and_retries_failures() -> None:

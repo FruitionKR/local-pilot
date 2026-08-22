@@ -4,6 +4,7 @@ import os
 import uuid
 
 import psycopg
+from minio.error import S3Error
 
 from app.modules.wiki_generation.domain.text_utils import slugify
 
@@ -37,13 +38,23 @@ def persist_embedding_units(
         if block.get("block_id") and block.get("text")
     )
     units = dedupe_units(units)
+    previous_vectors = conn.execute(
+        """
+        SELECT DISTINCT embedding_vector_id
+        FROM wiki_embedding_units
+        WHERE page_id = %s
+        """,
+        (page_id,),
+    ).fetchall()
     conn.execute("DELETE FROM wiki_embedding_units WHERE page_id = %s", (page_id,))
+    embedding_model = os.environ.get("EMBEDDING_MODEL_NAME") or "BAAI/bge-m3"
     for unit in units:
         representation_text = unit["text"].strip()
         representation_hash = hash_text(representation_text)
-        vector_id = f"embedding:{representation_hash}"
+        vector_identity = f"{embedding_model}:{representation_hash}"
+        vector_id = f"embedding:{hash_text(vector_identity)}"
         unit_id = f"unit:{hash_text('|'.join([page_id, unit['unit_type'], ','.join(unit['block_refs']), unit['text']]))[:24]}"
-        conn.execute(
+        vector_row = conn.execute(
             """
             INSERT INTO wiki_embedding_vectors (
                 id,
@@ -57,14 +68,16 @@ def persist_embedding_units(
             ON CONFLICT (embedding_model, representation_hash) DO UPDATE SET
                 representation_text = EXCLUDED.representation_text,
                 updated_at = now()
+            RETURNING id
             """,
             (
                 vector_id,
-                os.environ.get("EMBEDDING_MODEL_NAME") or "BAAI/bge-m3",
+                embedding_model,
                 representation_hash,
                 representation_text,
             ),
-        )
+        ).fetchone()
+        vector_id = str(vector_row["id"])
         conn.execute(
             """
             INSERT INTO wiki_embedding_units (
@@ -100,6 +113,19 @@ def persist_embedding_units(
                 unit["weight"],
             ),
         )
+    previous_vector_ids = [row["embedding_vector_id"] for row in previous_vectors]
+    if previous_vector_ids:
+        conn.execute(
+            """
+            DELETE FROM wiki_embedding_vectors vector
+            WHERE vector.id = ANY(%s)
+              AND NOT EXISTS (
+                  SELECT 1 FROM wiki_embedding_units unit
+                  WHERE unit.embedding_vector_id = vector.id
+              )
+            """,
+            (previous_vector_ids,),
+        )
 
 
 def upload_wiki_markdown(markdown: str, object_name: str) -> str:
@@ -109,8 +135,10 @@ def upload_wiki_markdown(markdown: str, object_name: str) -> str:
 def read_optional_text_object(object_name: str) -> str:
     try:
         return read_text_object(object_name)
-    except Exception:
-        return ""
+    except S3Error as exc:
+        if exc.code in {"NoSuchKey", "NoSuchObject"}:
+            return ""
+        raise
 
 
 def delete_source_related_links(

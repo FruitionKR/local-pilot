@@ -102,7 +102,7 @@ class SynchronousWikiEmbeddingJob:
     def start(self, run_id: str, page_ids: list[str]) -> None:
         if not page_ids:
             return
-        result = build_wiki_page_embeddings(page_ids)
+        result = build_wiki_embeddings(page_ids)
         if result["failed_count"]:
             raise RuntimeError(
                 f'wiki restore embedding failed: {result["failed_count"]}'
@@ -187,8 +187,8 @@ def build_wiki_unit_embeddings(
         )
 
     with database.connect() as conn:
-        for row, vector in zip(pending, vectors):
-            conn.execute(
+        with conn.cursor() as cursor:
+            cursor.executemany(
                 """
                 UPDATE wiki_embedding_vectors
                 SET embedding_vector = %s,
@@ -198,7 +198,10 @@ def build_wiki_unit_embeddings(
                     updated_at = now()
                 WHERE id = %s
                 """,
-                (vector, len(vector), row["id"]),
+                [
+                    (vector, len(vector), row["id"])
+                    for row, vector in zip(pending, vectors, strict=True)
+                ],
             )
     return embedding_result(
         target_count=len(rows),

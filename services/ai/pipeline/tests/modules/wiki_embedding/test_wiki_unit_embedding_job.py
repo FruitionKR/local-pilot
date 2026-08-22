@@ -17,6 +17,7 @@ class FakeConnection:
     def __init__(self, rows: list[dict]) -> None:
         self._rows = rows
         self.updates: list[tuple[str, tuple]] = []
+        self.update_batches: list[tuple[str, list[tuple]]] = []
 
     def __enter__(self) -> "FakeConnection":
         return self
@@ -29,6 +30,12 @@ class FakeConnection:
             return FakeCursor(self._rows)
         self.updates.append((sql, params))
         return FakeCursor([])
+
+    def cursor(self) -> "FakeConnection":
+        return self
+
+    def executemany(self, sql: str, params: list[tuple]) -> None:
+        self.update_batches.append((sql, params))
 
 
 class FakeEmbeddingModel:
@@ -62,5 +69,5 @@ def test_build_wiki_unit_embeddings_persists_pending_vectors() -> None:
         "skipped_count": 1,
         "failed_count": 0,
     }
-    assert len(connection.updates) == 1
-    assert connection.updates[0][1] == ([1.0, 0.0], 2, "vector-1")
+    assert connection.updates == []
+    assert connection.update_batches[0][1] == [([1.0, 0.0], 2, "vector-1")]

@@ -51,7 +51,7 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
                 ["concept-2"],
             )
 
-        candidate_sql, candidate_params = connection.calls[0]
+        _candidate_sql, candidate_params = connection.calls[0]
         link_sql, _ = connection.calls[1]
         page_sql, _ = connection.calls[2]
         assert "page_type = 'concept'" in link_sql
