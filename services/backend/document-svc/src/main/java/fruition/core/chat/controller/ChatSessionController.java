@@ -7,6 +7,7 @@ import fruition.core.chat.dto.ChatMessageResponse;
 import fruition.core.chat.dto.ChatMessagesResponse;
 import fruition.core.chat.dto.ChatSessionCreateRequest;
 import fruition.core.chat.dto.ChatSessionListResponse;
+import fruition.core.chat.dto.ChatSessionRenameRequest;
 import fruition.core.chat.dto.ChatSessionResponse;
 import fruition.core.chat.repository.ChatMessageReferenceRepository;
 import fruition.core.chat.repository.ChatMessageRelatedPageRepository;
@@ -21,6 +22,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -83,6 +85,25 @@ public class ChatSessionController {
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId) {
         return ResponseEntity.ok(chatSessionService.list(workspaceId, userId));
+    }
+
+    @Operation(summary = "채팅 세션 제목 변경", description = "지정한 채팅 세션의 제목을 변경합니다. 목록 정렬 기준인 last_message_at은 바뀌지 않습니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "변경 성공",
+            content = @Content(schema = @Schema(implementation = ChatSessionResponse.class))),
+        @ApiResponse(responseCode = "400", description = "제목이 비었거나 255자를 초과함",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "세션 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PatchMapping("/{session_id}")
+    public ResponseEntity<ChatSessionResponse> rename(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @Parameter(description = "채팅 세션 ID", example = "session_abc12345")
+            @PathVariable("session_id") String sessionId,
+            @Valid @RequestBody ChatSessionRenameRequest request) {
+        return ResponseEntity.ok(chatSessionService.rename(workspaceId, userId, sessionId, request));
     }
 
     @Operation(summary = "채팅 세션 삭제", description = "워크스페이스에서 지정한 채팅 세션과 해당 세션의 메시지 기록을 삭제합니다.")
