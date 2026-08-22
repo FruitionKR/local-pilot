@@ -45,6 +45,11 @@ public class ChatSession {
         this.lastMessageAt = this.createdAt;
     }
 
+    /** 제목만 바꾼다. 목록 정렬 기준인 lastMessageAt은 건드리지 않는다. */
+    public void rename(String title) {
+        this.title = title;
+    }
+
     public void touchLastMessageAt(Instant now) {
         this.lastMessageAt = now;
     }

@@ -5,6 +5,7 @@ import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.domain.ChatSession;
 import fruition.core.chat.dto.ChatSessionCreateRequest;
 import fruition.core.chat.dto.ChatSessionListResponse;
+import fruition.core.chat.dto.ChatSessionRenameRequest;
 import fruition.core.chat.dto.ChatSessionResponse;
 import fruition.core.chat.exception.ChatSessionLimitExceededException;
 import fruition.core.chat.exception.ChatSessionNotFoundException;
@@ -33,6 +34,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -101,6 +103,50 @@ class ChatSessionControllerTest {
                         .header("Authorization", bearerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sessions[0].id").value(SESSION_ID));
+    }
+
+    @Test
+    void rename_ownedSession_returns200() throws Exception {
+        when(chatSessionService.rename(eq(WORKSPACE_ID), eq(USER_ID), eq(SESSION_ID), any())).thenReturn(
+                new ChatSessionResponse(SESSION_ID, "새 제목", Instant.now(), Instant.now()));
+
+        mockMvc.perform(patch("/api/workspaces/" + WORKSPACE_ID + "/chat/sessions/" + SESSION_ID)
+                        .header("Authorization", bearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ChatSessionRenameRequest("새 제목"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("새 제목"));
+    }
+
+    @Test
+    void rename_blankTitle_returns400() throws Exception {
+        mockMvc.perform(patch("/api/workspaces/" + WORKSPACE_ID + "/chat/sessions/" + SESSION_ID)
+                        .header("Authorization", bearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ChatSessionRenameRequest("   "))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void rename_unknownSession_returns404() throws Exception {
+        when(chatSessionService.rename(eq(WORKSPACE_ID), eq(USER_ID), eq(SESSION_ID), any()))
+                .thenThrow(new ChatSessionNotFoundException(SESSION_ID));
+
+        mockMvc.perform(patch("/api/workspaces/" + WORKSPACE_ID + "/chat/sessions/" + SESSION_ID)
+                        .header("Authorization", bearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ChatSessionRenameRequest("새 제목"))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("CHAT_SESSION_NOT_FOUND"));
+    }
+
+    @Test
+    void rename_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(patch("/api/workspaces/" + WORKSPACE_ID + "/chat/sessions/" + SESSION_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ChatSessionRenameRequest("새 제목"))))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

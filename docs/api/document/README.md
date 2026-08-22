@@ -10,7 +10,7 @@ Backend가 ai-svc 내부 계약에 필요한 사용자·워크스페이스·모�
 |---|---:|---|
 | [AI](ai.md) | 9 | AI 모델 설정과 작업·변환·ingest 관리 |
 | [Agent](agent.md) | 10 | Agent 실행·승인과 내부 Tool 호출 |
-| [Chat](chat.md) | 6 | 채팅 세션·메시지와 Wiki 내보내기 |
+| [Chat](chat.md) | 7 | 채팅 세션·메시지와 Wiki 내보내기 |
 | [Documents](documents/README.md) | 24 | 문서 관리·본문·편집·이력 |
 | [Navigation](navigation.md) | 10 | 폴더와 문서 트리 탐색 |
 | [Query](query.md) | 4 | 동기·비동기 Query와 SSE |
