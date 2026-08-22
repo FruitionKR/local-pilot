@@ -738,7 +738,15 @@ def _handle(
     if kind == "lint":
         return _handle_lint(command)
     if kind == "post_ingest":
-        return _handle_post_ingest(command)
+        for attempt in range(POST_INGEST_MAX_ATTEMPTS):
+            try:
+                return _handle_post_ingest(command)
+            except Exception:
+                if (
+                    attempt + 1 == POST_INGEST_MAX_ATTEMPTS
+                    or _failure_is_durable(command)
+                ):
+                    raise
     if kind in {"restore_ingest", "restore_lint"}:
         return _handle_restore(command)
     raise ValueError(f"unsupported AI command kind: {kind}")

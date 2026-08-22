@@ -396,6 +396,27 @@ def test_unknown_command_is_rejected() -> None:
         task_worker._handle({"run_id": "run-1", "kind": "unknown"})
 
 
+def test_post_ingest_command_retries_in_process() -> None:
+    command = {"run_id": "post-run-1", "kind": "post_ingest"}
+    result = {"quality_status": "ready"}
+
+    with (
+        patch.object(
+            task_worker,
+            "_handle_post_ingest",
+            side_effect=[
+                RuntimeError("evidence evaluator omitted case indexes: [1, 2]"),
+                result,
+            ],
+        ) as handle,
+        patch.object(task_worker, "_failure_is_durable", return_value=False) as durable,
+    ):
+        assert task_worker._handle(command) == result
+
+    assert handle.call_count == 2
+    durable.assert_called_once_with(command)
+
+
 @pytest.mark.parametrize(
     ("embedding_mode", "runs_embedding"),
     [("bge-m3", True), ("text-only", False)],
