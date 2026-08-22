@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -63,13 +64,55 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
             @Param("now") Instant now
     );
 
+    /**
+     * 아직 끝나지 않은 복구만 실패로 확정하고 미리보기 토큰 선점을 푼다.
+     *
+     * <p>상태 확인과 갱신을 한 UPDATE로 묶는다. 조회로 확인한 뒤 갱신하면 그사이 성공이
+     * 확정됐을 때 반영이 끝난 복구를 실패로 덮고 선점까지 풀어, 같은 미리보기로 두 번
+     * 반영될 수 있다.
+     *
+     * <p>{@code changed_resource_count}는 건드리지 않는다. 실패한 복구는 아무것도 반영하지
+     * 못해 이미 0이고, 굳이 덮으면 그 불변식이 깨진 뒤에도 조용히 가려진다.
+     *
+     * @return 갱신한 행 수. 0이면 이미 끝난 복구라 아무것도 하지 않았다
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            UPDATE OperationLog l
+               SET l.status = :failedStatus,
+                   l.summary = :summary,
+                   l.payloadHash = null,
+                   l.restoreTokenHash = null,
+                   l.completedAt = :now
+             WHERE l.operationId = :operationId
+               AND l.status NOT IN :terminalStatuses
+            """)
+    int failRestoreIfNotTerminal(
+            @Param("operationId") String operationId,
+            @Param("failedStatus") OperationStatus failedStatus,
+            @Param("summary") String summary,
+            @Param("now") Instant now,
+            @Param("terminalStatuses") Collection<OperationStatus> terminalStatuses
+    );
+
     Optional<OperationLog> findByOperationIdAndWorkspaceId(String operationId, String workspaceId);
 
     boolean existsByOperationTypeAndRestoredFromAndRestoreTokenHash(
             OperationType operationType, String restoredFrom, String restoreTokenHash);
 
     /**
-     * 목록 조회. 최신순이며 {@code cursor}보다 오래된 것만 가져온다.
+     * 목록 조회. 최신순이며 커서보다 오래된 것만 가져온다.
+     *
+     * <p>되돌릴 것이 남지 않은 작업은 걷어낸다. {@code hiddenStatuses}(반영 실패)와 변경이 0건인
+     * 성공은 사용자가 목록에서 할 수 있는 일이 없다. {@code successOnlyType}은 결과가 나기 전에
+     * 감사 행을 먼저 커밋하는 유형이라, 끝난 성공만 남긴다.
+     *
+     * <p>{@code hiddenDefaultStatuses}(진행 중)는 {@code status}를 생략했을 때만 걷어낸다.
+     * {@code status=processing} 같은 명시 조회는 활성 작업 탐지에 쓰므로 그대로 통과시킨다.
+     *
+     * <p>{@code createdAt}만으로는 같은 시각에 만들어진 작업이 {@code <} 비교에서 통째로
+     * 빠진다. {@code (createdAt, operationId)} 복합 커서로 동시각 작업까지 결정적으로 가른다.
+     * 정렬도 같은 두 키를 써야 커서가 페이지 경계와 어긋나지 않는다.
      *
      * <p>{@code cursor}에 null을 넘기지 않는다. Postgres는 {@code ? IS NULL} 형태에서 timestamp
      * 파라미터의 타입을 추론하지 못해 실행 자체가 실패한다. 첫 페이지는 먼 미래 값을 넘긴다.
@@ -80,19 +123,23 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
               AND (:type IS NULL OR l.operationType = :type)
               AND (:status IS NULL OR l.status = :status)
               AND (:status IS NOT NULL OR l.status NOT IN :hiddenDefaultStatuses)
-              AND (l.operationType <> :changedSuccessOnlyType
-                   OR (l.status = :successStatus AND l.changedResourceCount > 0))
-              AND l.createdAt < :cursor
-            ORDER BY l.createdAt DESC
+              AND l.status NOT IN :hiddenStatuses
+              AND (l.status <> :successStatus OR l.changedResourceCount > 0)
+              AND (l.operationType <> :successOnlyType OR l.status = :successStatus)
+              AND (l.createdAt < :cursor
+                   OR (l.createdAt = :cursor AND l.operationId < :cursorOperationId))
+            ORDER BY l.createdAt DESC, l.operationId DESC
             """)
     List<OperationLog> findPage(
             @Param("workspaceId") String workspaceId,
             @Param("type") OperationType type,
             @Param("status") OperationStatus status,
             @Param("cursor") Instant cursor,
-            @Param("changedSuccessOnlyType") OperationType changedSuccessOnlyType,
+            @Param("cursorOperationId") String cursorOperationId,
+            @Param("hiddenStatuses") Collection<OperationStatus> hiddenStatuses,
             @Param("successStatus") OperationStatus successStatus,
-            @Param("hiddenDefaultStatuses") List<OperationStatus> hiddenDefaultStatuses,
+            @Param("successOnlyType") OperationType successOnlyType,
+            @Param("hiddenDefaultStatuses") Collection<OperationStatus> hiddenDefaultStatuses,
             Pageable pageable
     );
 

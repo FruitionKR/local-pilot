@@ -47,7 +47,8 @@ public class OperationQueryController {
     }
 
     @Operation(summary = "AI 작업 로그 목록",
-            description = "최신순으로 반환합니다. 문서 편집은 실제 변경에 성공한 작업만 포함하며, "
+            description = "최신순으로 반환합니다. 반영에 실패한 작업과 바꾼 것이 없는 작업은 제외하고, "
+                    + "문서 편집은 실제 변경에 성공한 작업만 포함하며, "
                     + "status를 생략하면 진행 중인 작업은 제외합니다. status=processing 명시 조회는 "
                     + "활성 작업 탐지에 사용할 수 있습니다. 로그 테이블만 읽고 diff를 계산하지 않습니다.")
     @ApiResponses({

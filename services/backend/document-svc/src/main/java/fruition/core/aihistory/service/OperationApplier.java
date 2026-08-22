@@ -17,6 +17,8 @@ import fruition.core.wiki.domain.WikiPageVersion;
 import fruition.core.wiki.repository.WikiPageContributionRepository;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.wiki.repository.WikiPageVersionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +35,8 @@ import java.util.Optional;
  */
 @Component
 public class OperationApplier {
+
+    private static final Logger log = LoggerFactory.getLogger(OperationApplier.class);
 
     private final OperationLogRepository operationLogRepository;
     private final OperationChangeRepository operationChangeRepository;
@@ -79,8 +83,21 @@ public class OperationApplier {
         OperationStatus status = request.isFailure()
                 ? (recorded == 0 ? OperationStatus.failed : OperationStatus.partially_succeeded)
                 : OperationStatus.succeeded;
-        operation.complete(status, request.summary(), recorded, payloadHash, now);
+        operation.complete(status, summaryFor(operation, request, status), recorded, payloadHash, now);
         return new OperationResultResponse(operationId, status.name(), recorded);
+    }
+
+    /**
+     * 성공 요약은 llmPipeline이 만든 문구를 그대로 쓴다. 실패 요약은 오류 원문이 실려 오므로
+     * 사용자용 문구로 바꾸고 원문은 로그로만 남긴다.
+     */
+    private String summaryFor(OperationLog operation, OperationResultRequest request, OperationStatus status) {
+        if (status == OperationStatus.succeeded) {
+            return request.summary();
+        }
+        log.warn("[AI 작업 실패 확정] operationId={} type={} status={} reason={}",
+                operation.getOperationId(), operation.getOperationType(), status, request.summary());
+        return OperationFailureSummary.of(operation.getOperationType(), status);
     }
 
     /** @return 적재했으면 true. 같은 작업의 재전송이면 건너뛴다 */
