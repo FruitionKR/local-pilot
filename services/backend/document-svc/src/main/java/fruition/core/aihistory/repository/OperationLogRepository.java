@@ -64,6 +64,37 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
             @Param("now") Instant now
     );
 
+    /**
+     * 아직 끝나지 않은 복구만 실패로 확정하고 미리보기 토큰 선점을 푼다.
+     *
+     * <p>상태 확인과 갱신을 한 UPDATE로 묶는다. 조회로 확인한 뒤 갱신하면 그사이 성공이
+     * 확정됐을 때 반영이 끝난 복구를 실패로 덮고 선점까지 풀어, 같은 미리보기로 두 번
+     * 반영될 수 있다.
+     *
+     * <p>{@code changed_resource_count}는 건드리지 않는다. 실패한 복구는 아무것도 반영하지
+     * 못해 이미 0이고, 굳이 덮으면 그 불변식이 깨진 뒤에도 조용히 가려진다.
+     *
+     * @return 갱신한 행 수. 0이면 이미 끝난 복구라 아무것도 하지 않았다
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            UPDATE OperationLog l
+               SET l.status = :failedStatus,
+                   l.summary = :summary,
+                   l.payloadHash = null,
+                   l.restoreTokenHash = null,
+                   l.completedAt = :now
+             WHERE l.operationId = :operationId
+               AND l.status NOT IN :terminalStatuses
+            """)
+    int failRestoreIfNotTerminal(
+            @Param("operationId") String operationId,
+            @Param("failedStatus") OperationStatus failedStatus,
+            @Param("summary") String summary,
+            @Param("now") Instant now,
+            @Param("terminalStatuses") Collection<OperationStatus> terminalStatuses
+    );
+
     Optional<OperationLog> findByOperationIdAndWorkspaceId(String operationId, String workspaceId);
 
     boolean existsByOperationTypeAndRestoredFromAndRestoreTokenHash(

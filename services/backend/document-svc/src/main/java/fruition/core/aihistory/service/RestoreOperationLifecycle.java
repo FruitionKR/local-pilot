@@ -11,8 +11,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 복구 작업의 시작과 종료를 호출자가 소유한 트랜잭션에서 기록한다.
@@ -24,6 +27,12 @@ import java.util.Optional;
 public class RestoreOperationLifecycle {
 
     private static final Logger log = LoggerFactory.getLogger(RestoreOperationLifecycle.class);
+
+    /** 이미 끝난 복구. 판단 기준은 {@link OperationStatus#isTerminal()} 하나로 둔다. */
+    private static final Set<OperationStatus> TERMINAL_STATUSES =
+            Arrays.stream(OperationStatus.values())
+                    .filter(OperationStatus::isTerminal)
+                    .collect(Collectors.toUnmodifiableSet());
 
     private final OperationLogRepository operationLogRepository;
 
@@ -75,20 +84,23 @@ public class RestoreOperationLifecycle {
      * <p>여기까지 온 복구는 Wiki를 하나도 바꾸지 못했다. 반영은 워커가 succeeded를 보고했을 때만
      * 일어나기 때문이다. 그래서 선점을 풀어 같은 미리보기로 다시 시도할 수 있게 한다.
      * 풀지 않으면 미리보기 토큰이 계획의 결정적 해시라 그 복구를 영영 다시 시도할 수 없다.
+     *
+     * <p>이미 끝난 복구는 건드리지 않는다. 늦게 도착한 실패 신호에 선점까지 풀면 반영이 끝난
+     * 복구를 같은 미리보기로 한 번 더 실행할 수 있게 된다. 확인과 갱신은 한 UPDATE로 묶어
+     * 성공 확정과 겹쳐도 그 사이를 비집고 들어갈 수 없게 한다.
      */
     @Transactional
     public void fail(String restoreOperationId, String reason, Instant now) {
-        operationLogRepository.findById(restoreOperationId)
-                // 이미 끝난 복구는 건드리지 않는다. 늦게 도착한 실패 신호에 선점까지 풀면
-                // 반영이 끝난 복구를 같은 미리보기로 한 번 더 실행할 수 있게 된다.
-                .filter(restore -> !restore.getStatus().isTerminal())
-                .ifPresent(restore -> {
-                    log.warn("[복구 실패 확정] operationId={} reason={}", restoreOperationId, reason);
-                    restore.complete(OperationStatus.failed,
-                            OperationFailureSummary.of(OperationType.restore, OperationStatus.failed),
-                            restore.getChangedResourceCount(), null, now);
-                    restore.releaseRestoreClaim();
-                });
+        int failed = operationLogRepository.failRestoreIfNotTerminal(
+                restoreOperationId, OperationStatus.failed,
+                OperationFailureSummary.of(OperationType.restore, OperationStatus.failed),
+                now, TERMINAL_STATUSES);
+        if (failed == 0) {
+            log.warn("[복구 실패 신호 무시] 이미 끝난 복구다. operationId={} reason={}",
+                    restoreOperationId, reason);
+            return;
+        }
+        log.warn("[복구 실패 확정] operationId={} reason={}", restoreOperationId, reason);
     }
 
     /** 문서 되돌리기는 재작성이 없어 본문 저장과 같은 트랜잭션에서 확정한다. */
