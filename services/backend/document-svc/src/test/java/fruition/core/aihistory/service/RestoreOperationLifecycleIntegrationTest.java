@@ -126,6 +126,27 @@ class RestoreOperationLifecycleIntegrationTest {
     }
 
     @Test
+    void lateFailureLeavesSucceededRestoreUntouched() {
+        String targetId = "op_target_" + UUID.randomUUID();
+        String workspaceId = "ws_" + UUID.randomUUID();
+        OperationLog target = OperationLog.completed(
+                targetId, workspaceId, "user_1", OperationType.document_edit,
+                null, "edit", 1, Instant.now());
+        operationLogRepository.save(target);
+
+        Optional<OperationLog> first = lifecycle.start(target, "{}", "e".repeat(64), Instant.now());
+        assertThat(first).isPresent();
+        lifecycle.finishDocument(first.orElseThrow().getOperationId(), 1L, 2L, Instant.now());
+
+        // 반영이 끝난 뒤 늦게 도착한 실패 신호. 상태를 덮거나 선점을 풀면 같은 미리보기로 두 번 반영된다.
+        lifecycle.fail(first.orElseThrow().getOperationId(), "late failure", Instant.now());
+
+        assertThat(operationLogRepository.findById(first.orElseThrow().getOperationId()))
+                .get().extracting(OperationLog::getStatus).isEqualTo(OperationStatus.succeeded);
+        assertThat(lifecycle.isClaimed(targetId, "e".repeat(64))).isTrue();
+    }
+
+    @Test
     void succeededClaimRejectsSameTokenRetry() {
         String targetId = "op_target_" + UUID.randomUUID();
         String workspaceId = "ws_" + UUID.randomUUID();

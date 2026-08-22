@@ -78,13 +78,17 @@ public class RestoreOperationLifecycle {
      */
     @Transactional
     public void fail(String restoreOperationId, String reason, Instant now) {
-        operationLogRepository.findById(restoreOperationId).ifPresent(restore -> {
-            log.warn("[복구 실패 확정] operationId={} reason={}", restoreOperationId, reason);
-            restore.complete(OperationStatus.failed,
-                    OperationFailureSummary.of(OperationType.restore, OperationStatus.failed),
-                    restore.getChangedResourceCount(), null, now);
-            restore.releaseRestoreClaim();
-        });
+        operationLogRepository.findById(restoreOperationId)
+                // 이미 끝난 복구는 건드리지 않는다. 늦게 도착한 실패 신호에 선점까지 풀면
+                // 반영이 끝난 복구를 같은 미리보기로 한 번 더 실행할 수 있게 된다.
+                .filter(restore -> !restore.getStatus().isTerminal())
+                .ifPresent(restore -> {
+                    log.warn("[복구 실패 확정] operationId={} reason={}", restoreOperationId, reason);
+                    restore.complete(OperationStatus.failed,
+                            OperationFailureSummary.of(OperationType.restore, OperationStatus.failed),
+                            restore.getChangedResourceCount(), null, now);
+                    restore.releaseRestoreClaim();
+                });
     }
 
     /** 문서 되돌리기는 재작성이 없어 본문 저장과 같은 트랜잭션에서 확정한다. */
