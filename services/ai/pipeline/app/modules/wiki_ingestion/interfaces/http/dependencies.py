@@ -2,6 +2,7 @@ import logging
 from functools import lru_cache
 
 from app.modules.wiki_embedding.infrastructure.threaded_wiki_embedding_job import (
+    DeferredWikiEmbeddingJob,
     SynchronousWikiEmbeddingJob,
     ThreadedWikiEmbeddingJob,
 )
@@ -53,6 +54,15 @@ def get_pipeline_run_use_case() -> RunPipelineUseCase:
         runner=RunLabPipelineRunner(),
         repository=get_pipeline_run_repository(),
         embedding_job=get_wiki_embedding_job(),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_deferred_pipeline_run_use_case() -> RunPipelineUseCase:
+    return RunPipelineUseCase(
+        runner=RunLabPipelineRunner(),
+        repository=get_pipeline_run_repository(),
+        embedding_job=DeferredWikiEmbeddingJob(),
     )
 
 

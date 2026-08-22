@@ -80,8 +80,9 @@ def build_query_answer_evaluator(
     provider: str | None = None,
     model: str | None = None,
     web_search_available: bool = False,
+    mode: str | None = None,
 ) -> QueryEvaluatorPort | None:
-    mode = os.environ.get("QUERY_EVALUATOR_MODE", "web").strip().lower()
+    mode = (mode or os.environ.get("QUERY_EVALUATOR_MODE", "web")).strip().lower()
     if mode in {"", "disabled", "off", "none"}:
         return None
     if mode == "web" and not web_search_available:

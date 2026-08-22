@@ -68,6 +68,18 @@ public class WikiObjectReader {
         return objectPrefix(workspaceId, pageId, operationId) + ".json";
     }
 
+    /** 콜백이 보낸 기여 key가 등록된 workspace·page·operation의 것인지 확인한다. */
+    public String validateContributionKey(
+            String key, String workspaceId, String pageId, String operationId) {
+        String expected = contributionKey(workspaceId, pageId, operationId);
+        String actual = normalize(key);
+        if (!expected.equals(actual)) {
+            throw new InvalidCallbackPayloadException(
+                    "허용되지 않은 기여 경로입니다: pageId=" + pageId);
+        }
+        return actual;
+    }
+
     private String objectPrefix(String workspaceId, String pageId, String operationId) {
         return "wiki/" + workspaceId + "/pages/" + pageId + "/ops/" + operationId;
     }

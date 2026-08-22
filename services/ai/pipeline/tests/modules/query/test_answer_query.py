@@ -247,6 +247,36 @@ def concept_page(page_id: str, title: str) -> WikiPage:
 
 
 class AnswerQueryUseCaseTest(unittest.TestCase):
+    def test_retrieve_evidence_skips_answer_generation(self) -> None:
+        answer_generator = RecordingAnswerGenerator()
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(
+                [source_page("source:retrieval", "Retrieval Source")],
+                [],
+            ),
+            embedding_search=ScoreSearch({"Retrieval Source": 1.0}),
+            text_search=EmptyTextSearch(),
+            answer_generator=answer_generator,
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:retrieval.md": (
+                        "---\ndocument_id: doc_retrieval\n---\n\n"
+                        "검색된 원문 근거입니다. [B0001]"
+                    )
+                }
+            ),
+        )
+
+        result = use_case.retrieve_evidence(
+            "원문 근거는?",
+            workspace_id="ws_test",
+            user_id="user_test",
+        )
+
+        self.assertIsNone(answer_generator.last_context)
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0001"])
+        self.assertEqual(result.retrieval_summary.used_source_count, 1)
+
     def test_bounds_repository_candidates_before_scoring(self) -> None:
         pages = [
             source_page("source:bounded", "Bounded Source"),

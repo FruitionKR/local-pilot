@@ -107,7 +107,11 @@ def persist_wiki_outputs(
     )
     _persist_page_links(conn, links, source_page_id, concept_id_by_slug, workspace_id)
     delete_source_related_links(conn, user_id, workspace_id)
-    _persist_meaning_cluster_artifacts(conn, document_id, manifest)
+    updated_concept_pages = _persist_meaning_cluster_artifacts(
+        conn,
+        document_id,
+        manifest,
+    ) or []
     # operation artifact(운영 로그용 markdown/JSON)는 DB 반영이 모두 끝난 뒤 마지막에 써서,
     # 이후 단계 실패로 트랜잭션이 롤백돼도 object storage에 orphan 파일이 남지 않게 한다.
     if operation_id:
@@ -119,7 +123,15 @@ def persist_wiki_outputs(
             concept_id_by_slug,
             prepared_concept_updates,
         )
-    return [source_page_id, *concept_page_ids]
+    return list(
+        dict.fromkeys(
+            [
+                source_page_id,
+                *concept_page_ids,
+                *(str(page["page_id"]) for page in updated_concept_pages),
+            ]
+        )
+    )
 
 
 def _persist_ingest_operation_artifacts(
@@ -445,10 +457,12 @@ def _persist_meaning_cluster_artifacts(
     if isinstance(log_path, str) and isinstance(log_markdown, str):
         existing_log = read_optional_text_object(log_path)
         separator = "\n" if existing_log and not existing_log.endswith("\n") else ""
-        log_uri = write_text_object(
-            log_path,
-            f"{existing_log}{separator}{log_markdown}",
+        merged_log = (
+            existing_log
+            if log_markdown in existing_log
+            else f"{existing_log}{separator}{log_markdown}"
         )
+        log_uri = write_text_object(log_path, merged_log)
         artifact["log_uri"] = log_uri
     return updated_concept_pages
 

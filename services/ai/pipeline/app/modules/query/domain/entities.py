@@ -206,3 +206,10 @@ class QueryAnswer:
     retrieval_summary: RetrievalSummary
     updated_conversation_summary: str | None = None
     web_search: WebSearchTelemetry = field(default_factory=WebSearchTelemetry)
+    evaluation: QueryEvaluation | None = None
+
+
+@dataclass(frozen=True)
+class QueryRetrieval:
+    evidence_snippets: list[EvidenceSnippet]
+    retrieval_summary: RetrievalSummary

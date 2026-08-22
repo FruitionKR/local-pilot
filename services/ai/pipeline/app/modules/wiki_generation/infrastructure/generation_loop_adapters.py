@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
+from app.core.llm_env import int_env
 from app.modules.wiki_generation.application.evaluate_generation import (
     evaluate_generation,
 )
@@ -31,6 +34,7 @@ class SemanticGenerationAdapter:
         events: PipelineEventPort,
         blocks: list[Any] | None = None,
         patch_system_prompt: str = "",
+        max_workers: int | None = None,
     ) -> None:
         self.completion = completion
         self.packets = packets
@@ -38,6 +42,13 @@ class SemanticGenerationAdapter:
         self.events = events
         self.blocks = blocks or []
         self.patch_system_prompt = patch_system_prompt
+        self.max_workers = (
+            max_workers
+            if max_workers is not None
+            else int_env("WIKI_SEMANTIC_MAX_WORKERS", 4)
+        )
+        if self.max_workers < 1:
+            raise ValueError("WIKI_SEMANTIC_MAX_WORKERS must be at least 1")
 
     def generate(
         self,
@@ -63,11 +74,29 @@ class SemanticGenerationAdapter:
             and target_block_ids is not None
             and any(target_blocks.intersection(packet.block_ids) for packet in self.packets)
         )
-        notes = []
+        work: list[tuple[Any, dict[str, Any] | None]] = []
+        packets_to_extract = []
         for packet in self.packets:
             previous_note = previous_by_chunk.get(packet.chunk_id)
             should_regenerate = not targeted_retry or bool(target_blocks.intersection(packet.block_ids))
             if not should_regenerate and previous_note is not None:
+                work.append((packet, previous_note))
+                continue
+            work.append((packet, None))
+            packets_to_extract.append(packet)
+
+        def extract(packet: Any) -> tuple[dict[str, Any], float]:
+            started_at = perf_counter()
+            return extractor.extract(packet), perf_counter() - started_at
+
+        with ThreadPoolExecutor(
+            max_workers=min(self.max_workers, len(packets_to_extract) or 1)
+        ) as executor:
+            extracted = iter(executor.map(extract, packets_to_extract))
+
+        notes = []
+        for packet, previous_note in work:
+            if previous_note is not None:
                 notes.append(previous_note)
                 self.events.emit(
                     "3. 의미 추출 재사용",
@@ -75,7 +104,7 @@ class SemanticGenerationAdapter:
                     {"시도": attempt, "패킷": packet.chunk_id},
                 )
                 continue
-            note = extractor.extract(packet)
+            note, elapsed_seconds = next(extracted)
             notes.append(note)
             if self.raw_dir is not None:
                 suffix = "" if attempt == 1 else f".attempt{attempt}"
@@ -90,6 +119,7 @@ class SemanticGenerationAdapter:
                     "core concept 수": len(note.get("core_concepts") or note.get("concept_candidates", [])),
                     "section/mention/category 수": f"{len(note.get('section_candidates', []))}/{len(note.get('mentions', []))}/{len(note.get('categories', []))}",
                     "근거 주장 수": len(note.get("evidence_claims", [])),
+                    "소요 시간(초)": f"{elapsed_seconds:.2f}",
                 },
             )
         return notes

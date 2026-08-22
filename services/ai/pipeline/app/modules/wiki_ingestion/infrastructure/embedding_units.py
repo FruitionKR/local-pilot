@@ -76,11 +76,6 @@ def section_weight(section: str) -> float:
     return weights.get(unit_type(section), 1.0)
 
 
-def unit_representation(unit_type: str, text: str) -> str:
-    normalized = re.sub(r"\s+", " ", text).strip().lower()
-    return f"{unit_type}\n{normalized}"
-
-
 def source_block_ids(text: str) -> list[str]:
     block_ids = []
     ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"

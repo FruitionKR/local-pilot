@@ -52,12 +52,19 @@ def test_finish_pipeline_run_writes_only_ai_owned_tables() -> None:
     with (
         patch.object(database, "connect", return_value=connection),
         patch.object(database, "concept_write_lock", return_value=nullcontext()),
-        patch.object(database, "_persist_wiki_outputs") as persist_outputs,
+        patch.object(
+            database,
+            "_persist_wiki_outputs",
+            return_value=["page-1"],
+        ) as persist_outputs,
+        patch.object(database, "_stored_manifest", side_effect=lambda manifest: manifest),
         patch.object(database, "_mark_derived_state_ingested") as mark_derived,
     ):
-        database.finish_pipeline_run("run-1", {"manifest": "value"}, "sha256:expected")
+        manifest = {"post_ingest": {"cluster_normalized": {}}}
+        database.finish_pipeline_run("run-1", manifest, "sha256:expected")
 
     persist_outputs.assert_called_once()
+    assert manifest["post_ingest"]["page_ids"] == ["page-1"]
     mark_derived.assert_called_once_with("doc-1", "sha256:expected")
     sql = " ".join(call.args[0] for call in connection.execute.call_args_list)
     assert "documents" not in sql
