@@ -31,30 +31,34 @@ class QueryAnswerAssembler:
         evidence_snippets: list[EvidenceSnippet],
     ) -> tuple[GeneratedAnswer, list[EvidenceSnippet]]:
         snippets_by_rank = {snippet.rank: snippet for snippet in evidence_snippets}
-        old_to_new_rank: dict[int, int] = {}
+        key_to_new_rank: dict[tuple[str, tuple[str, ...]], int] = {}
+        snippets_by_new_rank: dict[int, EvidenceSnippet] = {}
 
         def next_rank(old_rank: int) -> int:
-            if old_rank not in old_to_new_rank:
-                old_to_new_rank[old_rank] = len(old_to_new_rank) + 1
-            return old_to_new_rank[old_rank]
+            snippet = snippets_by_rank[old_rank]
+            key = (snippet.source_document_id, tuple(sorted(snippet.source_block_ids)))
+            if key not in key_to_new_rank:
+                new_rank = len(key_to_new_rank) + 1
+                key_to_new_rank[key] = new_rank
+                snippets_by_new_rank[new_rank] = replace(snippet, rank=new_rank)
+            return key_to_new_rank[key]
 
         def replace_marker(match: re.Match[str]) -> str:
             ranks = [int(value) for value in re.findall(r"\d+", match.group(1))]
-            remapped = [
-                str(next_rank(rank))
-                for rank in ranks
-                if rank in snippets_by_rank
-            ]
+            remapped = list(
+                dict.fromkeys(
+                    str(next_rank(rank))
+                    for rank in ranks
+                    if rank in snippets_by_rank
+                )
+            )
             if not remapped:
                 return ""
             return f"[{', '.join(remapped)}]"
 
         content = re.sub(r"\[((?:\d+)(?:\s*,\s*\d+)*)\]", replace_marker, answer.content)
-        used_snippets = [
-            replace(snippets_by_rank[old_rank], rank=new_rank)
-            for old_rank, new_rank in sorted(old_to_new_rank.items(), key=lambda item: item[1])
-            if old_rank in snippets_by_rank
-        ]
+        content = re.sub(r"(\[\d+(?:,\s*\d+)*\])(?:\1)+", r"\1", content)
+        used_snippets = list(snippets_by_new_rank.values())
         if not used_snippets:
             return GeneratedAnswer(content=content), []
         return GeneratedAnswer(content=content), used_snippets
