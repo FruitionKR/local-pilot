@@ -25,7 +25,7 @@ class ChatWikiMarkdownSerializerTest {
     }
 
     @Test
-    @DisplayName("문답을 Q/A 단위로 직렬화하고 일반 Ingest가 보존할 provenance를 본문에 담는다")
+    @DisplayName("문답을 Q/A 단위로 직렬화하고 provenance는 본문이 아닌 block에만 담는다")
     void serializesPairInContractFormat() {
         ChatSession session = new ChatSession("session_1", "ws_1", "user_1", "제목");
         List<ChatMessage> messages = List.of(
@@ -36,11 +36,14 @@ class ChatWikiMarkdownSerializerTest {
         ChatWikiMarkdownSerializer.ChatWikiSource source = serializer.serialize(session, messages);
 
         assertThat(source.markdown()).startsWith("# Chat Export");
-        assertThat(source.markdown()).contains("[session_1:pair_1]Q : LangSmith 연결은 어디서 봐?");
+        assertThat(source.markdown()).contains("Q : LangSmith 연결은 어디서 봐?");
         assertThat(source.markdown()).contains("A : traces 화면에서 확인합니다.");
+        assertThat(source.markdown()).doesNotContain("session_1").doesNotContain("pair_1");
+        // 렌더링에서 Q/A가 두 줄로 보이도록 질문 줄 끝에 hard break(공백 2칸)를 남긴다.
+        assertThat(source.markdown()).contains("어디서 봐?  \nA : traces");
         assertThat(source.blocks()).singleElement().satisfies(block -> {
             assertThat(block.blockId()).isEqualTo("session_1:pair_1");
-            assertThat(block.text()).isEqualTo("Q : LangSmith 연결은 어디서 봐?\nA : traces 화면에서 확인합니다.");
+            assertThat(block.text()).isEqualTo("Q : LangSmith 연결은 어디서 봐?  \nA : traces 화면에서 확인합니다.");
         });
     }
 
@@ -60,7 +63,8 @@ class ChatWikiMarkdownSerializerTest {
         assertThat(source.blocks()).extracting(ChatWikiMarkdownSerializer.ChatSourceBlock::blockId)
                 .containsExactly("session_1:pair_1", "session_1:pair_2");
         // 문답 사이 빈 줄 구분
-        assertThat(source.markdown()).contains("A : 답변1\n\n[session_1:pair_2]Q : 질문2");
+        assertThat(source.markdown()).contains("A : 답변1\n\nQ : 질문2");
+        assertThat(source.markdown()).doesNotContain("session_1");
     }
 
     @Test

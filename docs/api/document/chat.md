@@ -550,8 +550,10 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 
 세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다.
 
-저장되는 Markdown 본문은 문답마다 `[session_id:pair_id]Q :` prefix를 포함한다. 일반 문서 Ingest가 block ID를
-새로 부여해도 후처리가 이 prefix에서 원본 문답 provenance를 복원한다.
+저장되는 Markdown 본문에는 `session_id`·`pair_id`가 들어가지 않아 사용자에게 그대로 보여줄 수 있다. 원본을
+특정하는 provenance는 export 시점에 `documents.pipeline_input_blocks`(문답 단위 블록, `block_id =
+session_id:pair_id`)로 저장하고, 완료 후처리가 이 값을 읽는다. 일반 문서 Ingest는 block ID를 새로 부여하므로
+파이프라인이 돌려준 값은 provenance로 쓰지 않는다.
 
 문서 이름은 채팅에서 왔음을 알리는 `[채팅] ` 접두사로 시작하고, 뒤쪽이 두 단계로 정해진다. 처리 중에는
 발췌한 첫 질문을 20자로 줄인 임시 이름을 쓰고, 파이프라인이 끝나면 만들어진 Wiki 페이지 제목으로 확정한다. 페이지 제목이 비었거나 폴백값(`Chat Export`)이면 임시 이름을
