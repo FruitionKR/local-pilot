@@ -54,6 +54,21 @@ class QueryAnswerAssemblerTest(unittest.TestCase):
         self.assertNotIn("[99]", answer.content)
         self.assertEqual([snippet.source_document_id for snippet in returned], ["doc-b", "doc-a"])
 
+    def test_evidence_with_same_provenance_is_merged(self) -> None:
+        evidence_snippets = [
+            EvidenceSnippet(rank=1, source_document_id="doc-a", source_block_ids=["B0003"], text="첫 문장"),
+            EvidenceSnippet(rank=2, source_document_id="doc-a", source_block_ids=["B0003"], text="둘째 문장"),
+        ]
+        assembler = QueryAnswerAssembler(FixedAnswerGenerator("첫 답변 [1][2], 보조 답변 [1, 2]"))
+
+        answer, returned = assembler.generate_supported_answer(query_context(evidence_snippets))
+
+        self.assertEqual(answer.content, "첫 답변 [1], 보조 답변 [1]")
+        self.assertEqual(
+            returned,
+            [EvidenceSnippet(rank=1, source_document_id="doc-a", source_block_ids=["B0003"], text="첫 문장")],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
