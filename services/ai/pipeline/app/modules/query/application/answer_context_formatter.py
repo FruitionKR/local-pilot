@@ -86,6 +86,7 @@ class AnswerContextFormatter:
             "- Do not attach broad citation lists to a sentence.",
             "- Do not write uncited factual sentences.",
             "- Do not expose evidence lists, scores, path ids, page ids, or page URLs in the answer body.",
+            "- Never output source block references such as [doc_id:B0001]. Use only rank markers like [1].",
             "- If the evidence directly answers the question, answer naturally from that evidence.",
             "- Do not create examples, analogies, or fictional cases that are not present in the context.",
             "- If an example is needed, use only entities or cases that appear in the evidence.",
