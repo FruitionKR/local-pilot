@@ -109,6 +109,13 @@ export function useTreeSelection(projects: Project[], nodes: GraphNode[]) {
     setSelection(EMPTY_SELECTION);
   }
 
+  // 그래프 빈 영역 클릭용. 문서·미리보기 선택은 유지하고 그래프 포커스만 지운다.
+  function clearGraphFocus() {
+    setSelection((current) =>
+      current.focusedGraphNodeId === null ? current : { ...current, focusedGraphNodeId: null }
+    );
+  }
+
   return {
     focusedGraphNodeId,
     selectedTreeItemId,
@@ -119,6 +126,7 @@ export function useTreeSelection(projects: Project[], nodes: GraphNode[]) {
     openGraphNodePreview,
     openWikiPagePreview,
     openSourceBlockPreview,
-    clearTreeGraphSelection
+    clearTreeGraphSelection,
+    clearGraphFocus
   };
 }
