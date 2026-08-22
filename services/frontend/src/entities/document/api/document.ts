@@ -1,4 +1,5 @@
 import { apiFetch, throwIfNotOk, parseJsonOrThrow, getWorkspaceId, workspacePath, ERROR_MESSAGES } from "@/shared/api/client";
+import { publishConvertStarted } from "@/entities/document/model/convertEvents";
 import type { DocumentItemResponse, DocumentRole, DocumentUploadResponse } from "@/entities/document/model/document";
 
 export async function uploadDocumentFile(file: File) {
@@ -38,7 +39,10 @@ export async function convertDocumentToMarkdown(documentId: string) {
       headers: { "Idempotency-Key": crypto.randomUUID() }
     }
   );
-  return parseJsonOrThrow<DocumentItemResponse>(response, ERROR_MESSAGES.documentConvertFailed);
+  const created = await parseJsonOrThrow<DocumentItemResponse>(response, ERROR_MESSAGES.documentConvertFailed);
+  // 트리거 경로와 무관하게 변환 완료 후 자동 열기가 동작하도록 시작 이벤트를 발행한다.
+  publishConvertStarted(created.id);
+  return created;
 }
 
 /**
