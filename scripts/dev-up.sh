@@ -9,6 +9,7 @@ ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
 COMPOSE_FILE="$INFRA_DIR/compose.infra.yml"
 PIPELINE_COMPOSE_FILE="$INFRA_DIR/compose.ai.yml"
+CONVERTER_COMPOSE_FILE="$INFRA_DIR/compose.converter.yml"
 LOGS_DIR="$ROOT_DIR/logs"
 RUNTIME_DIR="$ROOT_DIR/.runtime"
 
@@ -143,9 +144,12 @@ wait_for_url() {
   local label="$2"
   local attempts="${3:-60}"
   local pid="${4:-}"
+  # attempts는 사실상 초 단위 상한이다. curl이 응답 없는 서버에 매달리지 않도록
+  # 요청별 --max-time을 두고, 전체는 wall-clock deadline으로 제한한다.
+  local deadline=$((SECONDS + attempts))
 
-  for _ in $(seq 1 "$attempts"); do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+  while (( SECONDS < deadline )); do
+    if curl -fsS --max-time 5 "$url" >/dev/null 2>&1; then
       log "$label 응답 확인: $url"
       return 0
     fi
@@ -195,6 +199,14 @@ start_infra() {
   log "PostgreSQL과 MinIO를 시작합니다."
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
   wait_for_postgres
+}
+
+start_converter() {
+  # PDF→Markdown 변환기. document-svc가 convert 요청 시 127.0.0.1:8010으로 호출한다.
+  log "PDF 변환기(markitdown)를 시작합니다."
+  # 코드 변경이 이미지에 반영되도록 항상 build를 거친다(변경 없으면 cache로 빠르게 끝난다).
+  docker compose --env-file "$ENV_FILE" -f "$CONVERTER_COMPOSE_FILE" up -d --build
+  wait_for_url "http://localhost:8010/health" "PDF 변환기" 120
 }
 
 start_pipeline() {
@@ -257,7 +269,7 @@ ensure_ports_available() {
   local port
 
   # 8082·8083은 backend actuator 전용 관리 포트다.
-  for port in 3000 8000 8080 8081 8082 8083; do
+  for port in 3000 8000 8010 8080 8081 8082 8083; do
     if runtime_port_in_use "$port"; then
       fail "다른 실행 환경이 이미 포트를 사용 중입니다: $port. 해당 환경을 먼저 종료하세요."
     fi
@@ -284,6 +296,7 @@ main() {
   runtime_register "dev" "dev-up.sh" || fail "통합 개발 환경 supervisor 상태를 등록하지 못했습니다."
 
   start_infra
+  start_converter
   start_backend "$java21_home"
   start_pipeline
   start_frontend
@@ -298,13 +311,14 @@ main() {
   - Document-svc: http://localhost:8080
   - Access-svc:   http://localhost:8081
   - Pipeline:     http://localhost:8000
+  - Converter:    http://localhost:8010 (PDF→Markdown)
   - Swagger:      http://localhost:8080/swagger-ui.html (document-svc)
                   http://localhost:8081/swagger-ui.html (access-svc)
                   통합 열람은 ./scripts/swagger-up.sh 후 http://localhost:8090
   - MinIO:        http://localhost:9001
   - 로그:         logs/ (workers.log, document-svc.log, access-svc.log, frontend.log)
 
-[dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO/pipeline 컨테이너는 유지됩니다.
+[dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO/pipeline/converter 컨테이너는 유지됩니다.
 INFO
 
   wait "$DOCUMENT_PID" "$ACCESS_PID" "$FRONTEND_PID"
