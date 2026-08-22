@@ -154,6 +154,34 @@
   color: var(--muted);
 }
 
+/* 세션 목록 위에 상시 노출되는 새 채팅 버튼 */
+.chat-session-new {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0 6px;
+  color: var(--ink);
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-session-new:hover {
+  background: var(--soft);
+}
+
+.chat-session-new:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chat-session-new svg {
+  flex: 0 0 auto;
+}
+
 .chat-session-list {
   flex: 1;
   min-height: 0;
@@ -212,6 +240,13 @@
 .chat-session-logo {
   width: 14px;
   height: 14px;
+  flex: 0 0 auto;
+}
+
+/* 비활성 세션 행의 채팅 말풍선 아이콘 */
+.chat-session-icon {
+  width: 12px;
+  height: 12px;
   flex: 0 0 auto;
 }
 
@@ -323,6 +358,24 @@
   padding: 16px 24px 0;
   overflow-x: hidden;
   overflow-y: auto;
+  /* base.css의 전역 셀렉터는 CSS 모듈 해시 클래스와 매칭되지 않아
+     기본(밝은) 스크롤바가 노출되므로 모듈 안에서 직접 지정한다. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.agent-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.agent-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agent-body::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 2px solid var(--panel);
+  border-radius: 999px;
 }
 
 /* --- conversation --- */
@@ -496,7 +549,8 @@
 .chat-selection-cancel,
 .chat-selection-confirm {
   width: 45px;
-  padding: 6px 12px;
+  padding: 6px 0;
+  white-space: nowrap;
 }
 
 .chat-selection-cancel {
@@ -527,11 +581,6 @@
   margin-top: 0;
 }
 
-.agent-scroll-reserve {
-  height: calc(100% - 96px);
-  min-height: 240px;
-  pointer-events: none;
-}
 
 .agent-stage {
   animation: agent-stage-rise 560ms cubic-bezier(0.2, 0.72, 0.16, 1) both;

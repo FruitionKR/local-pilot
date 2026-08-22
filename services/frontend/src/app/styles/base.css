@@ -73,24 +73,20 @@ html[data-reduce-motion="true"] *::after {
   height: 100%;
 }
 
-/* 패널 공통 스크롤바 */
-.agent-body,
+/* 패널 공통 스크롤바 (agent-body는 CSS 모듈이라 AgentChat.module.css에서 직접 지정) */
 .sidebar-content,
 .source-preview-content {
   scrollbar-color: var(--line) transparent;
 }
 
-.agent-body::-webkit-scrollbar,
 .sidebar-content::-webkit-scrollbar {
   width: 8px;
 }
 
-.agent-body::-webkit-scrollbar-track,
 .sidebar-content::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.agent-body::-webkit-scrollbar-thumb,
 .sidebar-content::-webkit-scrollbar-thumb {
   background: var(--line);
   border: 2px solid var(--panel);
