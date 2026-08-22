@@ -82,6 +82,16 @@ class QueryAnswerAssemblerTest(unittest.TestCase):
         self.assertNotIn("  ", answer.content)
         self.assertEqual("앞 문장. 뒤 문장.", answer.content)
 
+    def test_answer_without_block_refs_keeps_surrounding_whitespace(self) -> None:
+        """참조가 없는 답변은 손대지 않는다. 들여쓰기 코드블록이 앞에 오면 strip이 깨뜨린다."""
+        assembler = QueryAnswerAssembler(FixedAnswerGenerator(""))
+
+        answer, _ = assembler.renumber_used_evidence(
+            GeneratedAnswer(content="    def foo():\n        pass\n"), []
+        )
+
+        self.assertEqual("    def foo():\n        pass\n", answer.content)
+
     def test_returned_evidence_ranks_match_citations(self) -> None:
         evidence_snippets = [
             EvidenceSnippet(rank=4, source_document_id="doc-a", source_block_ids=["B0004"], text="첫 근거"),
