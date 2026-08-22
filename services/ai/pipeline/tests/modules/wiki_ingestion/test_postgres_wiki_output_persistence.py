@@ -208,11 +208,12 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
     monkeypatch.setattr(
         persistence,
         "_persist_meaning_cluster_artifacts",
-        lambda *_args: calls.append("meaning_clusters"),
+        lambda *_args: calls.append("meaning_clusters")
+        or [{"page_id": "updated-concept-page"}],
     )
     page_ids = persistence.persist_wiki_outputs(conn, "doc-1", manifest)  # type: ignore[arg-type]
 
-    assert page_ids == ["source-page-1"]
+    assert page_ids == ["source-page-1", "updated-concept-page"]
     assert calls == [
         "source_blocks",
         "resolve_source",
@@ -778,6 +779,41 @@ def test_existing_concept_update_writes_canonical_current_markdown(
     assert all("ops/op-old.md" not in key for key, _text in writes)
     assert changes[0]["page_id"] == "existing-page-1"
     assert "새 근거" in changes[0]["markdown"]
+
+
+def test_meaning_cluster_log_retry_does_not_append_duplicate(monkeypatch) -> None:
+    log_markdown = "## 2026-08-21 ingest: doc-1\n"
+    writes = []
+    monkeypatch.setattr(
+        persistence,
+        "_apply_concept_update_decisions",
+        lambda *_args: [],
+    )
+    monkeypatch.setattr(
+        persistence,
+        "read_optional_text_object",
+        lambda _path: log_markdown,
+    )
+    monkeypatch.setattr(
+        persistence,
+        "write_text_object",
+        lambda path, text: writes.append((path, text)) or path,
+    )
+
+    persistence._persist_meaning_cluster_artifacts(
+        object(),  # type: ignore[arg-type]
+        "doc-1",
+        {
+            "meaning_clusters": {
+                "log_path": "wiki/user-1/ws/logs/2026-08-21.md",
+                "log_markdown": log_markdown,
+            },
+            "user_id": "user-1",
+            "workspace_id": "ws",
+        },
+    )
+
+    assert writes == [("wiki/user-1/ws/logs/2026-08-21.md", log_markdown)]
 
 
 def test_persist_wiki_outputs_reads_normalized_and_links_artifacts(

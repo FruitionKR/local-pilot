@@ -3,15 +3,15 @@
 ## 1. 문서 목적
 
 이 문서는 ingest, reingest와 lint가 Wiki를 변경할 때 작업별 산출물을 어떻게
-남기고, 특정 작업을 제외해야 할 때 Concept 본문과 간선을 어떻게 다시 조립하는지
-설명한다.
+남기고, Backend의 복구 계획에 따라 Concept 본문과 간선을 어떻게 다시 조립하는지
+설명한다. 현재 결과 전달은 HTTP callback이 아니라 Kafka 작업 이벤트다.
 
 다음 질문에 답하는 것이 목적이다.
 
 - Source snapshot과 Concept 기여 JSON은 왜 다른가?
 - 현재 Wiki를 변경하기 전에 무엇을 operation artifact로 저장하는가?
 - reingest에서 이번 작업의 기여가 있는 Concept을 어떻게 구분하는가?
-- callback 실패와 422, 409 응답을 어떻게 처리하는가?
+- Kafka 결과 이벤트 중복과 실패를 어떻게 처리하는가?
 - restore가 어떤 기여 JSON을 읽어 Concept과 간선을 재조립하는가?
 - lint는 어떤 근거로 고아 간선을 제거하는가?
 - llmPipeline과 Backend가 각각 어떤 상태를 소유하는가?
@@ -24,51 +24,62 @@
 - Concept 재조립: `llmPipeline/app/modules/wiki_ingestion/infrastructure/concept_contribution_rebuild.py`
 - 복구 실행: `llmPipeline/app/modules/wiki_ingestion/application/restore_wiki_pages.py`
 - 고아 간선 판정: `llmPipeline/app/modules/wiki_ingestion/domain/orphan_link_lint.py`
-- callback: `llmPipeline/app/modules/wiki_ingestion/infrastructure/pipeline_result_callback.py`
+- Kafka worker: `llmPipeline/app/workers/ingest_worker.py`, `llmPipeline/app/workers/task_worker.py`
+- Backend 결과 반영: `services/backend/document-svc/.../AiTaskResultApplier.java`
 
 ## 2. 전체 생명주기
 
 ```text
 Backend
-  └─ operation_id 생성, processing 저장
+  ├─ operation_id·run_id 생성, operation을 processing으로 저장
+  └─ Kafka command 발행 (`ai.ingest.command` 또는 maintenance command topic)
        │
        ▼
-llmPipeline ingest 또는 lint
-  ├─ 변경할 page id와 최종 본문 계산
-  ├─ operation별 Markdown·기여 JSON을 불변 key에 저장
-  ├─ 현재 Wiki object와 PostgreSQL 변경
-  └─ changed_pages 반환 또는 callback
+llmPipeline worker
+  ├─ ingest/chat: 문서·inline 입력 처리
+  ├─ lint: dry-run 또는 write 실행
+  └─ restore: Backend manifest 검증 후 Source 복사·Concept 재조립
        │
-       ▼
+       ├─ ingest/chat
+       │    ├─ 변경된 Wiki와 operation artifact를 저장
+       │    └─ `ai.task.event`에 결과 발행
+       ├─ lint
+       │    ├─ DB/object 변경과 lint artifact를 저장
+       │    └─ `ai.task.event`에 결과 발행
+       └─ restore
+            ├─ Source snapshot 복사·Concept 재조립·link 변화 계산
+            └─ `ai.task.event`에 결과 발행
+
 Backend
-  ├─ page revision과 operation 순서 확정
-  ├─ wiki_page_contributions의 active 상태 관리
-  └─ 복구 시 page별 keep_contributions 계산
+  ├─ event receipt를 `event_id`로 멱등 처리
+  ├─ ingest/lint 결과의 page revision·operation 변경 이력 반영
+  ├─ `wiki_page_contributions`의 ingest active 상태 관리
+  └─ 복구 시 page별 restore/rebuild/delete 계획 계산
        │
        ▼
-llmPipeline operation 취소
-  ├─ ingest 취소이면 선택된 이전 Source snapshot 복사
-  ├─ 남길 ingest·lint 기여 JSON을 순서대로 로드
-  ├─ Concept Markdown과 지원 간선 재조립
-  └─ lint 간선 변경과 restore operation 결과 반환
+복구 command → llmPipeline restore → 결과 event → Backend 적용
 ```
 
 현재 Wiki는 조회와 서비스에 사용하는 최신 상태다. operation artifact는 특정
-작업을 제외하거나 다시 적용할 때 사용하는 불변 재생 기록이다.
+작업을 제외하거나 다시 조립할 때 사용하는 불변 재생 기록이다. Backend의
+`wiki_page_versions`는 revision을 줄이지 않고 복구도 새 revision을 append하며,
+`wiki_page_contributions`는 ingest 기여 row를 지우지 않고 `active=false`로 남긴다.
 
 ## 2A. 외부 API 입출력 계약
 
-operation 흐름의 외부 입력은 HTTP request이고, 출력은 즉시 HTTP response와
-비동기 result callback으로 나뉜다.
+operation 흐름은 외부 HTTP 요청, Backend가 발행한 Kafka command, llmPipeline이
+발행하는 `ai.task.event` 결과로 나뉜다. FastAPI HTTP 응답은 run 등록/실행 결과이고,
+Backend가 operation을 확정하는 입력은 event의 `payload`다.
+FastAPI 내부 route는 `X-Internal-Token`을 요구하며, token 미설정은 `503`, 불일치는
+`401`이다. Pydantic 입력 오류는 token 검증 뒤 `422`로 반환된다.
 
-| 흐름 | Backend → llmPipeline 입력 | llmPipeline의 즉시 출력 | 후속 출력 |
+| 흐름 | 입력 경로 | 즉시 출력 | 후속 결과 |
 | --- | --- | --- | --- |
-| ingest | `POST /pipeline/runs` | `PipelineRunOut` | ingest result callback |
-| reingest | `POST /pipeline/reingest-runs` | `PipelineRunOut` | ingest result callback |
-| lint | `POST /wiki/maintenance/lint` | `WikiLintOut` | 별도 callback 없음 |
-| ingest 취소 | `POST /wiki/ingest-restore-runs` | ingest 복구 결과 | 같은 결과 callback |
-| lint 취소 | `POST /wiki/lint-restore-runs` | lint 복구 결과 | 같은 결과 callback |
-| callback 재전송 | `POST /pipeline/runs/{run_id}/result-callback/retry` | 저장된 result payload | Backend callback 재전송 |
+| ingest | `POST /pipeline/runs` 또는 `ai.ingest.command` | `PipelineRunOut` 또는 worker 결과 | `ai.task.event`의 `kind=ingest` |
+| reingest | `POST /pipeline/reingest-runs` (HTTP 전용) | `PipelineRunOut` | Kafka command 및 `ai.task.event` 미지원; `GET /pipeline/runs/{run_id}`로 확인 |
+| chat Wiki | `POST /chat-wiki/runs` 또는 ingest command | `PipelineRunOut` | `ai.task.event`의 `kind=ingest` |
+| lint | maintenance command → worker, 또는 `POST /wiki/maintenance/lint` | `WikiLintOut` | worker 경로는 `kind=lint` event |
+| Wiki 복구 | restore command | worker 결과 | ingest는 `kind=restore_ingest`, lint는 `kind=restore_lint`인 `ai.task.event` |
 
 ### 2A.1 Ingest 입력
 
@@ -85,7 +96,8 @@ Content-Type: application/json
 {
   "document_id": "doc_A",
   "operation_id": "op_ingest_A",
-  "result_callback_url": "http://backend/api/ai-operations/op_ingest_A/result",
+  "provider": "openai",
+  "model": "gpt-5-nano",
   "input_name": "design.md",
   "wait": false,
   "source_page_mode": "auto",
@@ -93,25 +105,28 @@ Content-Type: application/json
 }
 ```
 
-operation 로그와 callback을 사용할 때 `operation_id`와
-`result_callback_url`은 반드시 함께 넣는다. 둘 중 하나만 보내면 request schema
-검증에서 422가 반환된다. 두 필드를 모두 생략하면 기존 비-operation ingest로
-실행되며 작업별 artifact와 result callback을 만들지 않는다.
+`operation_id`는 작업별 artifact를 만들 때 사용한다. `result_callback_url`은 현재
+request schema에 없으며 HTTP callback도 생성하지 않는다. Backend Kafka command는
+`run_id`, `document_id`, `user_id`, `workspace_id`, `operation_id`, `provider`, `model`을 요구하고
+`wait=true`로 기존 HTTP 실행 경로를 재사용한다.
+직접 HTTP `PipelineRunIn`에서는 `operation_id`가 선택이지만, Kafka 결과를 Backend에
+적용하는 ingest 경로에서는 생략할 수 없다.
 
 주요 입력 필드:
 
 | 필드 | 필수·기본값 | 결정 주체 | 의미와 빈 값 처리 |
 | --- | --- | --- | --- |
 | `document_id` | 필수 | Backend | 처리할 document id다. 이 row가 없거나 비활성이면 실행하지 않는다. |
-| `operation_id` | 선택 | Backend | 작업별 object key와 callback 멱등 식별자다. `null`이면 operation artifact를 만들지 않는다. |
-| `result_callback_url` | 선택 | Backend | 최종 성공·실패를 받을 내부 URL이다. `operation_id`와 반드시 함께 존재하거나 함께 `null`이어야 한다. |
+| `operation_id` | 선택 | Backend | 작업별 object key와 결과 payload의 operation 식별자다. 없으면 operation artifact를 만들지 않는다. |
 | `input_name` | 선택, 기본 `null` | Backend | log와 실행 입력에 표시할 파일명이다. 비어 있으면 document filename 또는 `inline.md`를 사용한다. |
 | `wait` | 선택, 기본 `false` | Backend | `false`는 background 등록 후 즉시 반환하고 `true`는 완료까지 HTTP 요청을 유지한다. |
 | `source_page_mode` | 선택, 기본 `auto` | Backend | `auto`, `skeleton`, `section-polish` 중 Source Page 생성 전략이다. |
 | `concept_page_mode` | 선택, 기본 `auto` | Backend | `auto`, `api`, `full-llm`, `skeleton`, `section-polish` 중 Concept Page 생성 전략이다. |
 | `user_id` | 선택, 기본 `null` | 호환 입력 | request 값은 저장 scope의 권한 근거가 아니다. 실제 값은 document row에서 다시 읽는다. |
 | `workspace_id` | 선택, 기본 `null` | 호환 입력 | request 값은 저장 scope의 권한 근거가 아니다. 실제 값은 document row에서 다시 읽는다. |
-| provider/model 계열 | 선택 | 배포 설정 또는 Backend | LLM provider와 model override다. 비어 있으면 환경 기본값을 사용한다. 세부 필드는 `ingest.md`를 따른다. |
+| `provider` | 필수 | Backend/배포 설정 | `openai`, `gemini`, `claude` 중 하나다. |
+| `model` | 필수 | Backend/배포 설정 | provider에 허용된 model이어야 한다. |
+| `log_callback_url` | 선택 | Backend | pipeline log 이벤트를 받을 URL이다. 결과 callback URL이 아니다. |
 
 일반 ingest의 Markdown 본문은 request body로 받지 않는다. `document_id`로 조회한
 document의 object storage URI에서 읽는다.
@@ -130,7 +145,8 @@ Content-Type: application/json
 {
   "document_id": "doc_A",
   "operation_id": "op_reingest_B",
-  "result_callback_url": "http://backend/api/ai-operations/op_reingest_B/result",
+  "provider": "openai",
+  "model": "gpt-5-nano",
   "input_markdown": "# 수정된 문서\n\n새 본문",
   "input_name": "design.md",
   "wait": false
@@ -164,8 +180,8 @@ reingest 추가 필드:
 }
 ```
 
-이 응답은 ingest 성공을 의미하지 않는다. 이후 성공 또는 실패는 result callback과
-`GET /pipeline/runs/{run_id}`에서 확인한다.
+이 응답은 ingest 성공을 의미하지 않는다. 이후 성공 또는 실패는
+`GET /pipeline/runs/{run_id}` 또는 worker가 발행한 `ai.task.event`에서 확인한다.
 
 `wait=true`이면 실행이 끝난 뒤 다음처럼 runtime manifest를 포함한다.
 
@@ -184,17 +200,16 @@ reingest 추가 필드:
 }
 ```
 
-`wait=true`여도 `operation_id`와 callback URL이 있으면 result callback을 별도로
-보낸다. HTTP response의 runtime manifest는 내부 관찰 정보가 포함된 실행 결과이고,
-callback의 `changed_pages`는 Backend가 revision을 등록할 operation artifact
-목록이다.
+`wait=true`여도 HTTP callback은 보내지 않는다. HTTP response의 runtime manifest는
+실행 결과이며, ingest worker가 만드는 event payload의 `changed_pages`는 Backend가
+operation artifact를 읽어 revision을 등록할 목록이다.
 
 `PipelineRunOut` 필드:
 
 | 필드 | 생성 주체 | 의미와 빈 값 처리 |
 | --- | --- | --- |
-| `run_id` | llmPipeline | 실행 등록 시 만든 UUID다. run 조회와 callback 재전송 path에 사용한다. |
-| `status` | llmPipeline | 즉시 응답은 `running`, `wait=true` 성공 응답은 `succeeded`다. background 최종 상태는 run 조회나 callback으로 확인한다. |
+| `run_id` | llmPipeline | 실행 등록 시 만든 UUID다. run 조회와 Kafka event 멱등 식별에 사용한다. |
+| `status` | llmPipeline | 즉시 응답은 `running`, 완료 응답은 `succeeded` 또는 저장된 실패 상태다. |
 | `manifest` | llmPipeline | runtime 산출물 묶음이다. `wait=false` 즉시 응답에서는 `null`이고, 동기 성공 시 객체다. |
 | `output_dir` | llmPipeline | pipeline log와 로컬 실행 artifact의 논리 디렉터리다. 요청 `out`이 없으면 run id로 생성한다. |
 | `log_path` | llmPipeline | 해당 run의 pipeline log 경로다. |
@@ -205,68 +220,61 @@ callback의 `changed_pages`는 Backend가 revision을 등록할 operation artifa
 | --- | --- |
 | `operation_id` | 이 manifest를 만든 Backend operation id다. operation 없이 실행하면 `null`일 수 있다. |
 | `source_page` | 조립된 Source Page metadata와 runtime Markdown이다. 저장 manifest에서는 본문이 제거될 수 있다. |
-| `concept_pages` | 생성·유지된 Concept Page runtime 결과다. callback 변경 목록과 동일하다고 가정하면 안 된다. |
-| `operation_artifacts` | 이번 operation에서 실제로 저장된 Source·Concept artifact 목록이다. callback의 `changed_pages` 원본이다. |
+| `concept_pages` | 생성·유지된 Concept Page runtime 결과다. 결과 event의 변경 목록과 동일하다고 가정하면 안 된다. |
+| `operation_artifacts` | 이번 operation에서 실제로 저장된 Source·Concept artifact 목록이다. ingest event의 `changed_pages` 원본이다. |
 
-### 2A.4 Ingest 결과 callback 출력
+### 2A.4 Ingest 결과 Kafka event
 
-llmPipeline은 request로 받은 `result_callback_url`에 다음 JSON을 POST한다.
-
-```http
-POST {result_callback_url}
-Content-Type: application/json; charset=utf-8
-```
-
-성공 예시:
+ingest worker는 결과를 `ai.task.event` topic에 발행한다. Backend는 `event_id`를
+`ai_task_result_receipts`에 기록해 같은 event 재전달을 한 번만 반영한다.
 
 ```json
 {
-  "operation_id": "op_ingest_A",
-  "operation_type": "ingest",
+  "event_id": "ingest:run_123:succeeded",
+  "run_id": "run_123",
+  "kind": "ingest",
   "status": "succeeded",
   "workspace_id": "ws_1",
   "user_id": "user_1",
-  "target_document_id": "doc_A",
-  "summary": "Wiki ingest를 완료했습니다.",
-  "changed_pages": [
-    {
-      "page_id": "page_source_A",
-      "page_type": "source",
-      "markdown_key": "wiki/ws_1/pages/page_source_A/ops/op_ingest_A.md",
-      "content_hash": "sha256:..."
-    },
-    {
-      "page_id": "page_concept_C2",
-      "page_type": "concept",
-      "markdown_key": "wiki/ws_1/pages/page_concept_C2/ops/op_ingest_A.md",
-      "contribution_key": "wiki/ws_1/pages/page_concept_C2/ops/op_ingest_A.json",
-      "content_hash": "sha256:..."
-    }
-  ]
+  "operation_id": "op_ingest_A",
+  "request": {"document_id": "doc_A", "operation_id": "op_ingest_A"},
+  "payload": {
+    "operation_id": "op_ingest_A",
+    "operation_type": "ingest",
+    "status": "succeeded",
+    "workspace_id": "ws_1",
+    "user_id": "user_1",
+    "target_document_id": "doc_A",
+    "summary": "Wiki ingest를 완료했습니다.",
+    "changed_pages": []
+  },
+  "error": null
 }
 ```
 
+`payload`의 `changed_pages`에는 본문이 아니라 object key와 hash만 들어간다.
 Source artifact에는 `contribution_key`가 없고 Concept artifact에는 존재한다.
 
-callback 상위 필드:
+event/payload 주요 필드:
 
 | 필드 | 생성 주체 | 의미와 빈 값 처리 |
 | --- | --- | --- |
-| `operation_id` | Backend 입력을 llmPipeline이 전달 | 어떤 Backend operation을 완료하는 결과인지 식별한다. |
-| `operation_type` | llmPipeline | 이 callback에서는 항상 `ingest`다. 일반 ingest와 reingest 모두 같은 값이다. |
-| `status` | llmPipeline | `succeeded` 또는 `failed`다. callback 전달 성공 여부가 아니라 pipeline 처리 결과다. |
-| `workspace_id` | llmPipeline | document row에서 확정한 실제 workspace다. Backend는 요청 operation의 scope와 일치하는지 검증한다. |
-| `user_id` | llmPipeline | document row에서 확정한 실제 사용자다. Backend는 이 값을 새로운 권한 근거로 신뢰하지 않고 일치 여부만 확인한다. |
-| `target_document_id` | llmPipeline | ingest 또는 reingest 대상 document다. 실패 callback에도 포함된다. |
+| `event_id` | worker | `kind:run_id:status` 형식의 receipt 멱등 키다. |
+| `request` | worker | 원 command에서 secret top-level field를 제거한 요청이다. Backend 대조에 사용한다. |
+| `operation_id` | command/payload | Backend operation과 artifact key를 식별한다. |
+| `operation_type` | worker | ingest·reingest·chat Wiki 모두 `ingest`다. |
+| `status` | worker | pipeline 처리 결과다. callback 전달 성공 여부가 아니다. |
+| `workspace_id`, `user_id` | document row/command | Backend 등록값과 대조하며 새 권한 근거로 신뢰하지 않는다. |
+| `target_document_id` | command | ingest 대상 document다. |
 | `summary` | llmPipeline | 성공 요약 또는 실패 원인 문자열이다. 성공 여부 판정은 `status`를 사용한다. |
-| `changed_pages` | llmPipeline | 이번 operation이 실제로 기록한 page artifact다. 실패하거나 변경 page가 없으면 빈 배열이다. |
+| `changed_pages` | worker payload | 이번 operation이 기록한 page artifact다. 실패하거나 변경 page가 없으면 빈 배열이다. |
 
 `changed_pages[]` 필드:
 
 | 필드 | 필수 | 의미 |
 | --- | --- | --- |
 | `page_id` | 필수 | Backend Wiki page id다. object key와 revision을 이 page에 연결한다. |
-| `page_type` | ingest callback에서 필수 | `source` 또는 `concept`이다. Source snapshot과 Concept contribution 처리를 구분한다. |
+| `page_type` | ingest event에서 필수 | `source` 또는 `concept`이다. Source snapshot과 Concept contribution 처리를 구분한다. |
 | `markdown_key` | 필수 | llmPipeline이 저장한 operation Markdown의 bucket 내부 key다. bucket 이름은 보내지 않는다. |
 | `contribution_key` | Concept만 필수 | Concept 재조립용 JSON key다. Source snapshot에는 없다. |
 | `content_hash` | 필수 | Markdown UTF-8 byte 기준 `sha256:` hash다. Backend가 잘린 쓰기나 다른 본문을 검증한다. |
@@ -286,9 +294,15 @@ pipeline 실패 예시:
 }
 ```
 
+실패 event도 `status=failed`와 빈 `changed_pages`를 payload에 담아 Backend가
+operation을 계속 `processing`으로 남기지 않게 한다. worker가 terminal run을
+재전달받으면 저장된 run 결과를 다시 event로 만들며, Backend receipt가 최종 중복을
+막는다.
+
 ### 2A.5 Lint 입력과 출력
 
-lint는 HTTP 요청 안에서 동기 실행된다.
+직접 HTTP를 호출하면 lint는 요청 안에서 동기 실행된다. Backend 경로는 maintenance
+command를 worker가 처리하고 `ai.task.event`의 `kind=lint`로 결과를 전달한다.
 
 dry-run 입력:
 
@@ -296,6 +310,8 @@ dry-run 입력:
 {
   "user_id": "user_1",
   "workspace_id": "ws_1",
+  "provider": "openai",
+  "model": "gpt-5-nano",
   "dry_run": true,
   "materialize_promotions": false
 }
@@ -308,6 +324,8 @@ dry-run 입력:
   "user_id": "user_1",
   "workspace_id": "ws_1",
   "operation_id": "op_lint_A",
+  "provider": "openai",
+  "model": "gpt-5-nano",
   "dry_run": false,
   "materialize_promotions": true
 }
@@ -322,7 +340,7 @@ lint 입력 필드:
 | --- | --- | --- | --- |
 | `user_id` | 선택, 기본 `local-user` | Backend | lint할 사용자 scope다. ingest 호환 필드와 달리 lint DB 조회에 직접 사용한다. |
 | `workspace_id` | 선택, 기본 `local-workspace` | Backend | lint할 workspace scope다. |
-| `operation_id` | write mode 필수 | Backend | lint Markdown·기여 JSON의 operation id다. dry-run에서는 `null`이어도 된다. |
+| `operation_id` | write mode 필수 | Backend | lint Markdown·JSON artifact의 operation id다. lint는 `wiki_page_contributions` row를 만들지 않는다. dry-run에서는 `null`이어도 된다. |
 | `dry_run` | 선택, 기본 `true` | Backend | `true`이면 후보만 계산하고 DB와 object storage를 변경하지 않는다. |
 | `materialize_promotions` | 선택, 기본 `false` | Backend | write mode에서 promotion candidate를 실제 Concept으로 만들지 결정한다. dry-run에서는 `true`여도 적용하지 않는다. |
 | provider/model 계열 | promotion 시 선택 | 배포 설정 또는 Backend | 신규 promotion Concept을 생성하는 LLM 설정이다. promotion을 만들지 않으면 사용하지 않는다. |
@@ -360,14 +378,15 @@ lint 입력 필드:
 ```
 
 dry-run의 `operation_artifacts`, `changed_pages`, `removed_orphan_links`는 비어 있다.
-write mode의 `changed_pages`는 `operation_artifacts`와 같은 목록이며 Backend가 lint
-operation의 page revision과 contribution을 등록할 때 사용한다. lint에는 별도
-result callback이 없으므로 Backend는 이 HTTP response를 직접 처리한다.
+write mode의 `changed_pages`는 `operation_artifacts`와 같은 목록이다. 직접 HTTP
+호출자는 response를 처리하고, Backend worker 경로는 같은 결과를 event payload로
+반영한다. lint artifact는 복구 시 link action을 재생하는 입력이지만
+`wiki_page_contributions`의 active 상태 판정에는 포함되지 않는다.
 
 `WikiLintOut` 필드:
 
 | 필드 | 의미와 빈 값 처리 |
-| --- | --- |
+| --- | --- | --- |
 | `user_id`, `workspace_id` | 실제 lint 조회·변경 scope다. |
 | `operation_id` | write mode의 lint operation id다. dry-run이면 `null`일 수 있다. |
 | `active_path` | 검사한 active meaning cluster Markdown의 object key다. |
@@ -393,11 +412,13 @@ result callback이 없으므로 Backend는 이 HTTP response를 직접 처리한
 ### 2A.6 Operation 취소 API 입력과 출력
 
 복구는 과거 operation을 다시 활성화하는 기능이 아니라 현재 상태를 과거 restore
-point로 되돌리는 기능이다. ingest 복구에서는 restore point 이후 operation들을
-모두 취소하고, lint 복구에서는 지정한 lint operation 하나를 취소한다. Backend는
-취소 대상을 제외한 활성 contribution을 operation 순서로 정렬해
-`keep_contributions`에 넣는다. 취소 대상이 이 배열에 포함되면 request schema가
-422를 반환한다.
+point로 되돌리는 기능이다. 사용자는 Backend의
+`GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore-preview`
+후 `POST .../{operation_id}/restore`에 preview token을 보낸다. Backend는 계획을
+재검증하고 Kafka restore command를 발행한다. ingest 복구는 지목한 ingest와 같은
+document의 이후 ingest를 함께 제외하고, lint 복구는 지정한 lint 하나만 제외한다.
+`keep_contributions`는 Backend가 활성 ingest contribution만 sequence 순서로
+만들며, lint contribution을 포함하지 않는다.
 
 #### Ingest·reingest 취소
 
@@ -412,9 +433,9 @@ Content-Type: application/json
   "restore_to_operation_id": "op_reingest_A2",
   "cancel_operation_ids": ["op_reingest_A3", "op_reingest_A4", "op_reingest_A5"],
   "workspace_id": "ws_1",
-  "result_callback_url": "http://backend/api/ai-operations/op_restore_A/result",
   "source_page": {
-    "page_id": "page_source_A"
+    "page_id": "page_source_A",
+    "document_id": "doc_A"
   },
   "rebuild_pages": [
     {
@@ -429,18 +450,22 @@ Content-Type: application/json
 }
 ```
 
+이 복구 입력 예시는 reingest를 Kafka command로 재실행한다는 뜻이 아니다.
+`POST /pipeline/reingest-runs`는 `input_markdown`을 받는 HTTP 전용 경로이며
+`ai.task.event`를 발행하지 않는다. Kafka `kind=document` ingest 경로는
+`input_markdown`을 전달하지 않으므로 reingest를 지원하지 않는다.
+
 | 필드 | 의미와 빈 값 처리 |
 | --- | --- |
 | `operation_id` | 이번 취소를 기록할 새 restore operation id다. |
 | `restore_to_operation_id` | 복귀할 Source version의 ingest 또는 reingest operation id다. 새 restore `operation_id`와 달라야 하며 해당 operation의 기여는 `keep_contributions`에 포함할 수 있다. 이전 Source가 없는 상태로 돌아가면 `null`이다. |
 | `cancel_operation_ids` | restore point 이후 취소할 operation id를 순서대로 담는다. 비어 있거나 중복될 수 없으며 restore operation과 restore point를 포함할 수 없다. |
 | `workspace_id` | Source snapshot과 Concept contribution key를 계산할 workspace다. |
-| `result_callback_url` | 결과를 받을 Backend 내부 URL이며 빈 문자열일 수 없다. |
 | `source_page.page_id` | restore point의 Source snapshot을 복사할 Source Page id다. 읽을 operation은 `restore_to_operation_id`다. |
 | `rebuild_pages` | restore point와 현재 상태의 Concept 합집합 중 다시 조립할 page다. 남은 기여가 없는 page는 넣지 않고 `deleted_pages`에 넣는다. |
-| `keep_contributions` | 취소 대상을 제외하고 남길 ingest·lint 기여다. 배열 순서가 재생 순서다. |
+| `keep_contributions` | 취소 대상을 제외하고 남길 ingest 기여다. 배열 순서가 재생 순서다. lint artifact는 별도 link action 재생에 사용한다. |
 | `keep_contributions[].operation_id` | 읽을 Concept `{operation_id}.json`을 지정한다. |
-| `keep_contributions[].document_id` | 기여 출처 식별자다. ingest는 원문 document id, lint는 `lint:{operation_id}`를 사용한다. |
+| `keep_contributions[].document_id` | 기여 출처인 원문 document id다. 이 값은 현재 llmPipeline schema에서 전달하지만 Backend `OperationIngestService.load`는 제공된 `contributionKey`의 identity·prefix를 별도 검증하지 않고 사용한다. |
 | `deleted_pages` | 남은 활성 기여가 없어 Backend가 삭제 처리할 page id다. 기본값은 빈 배열이다. |
 
 llmPipeline은 restore point의 Source `.md`를 읽어 restore operation의 새 `.md`로
@@ -491,7 +516,6 @@ Backend는 취소할 lint가 영향을 준 모든 Concept을 `rebuild_pages` 또
   "operation_id": "op_restore_L",
   "target_operation_id": "op_lint_B",
   "workspace_id": "ws_1",
-  "result_callback_url": "http://backend/api/ai-operations/op_restore_L/result",
   "rebuild_pages": [
     {
       "page_id": "page_concept_C2",
@@ -504,9 +528,11 @@ Backend는 취소할 lint가 영향을 준 모든 Concept을 `rebuild_pages` 또
 }
 ```
 
-llmPipeline은 대상 lint JSON의 `added_links`, `removed_links`와 남은 활성 기여의
-최종 지원 집합을 비교한다. 다른 활성 operation도 지지하는 간선은 제거하지 않고,
-다른 활성 operation이 지지하는 경우에만 과거 제거 간선을 복원 대상으로 반환한다.
+llmPipeline은 대상 lint JSON의 `added_links`, `removed_links` action을 재생하고,
+Backend가 `keep_contributions`로 지정한 JSON을 `replay_supported_links`로 재생한
+최종 지원 집합과 비교한다. 다른
+활성 ingest artifact도 지지하는 간선은 제거하지 않고, 남은 artifact가 지지하는
+경우에만 과거 제거 간선을 복원 대상으로 반환한다.
 
 ```json
 {
@@ -536,55 +562,29 @@ llmPipeline은 대상 lint JSON의 `added_links`, `removed_links`와 남은 활�
 | `failed_pages` | Source snapshot 부재는 `source_snapshot_missing`, Concept 기여 부재·손상은 `contribution_missing`이다. |
 | `deleted_pages` | Backend가 삭제 처리할 page다. llmPipeline이 이 배열만으로 DB page를 삭제하지 않는다. |
 | `link_changes.removed_links` | 취소한 lint가 추가했고 이제 다른 활성 기여가 지지하지 않는 간선이다. |
-| `link_changes.restored_links` | 취소한 lint가 제거했지만 남은 활성 기여 재생 결과 다시 지원되는 간선이다. |
+| `link_changes.restored_links` | 취소한 lint가 제거했지만 `replay_supported_links` 결과 남은 활성 기여가 다시 지원하는 간선이다. |
 | `failed_actions` | 대상 lint JSON이 없으면 `operation_log_missing`, Concept 재조립 실패로 지원 집합을 확정할 수 없으면 `concept_rebuild_failed`다. 이때 `link_changes`는 빈 배열이다. |
 
-두 endpoint는 HTTP response와 같은 payload를 callback으로 보낸다. callback 최종
-실패는 endpoint 500으로 전달하며 ingest 실행 callback의 `notify_pending`을
-사용하지 않는다. Backend는 결과를 검증한 뒤 revision/current pointer, operation
-활성 상태, page 삭제와 `link_changes`의 DB 반영을 완료한다.
+ingest restore와 lint restore 결과는 각각 `ai.task.event`의 `kind=restore_ingest`와
+`kind=restore_lint` payload다.
+Backend는 event receipt를 먼저 기록하고, 성공 event에서 restore manifest를 다시
+읽어 contribution 상태를 잠근 뒤 결과의 revision·page·link 변경을 반영한다.
+llmPipeline이 실패한 page는 `failed_pages`에 남고 전체 상태는
+`partially_succeeded`가 될 수 있다.
 
-### 2A.7 Pending callback 재전송 입력과 출력
+### 2A.7 Kafka 재전달과 멱등 처리
 
-재전송 endpoint는 request body를 받지 않고 path의 `run_id`만 사용한다.
-
-```http
-POST /pipeline/runs/run_123/result-callback/retry
-```
-
-처리 과정:
-
-1. `pipeline_runs.manifest.pending_notification` 조회
-2. 저장된 `callback_url`, `payload`, `status_code` 검증
-3. 409 충돌이면 재전송 거부
-4. 저장 payload를 Backend에 다시 POST
-5. 성공하면 pending 정보를 제거하고 원래 run 상태 복원
-
-HTTP response body는 재전송한 원래 payload다.
-
-```json
-{
-  "operation_id": "op_ingest_A",
-  "operation_type": "ingest",
-  "status": "succeeded",
-  "changed_pages": []
-}
-```
-
-run이 없으면 404, pending callback이 없거나 409 충돌이면 409를 반환한다. Backend
-callback이 다시 실패하면 pending 정보를 유지하고 endpoint는 500을 반환한다.
-
-pending 저장 필드:
-
-| 필드 | 생성 주체 | 의미와 빈 값 처리 |
-| --- | --- | --- |
-| `callback_url` | llmPipeline | 원래 ingest request가 지정한 Backend callback URL이다. 비어 있으면 재전송할 수 없다. |
-| `payload` | llmPipeline | 마지막으로 전송하려던 성공 또는 실패 JSON 전체다. 재전송 시 새 결과를 만들지 않고 그대로 사용한다. |
-| `status_code` | callback client | 마지막 HTTP 오류 code다. 네트워크 오류처럼 HTTP 응답이 없으면 `null`이다. 409이면 terminal conflict로 재전송을 거부한다. |
+HTTP result callback retry endpoint와 `pending_notification`은 현재 operation
+계약에 없다. Kafka producer는 event를 재전달할 수 있고, worker는 terminal
+`pipeline_runs`를 다시 처리하지 않으며, Backend는 `ai_task_result_receipts`의
+`event_id` unique 처리로 중복을 버린다. Backend 적용 중 일시 오류는 Kafka 소비
+재시도 대상이다. worker의 stale contribution manifest 검증은 `ValueError`로 pipeline
+failed event를 발행하고 Backend `RestoreOperationLifecycle.fail`이 restore를
+`failed`로 확정한다.
 
 ### 2A.8 내부 데이터 전달
 
-외부 request는 다음 경계를 거쳐 저장과 callback 출력으로 바뀐다.
+외부 request는 다음 경계를 거쳐 저장과 Kafka event payload로 바뀐다.
 
 ```text
 HTTP JSON
@@ -593,7 +593,7 @@ HTTP JSON
   → run_lab runtime manifest
   → contribution JSON + operation artifact
   → PostgreSQL/current Wiki 반영
-  → HTTP response 또는 result callback
+  → HTTP response 또는 `ai.task.event`
 ```
 
 | 단계 | 주요 입력 | 주요 출력 |
@@ -602,7 +602,7 @@ HTTP JSON
 | command 조립 | schema + document row | 실제 user/workspace와 기존 Wiki context가 들어간 command |
 | pipeline | Markdown, source block, 기존 Concept index | Source·Concept page, link, meaning cluster, contribution |
 | persistence | runtime manifest | operation `.md`·`.json`, 현재 Wiki와 DB 변경 |
-| callback 조립 | command + `operation_artifacts` | Backend가 읽을 `changed_pages`와 상태 |
+| event 조립 | command + `operation_artifacts` | Backend가 읽을 `changed_pages`와 상태 |
 | operation 취소 | Backend restore point·취소 목록, Source page, `keep_contributions` | 복구 Markdown, hash, `supported_links`, lint `link_changes` |
 
 ## 3. 식별자와 참조 형식
@@ -636,6 +636,9 @@ HTTP JSON
 
 ## 4. 작업별 object storage 계약
 
+object storage는 `minio.Minio` adapter가 `S3_ENDPOINT`, `S3_BUCKET`, access/secret
+설정으로 읽고 쓴다. 문서의 key는 bucket 이름을 제외한 object name이다.
+
 ### 4.1 Source Page
 
 Source Page는 원문 문서와 1:1로 종속된다. 여러 문서의 의미 기여를 합성하지 않고
@@ -651,8 +654,9 @@ operation의 snapshot을 선택하고, llmPipeline이 그 `.md`를 restore opera
 
 ### 4.2 Concept Page
 
-Concept는 여러 문서와 lint 작업이 함께 기여할 수 있으므로 Markdown과 기여 JSON을
-함께 저장한다.
+Concept는 여러 문서의 ingest 기여를 합성하므로 Markdown과 ingest 기여 JSON을
+함께 저장한다. lint는 별도 `.json` artifact로 본문·간선 action을 남기지만
+`wiki_page_contributions`에는 row를 만들지 않는다.
 
 ```text
 wiki/{workspace_id}/pages/{concept_page_id}/ops/{operation_id}.md
@@ -738,8 +742,8 @@ wiki/{workspace_id}/pages/{concept_page_id}/ops/{operation_id}.json
 | `relation` | 두 endpoint 사이의 관계 type이다. |
 | `evidence` | 관계를 지지하는 `doc_id:block_id` 목록이다. 관계 종류에 따라 없거나 빈 배열일 수 있다. |
 
-callback 또는 lint 응답의 `changed_pages`에는 본문을 직접 넣지 않고 key와 hash만
-넣는다.
+Kafka event payload 또는 lint 응답의 `changed_pages`에는 본문을 직접 넣지 않고
+key와 hash만 넣는다.
 
 ```json
 {
@@ -751,8 +755,8 @@ callback 또는 lint 응답의 `changed_pages`에는 본문을 직접 넣지 않
 }
 ```
 
-llmPipeline은 version 또는 revision 번호를 만들지 않는다. Backend가 callback과
-operation 순서를 검증한 뒤 revision, 현재 pointer와 contribution 활성 여부를
+llmPipeline은 version 또는 revision 번호를 만들지 않는다. Backend가 event payload와
+operation 순서를 검증한 뒤 revision, current state와 ingest contribution 활성 여부를
 관리한다.
 
 ## 5. Ingest와 reingest 저장 순서
@@ -760,23 +764,23 @@ operation 순서를 검증한 뒤 revision, 현재 pointer와 contribution 활�
 ingest 영속화는 다음 순서를 사용한다.
 
 ```text
-1. Source·Concept page id 확보                 아직 DB 미커밋
-2. same_concept evidence 적용 결과 미리 계산   현재 object 미변경
-3. operation Markdown·기여 JSON 저장            불변 key
-4. source_blocks와 현재 Source·Concept 반영      PostgreSQL + 현재 object
-5. page link, embedding, meaning cluster 반영
-6. DB commit
-7. embedding job 시작
-8. Backend result callback
+1. Source·Concept page id 확보                 PostgreSQL transaction
+2. source_blocks와 현재 Source·Concept 반영      PostgreSQL + current object
+3. page link, embedding units, meaning cluster 반영
+4. operation Markdown·기여 JSON 저장            불변 key, DB 반영 뒤
+5. `pipeline_runs` manifest/status 저장 및 DB commit
+6. embedding job 시작
+7. ingest worker가 `ai.task.event` 결과 발행
 ```
 
 Page id 확보와 이후 DB 변경은 같은 PostgreSQL transaction 안에서 실행된다.
-operation artifact 저장에 실패하면 transaction이 rollback되며 현재 Wiki object를
-갱신하는 단계로 진행하지 않는다.
+operation artifact 저장 실패는 run을 실패시키며 DB transaction도 함께 실패시킨다.
+다만 object storage와 PostgreSQL은 원자적이지 않아 current object나 artifact의
+미참조 object가 남을 수 있다.
 
-Object storage와 PostgreSQL은 하나의 원자 transaction이 아니다. artifact 저장 후
-DB commit이 실패하면 사용되지 않는 operation object가 남을 수 있다. 반대로 현재
-Wiki는 바뀌었지만 복구 artifact가 없는 상태를 피하기 위해 artifact를 먼저 쓴다.
+operation artifact는 DB 변경 뒤 마지막 저장 단계다. 따라서 이후 DB 작업이
+실패하면 object storage와 DB 사이에 불일치가 생길 수 있으며, artifact를 먼저
+써서 현재 Wiki object 갱신을 보호한다는 보장은 현재 계약이 아니다.
 
 ### 5.1 reingest 대상 제한
 
@@ -791,9 +795,9 @@ reingest가 기존 Concept을 결과에 유지했다고 해서 모두 이번 ope
 이번 작업이 만들지 않은 기여 JSON을 요구하지 않고, operation 로그가 실제 변경분과
 일치한다.
 
-## 6. Ingest 결과 callback과 재시도
+## 6. Ingest 결과 event와 재전달
 
-성공 callback의 핵심 필드는 다음과 같다.
+성공 event의 핵심 payload는 다음과 같다.
 
 ```json
 {
@@ -809,44 +813,13 @@ reingest가 기존 Concept을 결과에 유지했다고 해서 모두 이번 ope
 ```
 
 pipeline 자체가 실패해도 `status=failed`, 실패 summary와 빈 `changed_pages`를
-callback한다. Backend에 미리 생성된 operation이 계속 `processing`으로 남지 않게
-하기 위한 처리다.
-
-callback은 최대 5회 전송하고 각 실패 뒤 `1, 2, 4, 8`초 간격으로 기다린다.
-
-| 결과 | 처리 |
-| --- | --- |
-| 2xx | 완료 |
-| 네트워크 오류·5xx | 같은 payload 재전송 |
-| 422 | Markdown·기여 JSON을 규정 prefix에 다시 쓰고 hash를 재계산한 뒤 재전송 |
-| 409 | payload 충돌로 판단하고 HTTP 재시도 중단 |
-| 그 외 4xx | 재시도하지 않고 실패 처리 |
-
-최종 전송 실패는 ingest와 embedding 성공을 되돌리지 않는다. `pipeline_runs`를
-`notify_pending`으로 바꾸고 저장 manifest에 재전송 정보를 남긴다.
-
-```json
-{
-  "pending_notification": {
-    "callback_url": "http://backend/...",
-    "payload": {},
-    "status_code": 503
-  }
-}
-```
-
-다음 endpoint가 이 payload를 다시 보낸다.
-
-```text
-POST /pipeline/runs/{run_id}/result-callback/retry
-```
-
-409가 저장된 pending callback은 다시 보낼 수 없다. 재전송에 성공하면
-`pending_notification`을 제거하고 원래 payload의 성공·실패 상태로 run을
-복원한다.
-
-현재 callback 요청에는 별도 token 또는 signature header를 추가하지 않는다.
-배포 환경의 VPC 내부 통신과 네트워크 정책으로 접근 범위를 제한한다는 전제다.
+event payload로 발행한다. Backend는 이를 `AiTaskResultApplier.applyIngest`에서
+operation과 document 상태에 반영한다. Kafka consumer 재전달은 정상 경로이며,
+Backend는 `ai_task_result_receipts(event_id, run_id, task_kind)`로 중복을 제거한다.
+결과 payload의 operation id·scope·target document가 등록값과 다르면 Backend가
+거부하고, object key prefix·본문 hash가 다르면 422 계약 오류로 거부한다. 제공된
+`contributionKey`의 identity·prefix는 별도 검증하지 않는다. 같은 확정 payload를 다시 받으면 기존 결과를 반환하고 다른
+payload는 409 충돌이다.
 
 ## 7. Operation 취소와 Concept 페이지 재조립
 
@@ -857,11 +830,11 @@ POST /wiki/ingest-restore-runs
 POST /wiki/lint-restore-runs
 ```
 
-ingest 취소 endpoint는 `restore_to_operation_id` 이후의
-`cancel_operation_ids`를 한 복구 단위로 처리한다. lint 취소 endpoint는
-`target_operation_id` 하나를 처리한다. Backend는 취소 대상을 제외한 활성 상태와
-operation 순서를 기준으로 page마다 남길 기여 목록을 만들고 callback 성공 후
-대상 operation을 비활성화한다.
+ingest 취소 command는 `restore_to_operation_id`와 제외할 ingest suffix를 함께
+처리한다. lint 취소 command는 `target_operation_id` 하나를 처리한다. Backend는
+미리보기에서 취소 대상을 제외한 활성 ingest 상태와 operation 순서로 page마다
+남길 기여 목록을 만들고, stale 검증 후 기여를 비활성화한 다음 restore command를
+발행한다.
 
 ```json
 {
@@ -869,16 +842,15 @@ operation 순서를 기준으로 page마다 남길 기여 목록을 만들고 ca
   "restore_to_operation_id": "op_ingest_A2",
   "cancel_operation_ids": ["op_reingest_A3", "op_reingest_A4", "op_reingest_A5"],
   "workspace_id": "ws",
-  "result_callback_url": "http://backend/...",
   "source_page": {
-    "page_id": "page_source_1"
+    "page_id": "page_source_1",
+    "document_id": "doc_A"
   },
   "rebuild_pages": [
     {
       "page_id": "page_c2",
       "keep_contributions": [
-        {"operation_id": "op_ingest_A", "document_id": "doc_A"},
-        {"operation_id": "op_lint_B", "document_id": "lint:op_lint_B"}
+        {"operation_id": "op_ingest_A", "document_id": "doc_A"}
       ]
     }
   ],
@@ -896,7 +868,7 @@ Source 단계가 없다. 두 흐름은 영향받은 각 Concept Page를 다음 �
 3. JSON의 `operation_id`, `page_id`가 요청과 일치하는지 검증
 4. Concept metadata와 전역 evidence 병합
 5. source key point 병합
-6. ingest와 lint의 link action 재생
+6. ingest와 lint의 link action을 `replay_supported_links` 규칙으로 재생
 7. `ConceptPageAssembler`로 Markdown 재생성
 8. restore operation의 새 `.md` key에 저장
 9. hash와 최종 지원 간선 반환
@@ -934,31 +906,36 @@ lint 취소는 대상 lint JSON의 link action과 재조립 결과의 `supported
 restore point와 취소 suffix 선택, 취소 대상 비활성화, 삭제 page 처리와 복구 결과에
 따른 revision/current pointer 변경은 Backend 범위다. llmPipeline은 선택된 Source
 snapshot 복사, 남은 Concept 기여 재조립과 lint 간선 변경 계산을 담당한다.
+llmPipeline은 restore 결과를 current `wiki_pages`에 반영하면서 해당 page의 embedding
+unit을 삭제·재생성하고, restore 뒤 embedding job을 시작한다. 삭제 page는 link,
+document link, embedding unit/vector를 정리하고 `status=deleted`로 바꾼다.
 
 ## 8. Lint operation 로그
 
 `dry_run=false`인 lint는 `operation_id`가 필수다. lint가 만든 Concept 변경과
-간선 변경도 ingest와 같은 `.md`, `.json` key에 저장한다.
+간선 변경은 ingest와 같은 `.md`, `.json` object key에 저장하지만 Backend의
+`wiki_page_contributions` row는 만들지 않는다.
 
 lint 기여 JSON은 다음 action을 추가로 가진다.
 
 | 필드 | 값·기본값 | 의미 |
-| --- | --- |
+| --- | --- | --- |
 | `artifact_type` | `lint` | ingest 기여와 구분해 link action 재생 규칙을 선택한다. |
-| `document_id` | `lint:{operation_id}` | 원문 document가 없는 lint 작업의 합성 출처 id다. |
+| `document_id` | `lint:{operation_id}` | 원문 document가 없는 lint artifact의 합성 출처 id다. |
 | `content_action` | `create` | lint promotion으로 새 Concept을 생성했음을 나타낸다. |
 | `content_action` | `append_evidence` | 기존 Concept에 evidence를 추가했음을 나타낸다. |
 | `content_action` | `none` | 본문 변경 없이 간선만 변경했음을 나타낸다. |
-| `added_links` | 기본 빈 배열 | 이 operation이 새로 지지하는 간선이다. restore와 고아 간선 lint가 지원 집합에 추가한다. 각 원소 구조는 ingest의 `links[]`와 같다. |
-| `removed_links` | 기본 빈 배열 | 이 operation이 지원 집합에서 제거하는 간선이다. 각 원소 구조는 ingest의 `links[]`와 같다. |
+| `added_links` | 기본 빈 배열 | lint artifact가 지원 집합에 추가하는 간선이다. 각 원소 구조는 ingest의 `links[]`와 같다. |
+| `removed_links` | 기본 빈 배열 | lint artifact가 지원 집합에서 제거하는 간선이다. 각 원소 구조는 ingest의 `links[]`와 같다. |
 
 lint JSON의 나머지 `schema_version`, `operation_id`, `page_id`, `concept`,
 `evidence_units`, `source_blocks`, `source_key_points`는 ingest 기여 JSON과 같은 의미다.
 lint artifact는 본문 action 또는 link action 중 하나 이상이 있을 때만 저장한다.
 
-본문 변경과 간선 변경이 하나의 기여 JSON에 기록되므로 ingest 취소와 lint 취소는
-서로 다른 API를 사용하되 같은 Concept 재조립기를 공유한다. Backend가 취소 대상을
-제외하고 남기라고 지정한 ingest와 lint contribution을 한 순서로 전달하면 된다.
+본문 변경과 간선 변경이 하나의 lint artifact JSON에 기록되므로 ingest 복구와 lint
+복구는 서로 다른 command를 사용하되 같은 Concept 재조립기를 공유한다. Backend는
+재조립 대상에 남길 ingest contribution만 전달하고, lint 복구는 대상 lint JSON의
+link action을 재생해 `link_changes`를 계산한다.
 
 non-dry-run lint 순서:
 
@@ -971,35 +948,38 @@ non-dry-run lint 순서:
 6. transaction commit
 ```
 
-3번이나 4번이 실패하면 고아 간선 삭제와 reconciliation DB 변경은 rollback된다.
-Object storage와 DB의 완전한 원자성은 없지만 DB commit 전에 재생 가능한 operation
-기록이 존재하도록 순서를 보장한다.
+3번 이후 object/log/object 변경이 실패하면 lint transaction의 DB 변경은 rollback된다.
+Object storage와 DB의 완전한 원자성은 없으므로 삭제된 orphan object가 남을 수 있지만,
+구현은 이미 쓴 lint object key를 예외 시 삭제하도록 시도한다.
 
 ## 9. 고아 간선 판정과 제거
 
-lint는 `wiki_page_contributions`에서 workspace의 Concept 기여 row를
-`sequence_revision` 순서로 읽는다.
+고아 간선 lint는 `wiki_page_contributions`의 ingest contribution row를
+`sequence_revision` 순서로 읽는다. lint artifact row가 별도로 생성되는 것은 아니다.
 
 - 모든 contribution: 과거 operation 로그로 관리된 적이 있는 간선 판정
-- `active=true` contribution: 현재 간선을 지지하는 operation 판정
+- `active=true` contribution: 현재 간선을 지지하는 ingest operation 판정
 
-활성 기여 JSON은 다음 규칙으로 재생한다.
+활성 contribution JSON은 `replay_supported_links`로 operation 순서에 따라 재생한다.
 
 ```text
-ingest JSON links          → 지원 집합에 추가
-lint JSON removed_links    → 지원 집합에서 제거
-lint JSON added_links      → 지원 집합에 추가
+ingest/document artifact `links` → 지원 집합에 추가
+lint artifact `removed_links`    → 지원 집합에서 제거
+lint artifact `added_links`      → 지원 집합에 추가
 ```
 
-예를 들어 다음 순서라면 최종 지원 집합에는 `A → B`가 남는다.
+`orphan_link_lint.find_orphan_links`는 `active_contribution_json`에 이 재생 결과를
+사용하고, `managed_contribution_json`에서는 각 artifact의 `links`, `added_links`,
+`removed_links`를 모두 관리 간선으로 확인한다.
+
+예를 들어 ingest contribution이 다음과 같으면 최종 지원 집합에는 `A → B`가 남는다.
 
 ```text
 op-A ingest: A → B 추가
-op-B lint:   A → B 제거
-op-C lint:   A → B 다시 추가
+op-B ingest: A → B 추가
 ```
 
-`op-C`가 비활성화되면 최종 지원 집합에서 `A → B`가 사라진다.
+`op-A`와 `op-B`가 모두 비활성화될 때 최종 지원 집합에서 `A → B`가 사라진다.
 
 현재 DB 간선은 다음 조건 중 하나일 때만 고아 후보가 된다.
 
@@ -1019,32 +999,34 @@ op-C lint:   A → B 다시 추가
 | 기여 JSON 생성과 ref 전역화 | operation 생성과 사용자 권한 검증 |
 | operation Markdown·JSON 저장 | `wiki_page_contributions` schema와 row 저장 |
 | content hash와 changed_pages 생성 | revision, current pointer, sequence 관리 |
-| callback 재시도와 pending payload 저장 | callback payload·prefix·hash 검증 |
-| Source snapshot 복사와 keep contribution 기반 Concept 재조립 | 취소 대상·직전 Source·활성 contribution 결정 |
-| lint action과 활성 지원을 비교해 `link_changes` 계산 | 복구 callback의 간선 변경을 DB에 반영 |
+| Kafka 결과 event payload와 content hash 생성 | event receipt·payload·prefix·hash 검증 |
+| Source snapshot 복사와 keep contribution 기반 Concept 재조립 | 취소 대상·직전 Source·활성 ingest contribution 결정 |
+| lint action과 재조립 지원 집합을 비교해 `link_changes` 계산 | 복구 event의 revision·간선 변경을 DB에 반영 |
 | 활성 contribution 기반 고아 간선 계산·삭제 | restore 결과 적용과 page 활성·삭제 상태 확정 |
 
 llmPipeline은 Backend가 Flyway로 제공하는 table을 소비하지만 migration을 생성하지
 않는다. 특히 `wiki_page_contributions.active`, `object_key`, `sequence_revision`이
-lint의 고아 간선 재생 입력이다.
+ingest 복구와 고아 간선 lint의 입력이다. lint artifact는 object storage에 있고
+Backend operation change가 lint 페이지 변경을 감사한다.
 
 ## 11. 실패 경계와 운영상 주의점
 
 - object storage와 PostgreSQL은 하나의 transaction이 아니다. 실패한 DB 작업의
   미참조 operation object가 남을 수 있다.
-- operation object는 불변 key다. 같은 operation의 422 복구 외에는 현재 Wiki
-  object처럼 덮어쓰는 용도로 사용하지 않는다.
-- callback 최종 실패는 Wiki 생성 성공과 분리한다. `notify_pending`을 운영에서
-  조회하고 재전송해야 한다.
-- 409는 같은 operation의 payload 충돌이므로 자동·수동 재전송 대상이 아니다.
-- contribution JSON은 Concept 재조립의 입력이다. Backend callback이 끝난 뒤에도
+- operation object는 불변 key다. 복구도 restore operation의 새 key를 사용하며 기존
+  operation object를 덮어쓰지 않는다.
+- Kafka event consumer 오류는 worker 재전달 대상이며, Backend receipt가 중복을 막는다.
+- 동일 operation의 동일 payload는 멱등 처리하고 다른 payload는 409 충돌이다.
+- contribution JSON은 Concept 재조립의 입력이다. Backend event 반영이 끝난 뒤에도
   object를 삭제하면 안 된다.
 - 활성 기여 기반 Concept 의미 전체 재작성과 embedding의 완전한 원자 갱신은 별도
   후속 범위다. 이 문서의 복구는 Backend가 선택한 기여 목록을 재조립하는 흐름이다.
 
 ## 관련 문서
 
-- `docs/llm-wiki/flows/ingest.md`
-- `docs/llm-wiki/flows/lint.md`
-- `docs/spec/llmpipeline-backend-output-contract.md`
-- `docs/issue/ai/2026-07-27.md`
+- `docs/backlog/llm-wiki/flows/ingest.md`
+- `docs/backlog/llm-wiki/flows/lint.md`
+- `docs/api/ai/pipeline.md`
+- `docs/api/ai/wiki.md`
+- `docs/adr/0012-ai-operation-log-and-rollback.md`
+- `docs/adr/0014-wiki-lint-reconciliation.md`

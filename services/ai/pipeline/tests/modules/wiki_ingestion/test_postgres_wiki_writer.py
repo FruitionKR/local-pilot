@@ -14,6 +14,7 @@ from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
 class RecordingConnection:
     def __init__(self) -> None:
         self.batches: list[list[tuple]] = []
+        self.vector_rows: list[tuple] = []
         self._current_batch: list[tuple] | None = None
 
     def execute(self, query: str, params: tuple) -> None:
@@ -23,6 +24,8 @@ class RecordingConnection:
         elif "INSERT INTO wiki_embedding_units" in query:
             assert self._current_batch is not None
             self._current_batch.append(params)
+        elif "INSERT INTO wiki_embedding_vectors" in query:
+            self.vector_rows.append(params)
 
 
 class ContainsSearch:
@@ -114,6 +117,13 @@ class PersistEmbeddingUnitsTest(unittest.TestCase):
         self.assertEqual(
             {unit.unit_type for unit in _units(conn.batches[0])},
             {"key_point", "source_block"},
+        )
+        self.assertEqual(
+            {(row[1], row[3]) for row in conn.vector_rows},
+            {
+                ("BAAI/bge-m3", "semantic claim"),
+                ("BAAI/bge-m3", "raw source text"),
+            },
         )
 
 

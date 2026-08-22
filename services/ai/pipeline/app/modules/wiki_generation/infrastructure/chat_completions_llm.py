@@ -5,6 +5,7 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Any, Sequence
 
 from langchain_anthropic import ChatAnthropic
@@ -63,6 +64,7 @@ class ChatCompletionsJsonClient:
         self.provider, self.config.model = resolve_llm_selection(config.provider, config.model)
         self.prompt_log_dir = os.environ.get("LLM_PROMPT_LOG_DIR", "").strip()
         self._request_index = 0
+        self._prompt_log_lock = Lock()
         self._model = self._build_model()
 
     def _build_model(self) -> Any:
@@ -95,18 +97,19 @@ class ChatCompletionsJsonClient:
     def _write_prompt_log(self, body: JsonDict, content: str | None = None, error: str | None = None) -> None:
         if not self.prompt_log_dir:
             return
-        self._request_index += 1
-        log_dir = Path(self.prompt_log_dir)
-        log_dir.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "request": body,
-            "response_content": redact_numeric_personal_data(content) if content else content,
-            "error": redact_numeric_personal_data(error) if error else error,
-        }
-        (log_dir / f"request_{self._request_index:04d}.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        with self._prompt_log_lock:
+            self._request_index += 1
+            log_dir = Path(self.prompt_log_dir)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "request": body,
+                "response_content": redact_numeric_personal_data(content) if content else content,
+                "error": redact_numeric_personal_data(error) if error else error,
+            }
+            (log_dir / f"request_{self._request_index:04d}.json").write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
 
     def complete_text(
         self,

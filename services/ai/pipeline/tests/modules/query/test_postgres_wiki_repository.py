@@ -27,6 +27,39 @@ class FakeConnection:
 
 
 class PostgresWikiRepositoryTest(unittest.TestCase):
+    def test_concept_only_repository_excludes_source_pages_and_neighbors(self) -> None:
+        connection = FakeConnection()
+
+        with patch(
+            "app.modules.query.infrastructure.postgres_wiki_repository.database.connect",
+            return_value=connection,
+        ):
+            repository = PostgresWikiRepository(concept_only=True)
+            repository.list_candidate_pages(
+                "ws_target",
+                "검색 질문",
+                source_limit=60,
+                concept_limit=40,
+            )
+            repository.list_links_for_page_ids(
+                "ws_target",
+                ["concept-1"],
+                limit=200,
+            )
+            repository.list_pages_by_ids(
+                "ws_target",
+                ["concept-2"],
+            )
+
+        candidate_sql, candidate_params = connection.calls[0]
+        link_sql, _ = connection.calls[1]
+        page_sql, _ = connection.calls[2]
+        assert "page_type = 'concept'" in link_sql
+        assert "page_type = 'concept'" in page_sql
+        assert candidate_params[6] == 0
+        assert candidate_params[11] == 0
+        assert candidate_params[14] == 0
+
     def test_active_pages_are_filtered_by_workspace(self) -> None:
         connection = FakeConnection()
 
@@ -111,8 +144,10 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
 
         self.assertEqual(len(connection.calls), 2)
         semantic_sql, semantic_params = connection.calls[1]
-        self.assertIn("JOIN wiki_page_embeddings", semantic_sql)
+        self.assertIn("JOIN wiki_embedding_units", semantic_sql)
+        self.assertIn("JOIN wiki_embedding_vectors", semantic_sql)
         self.assertIn("unnest(e.embedding_vector)", semantic_sql)
+        self.assertIn("max(vector_score.similarity)", semantic_sql)
         self.assertIn("PARTITION BY page_type", semantic_sql)
         self.assertEqual(
             semantic_params,

@@ -91,6 +91,7 @@ class EvidenceSelector:
         evidence_embedding_weight: float = 0.75,
         min_evidence_score: float = 0.0,
         evidence_relative_score_floor: float = 0.85,
+        max_evidence_snippets: int = 8,
     ) -> None:
         self._embedding_search = embedding_search
         self._text_search = text_search
@@ -99,6 +100,7 @@ class EvidenceSelector:
         self._evidence_embedding_weight = evidence_embedding_weight
         self._min_evidence_score = min_evidence_score
         self._evidence_relative_score_floor = evidence_relative_score_floor
+        self._max_evidence_snippets = max(1, max_evidence_snippets)
 
     def select(
         self,
@@ -124,30 +126,7 @@ class EvidenceSelector:
         candidates = self._select_evidence_score_band_by_page(all_candidates)
         candidates = self._include_atomic_units_for_selected_refs(all_candidates, candidates)
         candidates.sort(key=lambda snippet: snippet.score, reverse=True)
-        first_by_page: dict[str, _EvidenceCandidate] = {}
-        for candidate in candidates:
-            first_by_page.setdefault(candidate.page_id, candidate)
-        retrieved_pages = {
-            item.page.id: item
-            for item in related_pages[: self._max_related_pages]
-        }
-        page_coverage = [
-            first_by_page[item.page.id]
-            for item in related_pages[: self._max_related_pages]
-            if item.page.id in first_by_page
-        ]
-        page_coverage.sort(
-            key=lambda candidate: (
-                retrieved_pages[candidate.page_id].score,
-                candidate.score,
-            ),
-            reverse=True,
-        )
-        covered_candidates = {id(candidate) for candidate in page_coverage}
-        candidates = [
-            *page_coverage,
-            *[candidate for candidate in candidates if id(candidate) not in covered_candidates],
-        ]
+        candidates = candidates[: self._max_evidence_snippets]
         return [
             EvidenceSnippet(
                 rank=index,

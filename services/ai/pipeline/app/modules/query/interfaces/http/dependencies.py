@@ -1,7 +1,10 @@
 import os
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase
-from app.modules.query.application.ports import QueryEventPublisherPort
+from app.modules.query.application.ports import (
+    QueryEventPublisherPort,
+    WikiRepositoryPort,
+)
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
 from app.modules.query.infrastructure.bm25_searcher import Bm25Searcher
 from app.modules.query.infrastructure.minio_wiki_markdown_reader import MinioWikiMarkdownReader
@@ -25,6 +28,9 @@ def build_answer_query_use_case(
     model: str | None = None,
     allow_web_search: bool = False,
     event_publisher: QueryEventPublisherPort | None = None,
+    require_evaluator: bool = False,
+    evaluator_mode: str | None = None,
+    wiki_repository: WikiRepositoryPort | None = None,
 ) -> AnswerQueryUseCase:
     text_search = Bm25Searcher()
     answer_generator = build_query_chat_answer_generator(provider=provider, model=model)
@@ -34,6 +40,7 @@ def build_answer_query_use_case(
         provider=provider,
         model=model,
         web_search_available=web_search is not None,
+        mode="llm" if require_evaluator else evaluator_mode,
     )
     conversation_summarizer = build_query_conversation_summarizer(
         provider=provider,
@@ -41,7 +48,7 @@ def build_answer_query_use_case(
     )
     query_evaluator_max_attempts = _int_env("QUERY_EVALUATOR_MAX_ATTEMPTS", 2)
     return AnswerQueryUseCase(
-        wiki_repository=PostgresWikiRepository(),
+        wiki_repository=wiki_repository or PostgresWikiRepository(),
         markdown_reader=MinioWikiMarkdownReader(),
         event_publisher=event_publisher or NoOpQueryEventPublisher(),
         embedding_search=_build_embedding_search(text_search),
@@ -59,6 +66,7 @@ def build_answer_query_use_case(
         ),
         min_internal_relevance_score=_float_env("QUERY_MIN_INTERNAL_RELEVANCE_SCORE", 0.5),
         query_evaluator_max_attempts=query_evaluator_max_attempts,
+        max_evidence_snippets=_int_env("QUERY_EVIDENCE_LIMIT", 8),
         conversation_summarizer=conversation_summarizer,
     )
 

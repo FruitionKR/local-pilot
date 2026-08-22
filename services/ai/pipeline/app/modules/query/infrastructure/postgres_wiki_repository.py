@@ -5,6 +5,9 @@ from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_re
 
 
 class PostgresWikiRepository(WikiRepositoryPort):
+    def __init__(self, *, concept_only: bool = False) -> None:
+        self._concept_only = concept_only
+
     def list_candidate_pages(
         self,
         workspace_id: str,
@@ -13,6 +16,8 @@ class PostgresWikiRepository(WikiRepositoryPort):
         concept_limit: int,
         semantic_query: SemanticQueryEmbedding | None = None,
     ) -> list[WikiPage]:
+        if self._concept_only:
+            source_limit = 0
         content_query = " OR ".join(query.split())
         with database.connect() as conn:
             lexical_rows = conn.execute(
@@ -199,9 +204,10 @@ class PostgresWikiRepository(WikiRepositoryPort):
                             p.summary,
                             p.markdown_uri,
                             p.updated_at,
-                            vector_score.similarity
+                            max(vector_score.similarity) AS similarity
                         FROM wiki_pages p
-                        JOIN wiki_page_embeddings e ON e.page_id = p.id
+                        JOIN wiki_embedding_units eu ON eu.page_id = p.id
+                        JOIN wiki_embedding_vectors e ON e.id = eu.embedding_vector_id
                         CROSS JOIN LATERAL (
                             SELECT
                                 sum(stored.value * query_vector.value)
@@ -222,6 +228,14 @@ class PostgresWikiRepository(WikiRepositoryPort):
                           AND e.embedding_model = %s
                           AND e.status = 'completed'
                           AND e.embedding_dimension = %s
+                        GROUP BY
+                            p.id,
+                            p.page_type,
+                            p.title,
+                            p.slug,
+                            p.summary,
+                            p.markdown_uri,
+                            p.updated_at
                     ),
                     semantic_ranked AS (
                         SELECT
@@ -277,9 +291,14 @@ class PostgresWikiRepository(WikiRepositoryPort):
         if not page_ids:
             return []
         excluded_page_ids = excluded_page_ids or []
+        concept_filter = (
+            "AND from_page.page_type = 'concept' AND to_page.page_type = 'concept'"
+            if self._concept_only
+            else ""
+        )
         with database.connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT l.from_page_id, l.to_page_id, l.link_type, l.label, l.confidence
                 FROM wiki_page_links l
                 JOIN wiki_pages from_page ON from_page.id = l.from_page_id
@@ -289,6 +308,7 @@ class PostgresWikiRepository(WikiRepositoryPort):
                   AND from_page.workspace_id = %s
                   AND to_page.workspace_id = %s
                   AND l.link_type = ANY(%s)
+                  {concept_filter}
                   AND (
                       (
                           l.from_page_id = ANY(%s)
@@ -331,12 +351,14 @@ class PostgresWikiRepository(WikiRepositoryPort):
     ) -> list[WikiPage]:
         if not page_ids:
             return []
+        concept_filter = "AND page_type = 'concept'" if self._concept_only else ""
         with database.connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT id, page_type, title, slug, summary, markdown_uri
                 FROM wiki_pages
                 WHERE status = 'active'
+                  {concept_filter}
                   AND workspace_id = %s
                   AND id = ANY(%s)
                 """,

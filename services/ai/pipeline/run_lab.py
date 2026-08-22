@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import shutil
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from app.modules.wiki_generation.application.run_generation_loop import (
@@ -18,8 +21,8 @@ from app.modules.wiki_generation.application.section_polish_mapping import (
     map_polish_output as _map_polish_output,
 )
 from app.modules.wiki_generation.application.judge_candidates import (
-    judge_concept_update_candidates as _judge_concept_update_candidates,
-    judge_meaning_cluster_candidates as _judge_meaning_cluster_candidates,
+    judge_concept_update_candidates,
+    normalize_concept_update_decisions,
 )
 from app.modules.wiki_generation.domain.entities import SourceBlock, SourceDocument
 from app.modules.wiki_generation.infrastructure.assemble import (
@@ -70,7 +73,6 @@ from app.modules.wiki_ingestion.domain.source_block_changes import (
     compare_source_blocks,
 )
 from app.modules.wiki_ingestion.infrastructure.file_io import ensure_dir, write_json, write_text
-from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
 from app.core.llm_env import (
     SUPPORTED_LLM_PROVIDERS,
     provider_api_key_env,
@@ -242,15 +244,6 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_json_safe(item) for item in value]
     return str(value)
-
-
-def _read_existing_active_clusters(user_id: str, workspace_id: str) -> str:
-    object_name = f"wiki/{user_id}/{workspace_id}/clusters/active.md"
-    try:
-        return read_text_object(object_name)
-    except Exception:
-        return ""
-
 
 
 def _run_wiki_generation_loop(
@@ -611,15 +604,40 @@ def _resolve_pipeline_concepts(
         existing_concepts = load_existing_concept_index(
             getattr(args, "existing_wiki_dir", None)
         )
+    assembler = MeaningClusterArtifactAssembler()
+    concept_update_candidates = assembler.candidate_claims(normalized)
+    concepts = [*normalized.get("concept_ledger", []), *existing_concepts]
     missing_related_hints = normalized.get("missing_related_concept_hints", [])
-    raw_resolution = ApiConceptResolver(
+    resolver = ApiConceptResolver(
         api_client,
         concept_resolution_prompt,
-    ).resolve(
-        normalized["concept_ledger"],
-        existing_concepts,
-        missing_related_hints,
     )
+
+    def resolve_concepts() -> tuple[dict[str, Any], float]:
+        started = monotonic()
+        result = resolver.resolve(
+            normalized["concept_ledger"],
+            existing_concepts,
+            missing_related_hints,
+        )
+        return result, monotonic() - started
+
+    def judge_updates() -> tuple[list[dict[str, Any]], float]:
+        started = monotonic()
+        result = judge_concept_update_candidates(
+            completion=api_client,
+            concepts=concepts,
+            candidates=concept_update_candidates,
+        )
+        return result, monotonic() - started
+
+    parallel_started = monotonic()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        resolution_future = executor.submit(resolve_concepts)
+        update_future = executor.submit(judge_updates)
+        raw_resolution, resolution_seconds = resolution_future.result()
+        concept_update_decisions, update_seconds = update_future.result()
+    parallel_seconds = monotonic() - parallel_started
     if args.save_debug_json:
         write_json(
             ensure_dir(out / "raw_llm_outputs") / "concept_resolution.json",
@@ -644,9 +662,19 @@ def _resolve_pipeline_concepts(
         existing_concepts,
         hint_resolutions,
     )
+    resolved_candidates = assembler.candidate_claims(resolved)
+    resolved["concept_update_decisions"] = normalize_concept_update_decisions(
+        {"concept_update_decisions": concept_update_decisions},
+        concepts=[
+            *resolved.get("concept_ledger", []),
+            *resolved.get("existing_concept_index", []),
+        ],
+        candidates=resolved_candidates,
+        concept_slug_map=resolved.get("concept_slug_map", {}),
+    )
     log.emit(
         "4-보조. Concept Resolution",
-        "새 concept 후보끼리와 기존 concept page index, missing related hint를 비교해 canonical slug와 관련 링크를 확정했습니다.",
+        "Concept resolution과 근거 갱신 후보 판단을 병렬 실행하고 canonical slug를 반영했습니다.",
         {
             "기존 개념 수": len(existing_concepts),
             "해결 전 개념 수": len(resolutions),
@@ -661,6 +689,20 @@ def _resolve_pipeline_concepts(
                 1 for item in resolutions if item.get("decision") == "merge_into"
             ),
             "링크 판단 수": sum(1 for item in resolutions if item.get("link_targets")),
+            "same_concept 수": sum(
+                1
+                for item in resolved["concept_update_decisions"]
+                if item.get("decision") == "same_concept"
+            ),
+            "relation_candidate 수": sum(
+                1
+                for item in resolved["concept_update_decisions"]
+                if item.get("decision") == "relation_candidate"
+            ),
+            "resolution 소요 시간(초)": f"{resolution_seconds:.2f}",
+            "update judge 소요 시간(초)": f"{update_seconds:.2f}",
+            "병렬 wall 시간(초)": f"{parallel_seconds:.2f}",
+            "병렬 절감 시간(초)": f"{max(0.0, resolution_seconds + update_seconds - parallel_seconds):.2f}",
         },
     )
     return resolved
@@ -862,8 +904,9 @@ def _assemble_wiki_pages(
     existing_source_markdown: str | None,
     out: Path,
     log: PipelineLog,
+    source_preparation: _SourcePagePreparation | None = None,
 ) -> WikiPageOutputs:
-    source_preparation = _prepare_source_page_assembly(
+    source_preparation = source_preparation or _prepare_source_page_assembly(
         args,
         api_client=api_client,
         prompts=prompts,
@@ -915,110 +958,60 @@ def _assemble_wiki_pages(
     )
 
 
-def _assemble_meaning_clusters(
-    args: PipelineRunCommand,
+def _prepare_post_ingest_clusters(
     *,
-    api_client: ChatCompletionsJsonClient,
     normalized: dict[str, Any],
-    out: Path,
     log: PipelineLog,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     assembler = MeaningClusterArtifactAssembler()
     candidates = assembler.candidate_claims(normalized)
-    concept_candidates = [
-        *normalized.get("concept_ledger", []),
-        *normalized.get("existing_concept_index", []),
-    ]
-    concept_update_decisions = _judge_concept_update_candidates(
-        completion=api_client,
-        concepts=concept_candidates,
-        candidates=candidates,
-    )
-    concept_update_by_candidate = {
-        item["candidate_id"]: item
-        for item in concept_update_decisions
-        if item.get("decision") == "same_concept"
-    }
+    decisions = normalized.get("concept_update_decisions", [])
     candidates_by_id = {
         candidate["candidate_id"]: candidate for candidate in candidates
     }
-    core_relation_decisions = [
-        item
-        for item in concept_update_decisions
-        if item.get("decision") == "relation_candidate"
+    concept_updates = [
+        {
+            **item,
+            "claim_id": candidates_by_id.get(item["candidate_id"], {}).get("claim_id"),
+            "claim": candidates_by_id.get(item["candidate_id"], {}).get("claim"),
+            "refs": candidates_by_id.get(item["candidate_id"], {}).get("refs", []),
+            "candidate_type": candidates_by_id.get(item["candidate_id"], {}).get(
+                "candidate_type"
+            ),
+        }
+        for item in decisions
+        if item.get("decision") == "same_concept"
     ]
-    cluster_judge_candidates = [
-        item
-        for item in candidates
-        if item["candidate_id"] not in concept_update_by_candidate
+    core_relations = [
+        item for item in decisions if item.get("decision") == "relation_candidate"
     ]
     log.emit(
-        "8-보조. Concept 갱신 후보 판단",
-        "section/mention evidence claim이 이미 존재하는 core concept에 속하는지 먼저 판단했습니다.",
+        "8. 후속 Meaning Cluster 준비",
+        "Concept 근거 갱신은 현재 ingest에 유지하고 Meaning Cluster 판단 입력을 준비했습니다.",
         {
             "candidate 수": len(candidates),
-            "same_concept 수": len(concept_update_by_candidate),
-            "relation_candidate 수": len(core_relation_decisions),
-            "cluster judge 대상": len(cluster_judge_candidates),
+            "same_concept 수": len(concept_updates),
+            "후속 cluster 대상": len(candidates) - len(concept_updates),
         },
     )
-    existing_active_clusters = _read_existing_active_clusters(
-        args.user_id,
-        args.workspace_id,
-    )
-    cluster_decisions = _judge_meaning_cluster_candidates(
-        completion=api_client,
-        existing_active_markdown=existing_active_clusters,
-        candidates=cluster_judge_candidates,
-    )
-    log.emit(
-        "8-보조. Meaning Cluster 판단",
-        "section/mention evidence claim을 기존 active cluster와 비교해 생성 또는 갱신 대상을 판단했습니다.",
+    cluster_normalized = {
+        key: normalized.get(key, [] if key != "document" else {})
+        for key in (
+            "document",
+            "section_candidates",
+            "mentions",
+            "unresolved_related_concept_hints",
+            "evidence_units",
+        )
+    }
+    return (
+        {"concept_update_decisions": concept_updates},
         {
-            "candidate 수": len(cluster_judge_candidates),
-            "decision 수": len(cluster_decisions),
-            "기존 active 크기": len(existing_active_clusters),
+            "cluster_normalized": cluster_normalized,
+            "concept_update_decisions": concept_updates,
+            "core_relation_decisions": core_relations,
         },
     )
-    artifact = assembler.assemble(
-        normalized,
-        out,
-        user_id=args.user_id,
-        workspace_id=args.workspace_id,
-        cluster_decisions=cluster_decisions,
-        core_relation_decisions=core_relation_decisions,
-        concept_update_decisions=[
-            {
-                **item,
-                "claim_id": candidates_by_id.get(item["candidate_id"], {}).get(
-                    "claim_id"
-                ),
-                "claim": candidates_by_id.get(item["candidate_id"], {}).get("claim"),
-                "refs": candidates_by_id.get(item["candidate_id"], {}).get("refs", []),
-                "candidate_type": candidates_by_id.get(item["candidate_id"], {}).get(
-                    "candidate_type"
-                ),
-            }
-            for item in concept_update_by_candidate.values()
-        ],
-    )
-    maintenance_summary = artifact.get("maintenance_summary", {})
-    log.emit(
-        "8. Meaning Cluster 생성",
-        "section/mention evidence claim 기반 active cluster와 ingest log artifact를 생성했습니다.",
-        {
-            "active": artifact["active_path"],
-            "log": artifact["log_path"],
-            "cluster 수": len(artifact["clusters"]),
-            "promotion 후보 수": maintenance_summary.get(
-                "promotion_candidate_count",
-                0,
-            ),
-            "relation 후보 수": maintenance_summary.get("relation_candidate_count", 0),
-            "invalid 후보 수": maintenance_summary.get("invalid_candidate_count", 0),
-        },
-    )
-    return artifact, maintenance_summary
 
 
 def run_pipeline(
@@ -1029,6 +1022,7 @@ def run_pipeline(
     ]
     | None = None,
 ) -> dict:
+    pipeline_started = monotonic()
     args = resolve_api_defaults(command)
     input_text = getattr(args, "input_markdown", None)
     input_source_name = getattr(args, "input_name", None) or getattr(args, "input", None) or "inline.md"
@@ -1167,23 +1161,82 @@ def run_pipeline(
         },
     )
 
-    # 4a. Resolve incoming concepts against each other and existing wiki concepts before page generation.
+    # 4a. Resolve concepts while polishing the independent source page sections.
     assert api_client is not None
+    source_preparation: _SourcePagePreparation | None = None
     if extraction_blocks:
-        normalized = _resolve_pipeline_concepts(
-            args,
-            api_client=api_client,
-            concept_resolution_prompt=prompts.concept_resolution,
-            normalized=normalized,
-            out=out,
-            log=log,
-        )
+        if source_page_mode(args) == "section-polish":
+            source_normalized = copy.deepcopy(normalized)
+            if args.reingest:
+                source_normalized = source_page_context_normalized(
+                    source_normalized,
+                    existing_source_artifact,
+                )
+
+            def resolve_concepts_for_pages() -> tuple[dict[str, Any], float]:
+                started = monotonic()
+                result = _resolve_pipeline_concepts(
+                    args,
+                    api_client=api_client,
+                    concept_resolution_prompt=prompts.concept_resolution,
+                    normalized=normalized,
+                    out=out,
+                    log=log,
+                )
+                return result, monotonic() - started
+
+            def prepare_source_for_pages() -> tuple[_SourcePagePreparation, float]:
+                started = monotonic()
+                result = _prepare_source_page_assembly(
+                    args,
+                    api_client=api_client,
+                    prompts=prompts,
+                    normalized=source_normalized,
+                    blocks=blocks,
+                    existing_source_artifact=existing_source_artifact,
+                    existing_source_markdown=existing_source_markdown,
+                    out=out,
+                    log=log,
+                )
+                return result, monotonic() - started
+
+            parallel_started = monotonic()
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                resolution_future = executor.submit(resolve_concepts_for_pages)
+                source_future = executor.submit(prepare_source_for_pages)
+                normalized, resolution_seconds = resolution_future.result()
+                source_preparation, source_seconds = source_future.result()
+            parallel_seconds = monotonic() - parallel_started
+            for warning in source_preparation.normalized.get("warnings", []):
+                if warning not in normalized.setdefault("warnings", []):
+                    normalized["warnings"].append(warning)
+            log.emit(
+                "4-보조. Concept/Source 병렬 준비",
+                "Concept 판단과 source section polish를 병렬 실행했습니다.",
+                {
+                    "concept 판단 소요 시간(초)": f"{resolution_seconds:.2f}",
+                    "source polish 소요 시간(초)": f"{source_seconds:.2f}",
+                    "병렬 wall 시간(초)": f"{parallel_seconds:.2f}",
+                    "병렬 절감 시간(초)": f"{max(0.0, resolution_seconds + source_seconds - parallel_seconds):.2f}",
+                },
+            )
+        else:
+            normalized = _resolve_pipeline_concepts(
+                args,
+                api_client=api_client,
+                concept_resolution_prompt=prompts.concept_resolution,
+                normalized=normalized,
+                out=out,
+                log=log,
+            )
     contribution_normalized = normalized
     if args.reingest:
         normalized = source_page_context_normalized(
             normalized,
             existing_source_artifact,
         )
+    if source_preparation is not None:
+        source_preparation = replace(source_preparation, normalized=normalized)
     if args.save_debug_json:
         write_json(out / "normalized.json", normalized)
         if generation_evaluations:
@@ -1199,17 +1252,22 @@ def run_pipeline(
         existing_source_markdown=existing_source_markdown,
         out=out,
         log=log,
+        source_preparation=source_preparation,
+    )
+
+    meaning_cluster_artifact, post_ingest = _prepare_post_ingest_clusters(
+        normalized=contribution_normalized,
+        log=log,
+    )
+    generation_status = generation_evaluation_status(generation_evaluations)
+    post_ingest.update(
+        {
+            "quality_required": bool(extraction_blocks),
+            "generation_evaluation_status": generation_status,
+        }
     )
 
     def build_manifest() -> dict[str, Any]:
-        meaning_cluster_artifact, maintenance_summary = _assemble_meaning_clusters(
-            args,
-            api_client=api_client,
-            normalized=contribution_normalized,
-            out=out,
-            log=log,
-        )
-
         source_extraction_artifact = _json_safe(
             page_outputs.source_page_normalized.get("source_extraction_artifact")
         )
@@ -1256,10 +1314,11 @@ def run_pipeline(
             else {},
             "links": page_outputs.links,
             "meaning_clusters": meaning_cluster_artifact,
-            "maintenance_summary": maintenance_summary,
+            "maintenance_summary": {"status": "pending"},
+            "post_ingest": post_ingest,
             "normalized": normalized,
             "generation_evaluations": generation_evaluations,
-            "generation_evaluation_status": generation_evaluation_status(generation_evaluations),
+            "generation_evaluation_status": generation_status,
             "pipeline_log": str(log.path),
             "log_callback_url": getattr(args, "log_callback_url", None),
             "save_debug_json": args.save_debug_json,
@@ -1275,6 +1334,7 @@ def run_pipeline(
                 "mention 수": len(normalized.get("mentions", [])),
                 "category 수": len(normalized.get("categories", [])),
                 "근거 수": len(normalized["evidence_units"]),
+                "총 소요 시간(초)": f"{monotonic() - pipeline_started:.2f}",
             },
         )
         return _json_safe(manifest)

@@ -13,8 +13,8 @@ def test_restore_embedding_failure_prevents_success() -> None:
 
     with (
         patch.object(
-            threaded_wiki_embedding_job,
-            "_build_embeddings",
+                threaded_wiki_embedding_job,
+                "build_wiki_page_embeddings",
             return_value={"failed_count": 1},
         ),
         pytest.raises(RuntimeError, match="embedding failed"),

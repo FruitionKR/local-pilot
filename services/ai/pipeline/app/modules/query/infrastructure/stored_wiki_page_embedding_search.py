@@ -1,5 +1,6 @@
 import hashlib
 import math
+from functools import lru_cache
 
 from app.modules.query.application.ports import EmbeddingSearchPort
 from app.modules.query.domain.entities import SemanticQueryEmbedding
@@ -16,6 +17,7 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
         self._embedding_model = embedding_model or BgeM3EmbeddingModel()
         self._fallback_search = fallback_search
 
+    @lru_cache(maxsize=128)
     def embed_query(self, query: str) -> SemanticQueryEmbedding:
         return SemanticQueryEmbedding(
             model_name=self._embedding_model.model_name,
@@ -65,13 +67,27 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
                 SELECT DISTINCT ON (representation_hash)
                     representation_hash,
                     embedding_vector
-                FROM wiki_page_embeddings
-                WHERE embedding_model = %s
-                  AND status = 'completed'
-                  AND representation_hash = ANY(%s)
+                FROM (
+                    SELECT representation_hash, embedding_vector, updated_at
+                    FROM wiki_page_embeddings
+                    WHERE embedding_model = %s
+                      AND status = 'completed'
+                      AND representation_hash = ANY(%s)
+                    UNION ALL
+                    SELECT representation_hash, embedding_vector, updated_at
+                    FROM wiki_embedding_vectors
+                    WHERE embedding_model = %s
+                      AND status = 'completed'
+                      AND representation_hash = ANY(%s)
+                ) stored_embeddings
                 ORDER BY representation_hash, updated_at DESC
                 """,
-                (self._embedding_model.model_name, unique_hashes),
+                (
+                    self._embedding_model.model_name,
+                    unique_hashes,
+                    self._embedding_model.model_name,
+                    unique_hashes,
+                ),
             ).fetchall()
         vectors = {}
         for row in rows:

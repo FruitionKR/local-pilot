@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Barrier
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -9,10 +10,10 @@ from run_lab import (
     PipelineLog,
     PipelinePrompts,
     _assemble_wiki_pages,
-    _assemble_meaning_clusters,
     _extract_pipeline_source,
     _load_pipeline_prompts,
     _prepare_concept_section_polish,
+    _prepare_post_ingest_clusters,
     _prepare_source_page_polish,
     _resolve_pipeline_concepts,
     _run_wiki_generation_loop,
@@ -51,56 +52,67 @@ class FakeSectionPolisher:
 
 
 class FakeConceptResolutionClient:
-    def complete_json(self, _system_prompt: str, _user_prompt: str) -> dict[str, object]:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.system_prompts: list[str] = []
+        self.barrier = Barrier(2)
+
+    def complete_json(self, system_prompt: str, _user_prompt: str) -> dict[str, object]:
+        self.calls += 1
+        self.system_prompts.append(system_prompt)
+        self.barrier.wait(timeout=2)
+        if "ConceptUpdateCandidateJudge" in system_prompt:
+            return {
+                "decisions": [
+                    {
+                        "candidate_id": "cand_001",
+                        "decision": "same_concept",
+                        "concept_slug": "concept-a",
+                    }
+                ]
+            }
         return {
-            "resolutions": [
-                {
-                    "incoming_slug": "concept-a",
-                    "decision": "create_new",
-                    "canonical_slug": "concept-a",
-                }
-            ],
+            "resolutions": [],
             "hint_resolutions": [],
         }
 
 
 class WikiGenerationPipelineTest(unittest.TestCase):
-    def test_assemble_meaning_clusters_handles_empty_candidates(self) -> None:
-        call_order = []
+    def test_prepare_post_ingest_clusters_defers_cluster_judge(self) -> None:
+        normalized = {
+            "document": {"document_id": "doc-1"},
+            "section_candidates": [
+                {
+                    "term": "Concept A",
+                    "context": "Concept A를 보강한다.",
+                    "anchor_reference_ids": ["B0001"],
+                }
+            ],
+            "mentions": [],
+            "unresolved_related_concept_hints": [],
+            "evidence_units": [],
+            "concept_update_decisions": [
+                {
+                    "candidate_id": "cand_001",
+                    "decision": "same_concept",
+                    "concept_slug": "concept-a",
+                    "relation": "same_concept",
+                }
+            ],
+        }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            with patch(
-                "run_lab._judge_concept_update_candidates",
-                side_effect=lambda **_kwargs: call_order.append("concept_judge") or [],
-            ):
-                with patch(
-                    "run_lab._read_existing_active_clusters",
-                    side_effect=lambda *_args: call_order.append("active_read") or "",
-                ):
-                    with patch(
-                        "run_lab._judge_meaning_cluster_candidates",
-                        side_effect=lambda **_kwargs: call_order.append("cluster_judge") or [],
-                    ):
-                        artifact, maintenance_summary = _assemble_meaning_clusters(
-                            SimpleNamespace(user_id="user-1", workspace_id="workspace-1"),
-                            api_client=FakeConceptResolutionClient(),  # type: ignore[arg-type]
-                            normalized={
-                                "concept_ledger": [],
-                                "existing_concept_index": [],
-                                "section_candidates": [],
-                                "mentions": [],
-                                "unresolved_related_concept_hints": [],
-                                "evidence_units": [],
-                            },
-                            out=Path(tmp_dir),
-                            log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
-                        )
+            initial, post_ingest = _prepare_post_ingest_clusters(
+                normalized=normalized,
+                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
 
-        self.assertEqual(artifact["clusters"], [])
-        self.assertEqual(maintenance_summary["promotion_candidate_count"], 0)
-        self.assertEqual(maintenance_summary["relation_candidate_count"], 0)
         self.assertEqual(
-            call_order,
-            ["concept_judge", "active_read", "cluster_judge"],
+            initial["concept_update_decisions"][0]["claim"],
+            "Concept A - Concept A를 보강한다.",
+        )
+        self.assertEqual(
+            post_ingest["cluster_normalized"]["document"],
+            {"document_id": "doc-1"},
         )
 
     def test_assemble_wiki_pages_keeps_skeleton_modes_without_api(self) -> None:
@@ -196,13 +208,15 @@ class WikiGenerationPipelineTest(unittest.TestCase):
 
     def test_resolve_pipeline_concepts_preserves_resolution_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
+            client = FakeConceptResolutionClient()
+            log_path = Path(tmp_dir) / "pipeline.log"
             normalized = _resolve_pipeline_concepts(
                 SimpleNamespace(
                     existing_concept_index=[],
                     existing_wiki_dir=None,
                     save_debug_json=False,
                 ),
-                api_client=FakeConceptResolutionClient(),  # type: ignore[arg-type]
+                api_client=client,  # type: ignore[arg-type]
                 concept_resolution_prompt="resolve",
                 normalized={
                     "concept_ledger": [
@@ -213,16 +227,38 @@ class WikiGenerationPipelineTest(unittest.TestCase):
                             "anchor_reference_ids": ["B0001"],
                         }
                     ],
+                    "document": {"document_id": "doc-1"},
+                    "section_candidates": [
+                        {
+                            "term": "Concept A",
+                            "context": "Concept A를 보강한다.",
+                            "anchor_reference_ids": ["B0001"],
+                        }
+                    ],
+                    "mentions": [],
                     "evidence_units": [],
                     "missing_related_concept_hints": [],
                     "warnings": [],
                 },
                 out=Path(tmp_dir),
-                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+                log=PipelineLog(log_path),
             )
+            log_text = log_path.read_text(encoding="utf-8")
 
         self.assertEqual(normalized["concept_ledger"][0]["slug"], "concept-a")
         self.assertEqual(normalized["concept_resolutions"][0]["decision"], "create_new")
+        self.assertEqual(
+            normalized["concept_update_decisions"][0]["concept_slug"],
+            "concept-a",
+        )
+        self.assertEqual(client.calls, 2)
+        self.assertTrue(
+            any("ConceptUpdateCandidateJudge" in prompt for prompt in client.system_prompts)
+        )
+        self.assertIn("resolution 소요 시간(초)", log_text)
+        self.assertIn("update judge 소요 시간(초)", log_text)
+        self.assertIn("병렬 wall 시간(초)", log_text)
+        self.assertIn("병렬 절감 시간(초)", log_text)
 
     def test_evaluator_feedback_retries_semantic_extraction_until_passed(self) -> None:
         prompts: list[str] = []

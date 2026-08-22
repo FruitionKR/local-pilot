@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 
 import psycopg
@@ -10,7 +11,6 @@ from app.modules.wiki_ingestion.infrastructure.embedding_units import (
     dedupe_units,
     extract_embedding_units,
     hash_text,
-    unit_representation,
 )
 from app.modules.wiki_ingestion.infrastructure.object_storage import (
     read_text_object,
@@ -39,7 +39,7 @@ def persist_embedding_units(
     units = dedupe_units(units)
     conn.execute("DELETE FROM wiki_embedding_units WHERE page_id = %s", (page_id,))
     for unit in units:
-        representation_text = unit_representation(unit["unit_type"], unit["text"])
+        representation_text = unit["text"].strip()
         representation_hash = hash_text(representation_text)
         vector_id = f"embedding:{representation_hash}"
         unit_id = f"unit:{hash_text('|'.join([page_id, unit['unit_type'], ','.join(unit['block_refs']), unit['text']]))[:24]}"
@@ -58,7 +58,12 @@ def persist_embedding_units(
                 representation_text = EXCLUDED.representation_text,
                 updated_at = now()
             """,
-            (vector_id, "canonical-text", representation_hash, representation_text),
+            (
+                vector_id,
+                os.environ.get("EMBEDDING_MODEL_NAME") or "BAAI/bge-m3",
+                representation_hash,
+                representation_text,
+            ),
         )
         conn.execute(
             """
