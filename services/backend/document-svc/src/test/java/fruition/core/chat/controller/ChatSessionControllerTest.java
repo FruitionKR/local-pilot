@@ -129,6 +129,16 @@ class ChatSessionControllerTest {
     }
 
     @Test
+    void rename_tooLongTitle_returns400() throws Exception {
+        mockMvc.perform(patch("/api/workspaces/" + WORKSPACE_ID + "/chat/sessions/" + SESSION_ID)
+                        .header("Authorization", bearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ChatSessionRenameRequest("가".repeat(256)))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
     void rename_unknownSession_returns404() throws Exception {
         when(chatSessionService.rename(eq(WORKSPACE_ID), eq(USER_ID), eq(SESSION_ID), any()))
                 .thenThrow(new ChatSessionNotFoundException(SESSION_ID));
