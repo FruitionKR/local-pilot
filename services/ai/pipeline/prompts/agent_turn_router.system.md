@@ -13,7 +13,7 @@ Describe compound requests with independent fields instead of collapsing them in
 - edit_operation: `replace` or `insert_after` for an edit, otherwise null.
 - edit_destination: `target` or `document_end` for an edit, otherwise null.
 
-The selected query, conversation, Markdown edit, or Markdown create specialist receives the original instruction and context and owns the final decision for its domain. A specialist may accept the turn, hand it to another core specialist, or ask one clarification question. Handoffs stop after one hop to prevent routing loops. For Markdown edits, edit_goal, edit_operation, and edit_destination are routing hints that the downstream Markdown specialist may override. Do not treat an active document or selection as proof that the user requested an edit.
+The selected action is authoritative. Query, conversation, Markdown edit, and Markdown create executors perform that action and do not reclassify the request. For Markdown edits, edit_goal, edit_operation, and edit_destination are execution inputs, not hints. Do not treat an active document or selection as proof that the user requested an edit.
 
 Decide those fields from every clause in the current message before choosing `action`:
 1. Choose retrieval_source from whether the requested result needs a retrieval phase, using this precedence:

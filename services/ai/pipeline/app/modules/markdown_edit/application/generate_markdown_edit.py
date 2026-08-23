@@ -33,21 +33,16 @@ class GenerateMarkdownEditUseCase:
         ):
             raise ValueError("whole_document target must cover the entire Markdown document.")
         if (
-            not request.specialist_mode
-            and request.edit_operation == "insert_after"
+            request.edit_operation == "insert_after"
             and request.edit_destination == "target"
             and request.target.type != "current_section"
         ):
             raise ValueError("insert_after operation requires a current_section target.")
-        if (
-            not request.specialist_mode
-            and request.edit_operation == "replace"
-            and request.edit_destination != "target"
-        ):
+        if request.edit_operation == "replace" and request.edit_destination != "target":
             raise ValueError("replace operation requires the requested target destination.")
 
         editor_request = request
-        if not request.specialist_mode and request.edit_destination == "document_end":
+        if request.edit_destination == "document_end":
             editor_request = replace(
                 request,
                 target=MarkdownEditTarget(
@@ -58,7 +53,7 @@ class GenerateMarkdownEditUseCase:
             )
         result = self._editor.generate_edit(editor_request)
         operation = result.edit.operation
-        if not request.specialist_mode and operation != request.edit_operation:
+        if operation != request.edit_operation:
             raise ValueError(f"Edit operation must be {request.edit_operation}.")
         actual_target = result.edit.actual_target
         if actual_target.start_line < 1:
@@ -70,7 +65,7 @@ class GenerateMarkdownEditUseCase:
         appends_to_document = (
             operation == "insert_after"
             and actual_target.type == "whole_document"
-            and (request.specialist_mode or request.edit_destination == "document_end")
+            and request.edit_destination == "document_end"
         )
         if (
             not appends_to_document
@@ -85,15 +80,11 @@ class GenerateMarkdownEditUseCase:
         ):
             raise ValueError("whole_document actual_target must cover the entire Markdown document.")
         if operation == "insert_after":
-            allowed_target_types = (
-                {"current_section", "whole_document"}
-                if request.specialist_mode
-                else {
-                    "whole_document"
-                    if request.edit_destination == "document_end"
-                    else "current_section"
-                }
-            )
+            allowed_target_types = {
+                "whole_document"
+                if request.edit_destination == "document_end"
+                else "current_section"
+            }
             if actual_target.type not in allowed_target_types:
                 expected = " or ".join(sorted(allowed_target_types))
                 raise ValueError(f"insert_after operation requires a {expected} actual_target.")

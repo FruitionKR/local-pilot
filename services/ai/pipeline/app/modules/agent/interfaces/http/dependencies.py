@@ -4,9 +4,6 @@ from app.modules.agent.application.handle_agent_turn import HandleAgentTurnUseCa
 from app.modules.agent.infrastructure.chat_completions_conversation_replier import (
     build_conversation_replier,
 )
-from app.modules.agent.infrastructure.chat_completions_query_specialist import (
-    build_query_specialist,
-)
 from app.modules.agent.infrastructure.chat_completions_turn_router import (
     build_agent_turn_router,
 )
@@ -73,9 +70,6 @@ def build_handle_agent_turn_use_case(
             provider=provider, model=model
         ),
         conversation_replier=build_conversation_replier(
-            provider=provider, model=model
-        ),
-        query_specialist=build_query_specialist(
             provider=provider, model=model
         ),
     )

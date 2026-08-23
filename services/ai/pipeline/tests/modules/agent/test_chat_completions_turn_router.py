@@ -700,7 +700,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertIn("previous action is only a hint", prompt)
         self.assertIn("independent fields", prompt)
         self.assertIn("edit_destination", prompt)
-        self.assertIn("downstream Markdown specialist", prompt)
+        self.assertIn("executors perform that action and do not reclassify", prompt)
         self.assertIn("covers every required capability", prompt)
         self.assertIn("never rewrites their meaning", prompt)
 

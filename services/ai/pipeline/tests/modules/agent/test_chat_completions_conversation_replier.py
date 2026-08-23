@@ -3,10 +3,7 @@ import unittest
 from datetime import datetime, timezone
 
 from app.modules.agent.domain.entities import AgentConversationContext, AgentTurnRequest
-from app.modules.agent.domain.exceptions import (
-    AgentTurnRouteContractError,
-    ConversationHandoffError,
-)
+from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.agent.infrastructure.chat_completions_conversation_replier import (
     DEFAULT_CONVERSATION_REPLY_PROMPT,
     ChatCompletionsConversationReplier,
@@ -29,8 +26,6 @@ class FakeChatClient:
     ) -> dict[str, object]:
         self.calls.append((system_prompt, user_prompt, trusted_identifiers))
         return {
-            "action": "conversation_reply",
-            "reason": "검색 없이 완성할 수 있는 대화 요청입니다.",
             "message": "  2026-08-17-덥고 습함-🥵  ",
         }
 
@@ -65,6 +60,7 @@ class ChatCompletionsConversationReplierTest(unittest.TestCase):
 
         self.assertIn("Reuse the most recent user-provided value", prompt)
         self.assertIn("Never replace a value", prompt)
+        self.assertIn("Do not reclassify", prompt)
 
     def test_replies_from_current_and_recent_conversation_without_retrieval(self) -> None:
         client = FakeChatClient()
@@ -93,27 +89,23 @@ class ChatCompletionsConversationReplierTest(unittest.TestCase):
         self.assertEqual(payload["recent_messages"][1]["action"], "conversation_reply")
         self.assertEqual(len(trusted_identifiers), 1)
 
-    def test_hands_grounded_question_to_query_specialist(self) -> None:
+    def test_rejects_empty_reply(self) -> None:
         client = FakeChatClient()
         client.complete_json = lambda *args, **kwargs: {  # type: ignore[method-assign]
-            "action": "chat_answer",
-            "reason": "외부 정보 검색이 필요합니다.",
             "message": None,
         }
         replier = ChatCompletionsConversationReplier(client, "system")  # type: ignore[arg-type]
 
-        with self.assertRaises(ConversationHandoffError) as raised:
-            replier.reply(AgentTurnRequest(message="오늘 서울 날씨를 찾아줘."))
+        with self.assertRaises(AgentTurnRouteContractError) as raised:
+            replier.reply(AgentTurnRequest(message="제목을 만들어줘."))
 
-        self.assertEqual(raised.exception.action, "chat_answer")
+        self.assertEqual(raised.exception.failures, ["message must be a non-empty string"])
 
     def test_retries_json_parse_failure_once(self) -> None:
         client = SequenceJsonClient(
             [
                 JsonParseError("secret malformed reply"),
                 {
-                    "action": "conversation_reply",
-                    "reason": "검색 없는 대화 요청입니다.",
                     "message": "다시 작성한 답변",
                 },
             ]
@@ -126,7 +118,7 @@ class ChatCompletionsConversationReplierTest(unittest.TestCase):
         retry_payload = json.loads(client.calls[1][1])
         self.assertEqual(
             retry_payload["contract_failures"],
-            ["conversation specialist output must be a JSON object"],
+            ["conversation reply output must be a JSON object"],
         )
         self.assertNotIn("secret malformed reply", client.calls[1][1])
 
@@ -144,7 +136,7 @@ class ChatCompletionsConversationReplierTest(unittest.TestCase):
 
         self.assertEqual(
             raised.exception.failures,
-            ["conversation specialist output must be a JSON object"],
+            ["conversation reply output must be a JSON object"],
         )
 
 

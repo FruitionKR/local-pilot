@@ -38,15 +38,6 @@ AgentAction = Literal[
 SkillMode = Literal["auto", "explicit", "off"]
 RetrievalSource = Literal["none", "workspace", "web"]
 DocumentOperation = Literal["none", "create", "edit"]
-CoreSpecialistAction = Literal[
-    "chat_answer",
-    "conversation_reply",
-    "markdown_edit",
-    "markdown_create",
-    "clarify",
-]
-
-
 @dataclass(frozen=True)
 class SkillCandidate:
     id: str
@@ -119,14 +110,6 @@ class AgentTurnRoute:
     document_operation: DocumentOperation = "none"
     persist: bool = False
     required_capabilities: tuple[SkillCapability, ...] = ()
-
-
-@dataclass(frozen=True)
-class QuerySpecialistDecision:
-    action: CoreSpecialistAction
-    retrieval_source: RetrievalSource
-    reason: str
-    message: str | None = None
 
 
 @dataclass(frozen=True)

@@ -142,16 +142,13 @@ Agent 실행 계획에는 별도의 권한·tool·승인 검사를 계속 적용
 대표하는 action을 선택한다. `required_capabilities`는 요청의 모든 절에 필요한
 `document-create|document-edit|folder-organize|template`을 담는다. 서버는 일부 capability만 가진
 Skill을 선택하지 않으며, 선택된 Skill의 capability별 확정 Tool 권한을 합쳐 planner에 전달한다.
-1차 라우터는 Query·대화·Markdown 편집·Markdown 생성의 큰 실행 영역을 선택한다. 선택된 specialist는
-사용자 원문과 대화·문서 문맥을 다시 확인해 요청을 수락하거나 다른 core specialist로 handoff하거나
-한 번의 확인 질문을 반환한다. Query specialist는 `workspace|web` 검색 출처를 최종 확정하며,
-주제 없는 `검색해줘` 같은 요청은 검색을 실행하지 않고 검색 대상을 묻는다. specialist 간 handoff는
-한 번만 허용하고 두 번째 specialist도 요청을 수락하지 않으면 `clarify`로 종료해 순환을 막는다.
-Markdown 편집의 `edit_goal`·`edit_operation`·`edit_destination`은 라우터 단계의 힌트다.
-Markdown specialist는 최종 편집 방식과 대상을 정하며 설명·질문이면 `chat_answer`, 새 문서 요청이면
-`markdown_create`, 비검색 대화면 `conversation_reply`로 handoff한다.
-specialist가 확정한 `insert_after + whole_document`는 `edit_destination=document_end`로 응답하며,
-활성 선택 영역이 있더라도 문서 끝 추가가 선택 영역 교체로 바뀌지 않는다.
+라우터는 Query·대화·Markdown 편집·Markdown 생성의 실행 영역과 세부 실행 필드를 한 번에 확정한다.
+선택된 실행기는 요청을 다시 분류하거나 다른 실행기로 넘기지 않고 해당 action만 수행한다.
+따라서 `retrieval_source`, `edit_goal`, `edit_operation`, `edit_destination`은 실행기가 덮어쓸 수 없는
+실행 입력이다. 주제 없는 `검색해줘` 같은 요청은 라우터가 `conversation_reply`로 보내 검색 대상을 묻고,
+구조상 필요한 편집 위치를 확인할 수 없을 때만 애플리케이션이 `clarify`로 종료한다.
+`insert_after + document_end`는 활성 선택 영역이 있더라도 전체 문서를 위치 기준으로 사용하므로
+선택 영역 교체로 바뀌지 않는다.
 서버는 검색·문서 작업 의미를 문장 패턴으로 덮어쓰지 않는다. action과 필드 조합이 모순되거나
 명시적인 Skill 생성·완료 작업 일반화 의도와 route가 충돌할 때만 LLM에 한 번 재요청한다.
 두 번째 응답도 계약을 만족하지 못하면 HTTP 422로 종료한다.

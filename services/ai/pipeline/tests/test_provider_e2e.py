@@ -30,33 +30,20 @@ class _Client:
                 "needs_neighbor_context": False,
                 "context_problem": None,
             }
-        if "query and search specialist" in system_prompt:
+        if "conversation reply executor" in system_prompt:
+            return {"message": "오늘도 한 걸음씩 차근차근 나아가 보자."}
+        if "Markdown edit executor" in system_prompt:
             return {
-                "action": "markdown_edit",
-                "retrieval_source": "none",
-                "reason": "활성 문서 편집 요청",
-                "message": None,
+                "operation": "replace",
+                "actual_target": {
+                    "type": "selection",
+                    "start_line": 3,
+                    "end_line": 3,
+                },
+                "summary": "선택한 문장을 굵게 표시했습니다.",
+                "replacement_markdown": "**MongoDB는 사용하지 않는다.**",
             }
-        if "conversation specialist" in system_prompt:
-            return {
-                "action": "chat_answer",
-                "reason": "검색이 필요한 질문",
-                "message": None,
-            }
-        if "Markdown edit engine" in system_prompt:
-            return {
-                "decision": "chat_answer",
-                "reason": "설명 요청",
-                "message": None,
-            }
-        if "Markdown document creation engine" in system_prompt:
-            payload = json.loads(user_prompt)
-            if payload.get("specialist_mode"):
-                return {
-                    "decision": "chat_answer",
-                    "reason": "설명 요청",
-                    "message": None,
-                }
+        if "Markdown document creation executor" in system_prompt:
             return {
                 "title": "RAG 합의",
                 "summary": "RAG 합의를 정리했습니다.",
@@ -194,7 +181,7 @@ def test_runs_ingestion_agent_and_markdown_contracts() -> None:
     assert [result["name"] for result in results] == [
         "ingestion_json",
         "agent_router",
-        "agent_specialist_handoffs",
+        "agent_executors",
         "markdown_create",
     ]
     assert all(result["passed"] for result in results)
@@ -209,7 +196,7 @@ def test_uses_markdown_create_prompt() -> None:
     )
 
     assert any(
-        "Markdown document creation engine" in prompt
+        "Markdown document creation executor" in prompt
         for prompt in client.system_prompts
     )
 

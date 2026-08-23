@@ -27,7 +27,6 @@ class MarkdownEditRequest:
     edit_goal: str | None = None
     edit_operation: EditOperationType = "replace"
     edit_destination: EditDestination = "target"
-    specialist_mode: bool = False
     skill_instructions: str | None = None
     output_language: OutputLanguage | None = None
 
@@ -68,7 +67,6 @@ class MarkdownCreateRequest:
     user_id: str | None = None
     conversation_summary: str | None = None
     reference_context: dict[str, object] | None = None
-    specialist_mode: bool = False
     skill_instructions: str | None = None
     output_language: OutputLanguage | None = None
 

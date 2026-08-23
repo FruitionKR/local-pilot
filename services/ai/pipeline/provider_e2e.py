@@ -13,17 +13,10 @@ from app.core.llm_env import (
     resolve_llm_selection,
 )
 from app.modules.agent.domain.entities import ActiveMarkdownContext, AgentTurnRequest
-from app.modules.agent.domain.exceptions import (
-    AgentTurnRouteContractError,
-    ConversationHandoffError,
-)
+from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.agent.infrastructure.chat_completions_conversation_replier import (
     DEFAULT_CONVERSATION_REPLY_PROMPT,
     ChatCompletionsConversationReplier,
-)
-from app.modules.agent.infrastructure.chat_completions_query_specialist import (
-    DEFAULT_QUERY_SPECIALIST_PROMPT,
-    ChatCompletionsQuerySpecialist,
 )
 from app.modules.agent.infrastructure.chat_completions_turn_router import (
     DEFAULT_AGENT_TURN_ROUTER_PROMPT,
@@ -34,7 +27,6 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditRequest,
     MarkdownEditTarget,
 )
-from app.modules.markdown_edit.domain.exceptions import MarkdownSpecialistHandoffError
 from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor import (
     DEFAULT_MARKDOWN_CREATE_PROMPT,
     DEFAULT_MARKDOWN_EDIT_PROMPT,
@@ -86,8 +78,8 @@ def run_provider_e2e(
             lambda: _probe_agent_router(client),
         ),
         _run_probe(
-            "agent_specialist_handoffs",
-            lambda: _probe_agent_specialist_handoffs(client),
+            "agent_executors",
+            lambda: _probe_agent_executors(client),
         ),
         _run_probe(
             "markdown_create",
@@ -293,35 +285,20 @@ def _probe_markdown_create(client: ChatCompletionsJsonClient) -> None:
         raise RuntimeError("Markdown create contract returned an empty field")
 
 
-def _probe_agent_specialist_handoffs(client: ChatCompletionsJsonClient) -> None:
+def _probe_agent_executors(client: ChatCompletionsJsonClient) -> None:
     active_markdown = ActiveMarkdownContext(
         markdown="# 저장소 결정\n\nMongoDB는 사용하지 않는다.",
         target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
     )
-    query_decision = ChatCompletionsQuerySpecialist(
-        client,
-        Path(DEFAULT_QUERY_SPECIALIST_PROMPT).read_text(encoding="utf-8"),
-    ).decide(
-        AgentTurnRequest(
-            message="선택한 문장을 자연스럽게 고쳐줘.",
-            active_markdown_context=active_markdown,
-        ),
-        retrieval_source="workspace",
-    )
-    if query_decision.action != "markdown_edit":
-        raise RuntimeError("Query specialist did not hand the edit request to Markdown")
-
     conversation_replier = ChatCompletionsConversationReplier(
         client,
         Path(DEFAULT_CONVERSATION_REPLY_PROMPT).read_text(encoding="utf-8"),
     )
-    try:
-        conversation_replier.reply(AgentTurnRequest(message="RAG가 무엇인지 찾아줘."))
-    except ConversationHandoffError as handoff:
-        if handoff.action != "chat_answer":
-            raise RuntimeError("Conversation specialist selected an unexpected handoff") from None
-    else:
-        raise RuntimeError("Conversation specialist did not hand the query to search")
+    reply = conversation_replier.reply(
+        AgentTurnRequest(message="'오늘도 차근차근 해보자'를 더 자연스럽게 바꿔줘.")
+    )
+    if not reply.strip():
+        raise RuntimeError("Conversation executor returned an empty reply")
 
     editor = ChatCompletionsMarkdownEditor(
         client,
@@ -329,33 +306,18 @@ def _probe_agent_specialist_handoffs(client: ChatCompletionsJsonClient) -> None:
         create_system_prompt=Path(DEFAULT_MARKDOWN_CREATE_PROMPT).read_text(encoding="utf-8"),
         source_edit_system_prompt=Path(DEFAULT_MARKDOWN_SOURCE_EDIT_PROMPT).read_text(encoding="utf-8"),
     )
-    try:
-        editor.generate_edit(
-            MarkdownEditRequest(
-                instruction="이 결정이 아닌 이유가 뭐야?",
-                markdown=active_markdown.markdown,
-                target=active_markdown.target,
-                specialist_mode=True,
-            )
+    edit = editor.generate_edit(
+        MarkdownEditRequest(
+            instruction="선택한 문장을 굵게 표시해줘.",
+            markdown=active_markdown.markdown,
+            target=active_markdown.target,
+            edit_goal="style_change",
+            edit_operation="replace",
+            edit_destination="target",
         )
-    except MarkdownSpecialistHandoffError as handoff:
-        if handoff.action != "chat_answer":
-            raise RuntimeError("Edit specialist selected an unexpected handoff") from None
-    else:
-        raise RuntimeError("Edit specialist did not hand the question to query")
-
-    try:
-        editor.generate_markdown(
-            MarkdownCreateRequest(
-                instruction="RAG가 뭐야?",
-                specialist_mode=True,
-            )
-        )
-    except MarkdownSpecialistHandoffError as handoff:
-        if handoff.action != "chat_answer":
-            raise RuntimeError("Create specialist selected an unexpected handoff") from None
-    else:
-        raise RuntimeError("Create specialist did not hand the question to query")
+    ).edit
+    if edit.operation != "replace" or not edit.replacement_markdown.strip():
+        raise RuntimeError("Markdown edit executor violated the routed operation")
 
 
 def _run_probe(

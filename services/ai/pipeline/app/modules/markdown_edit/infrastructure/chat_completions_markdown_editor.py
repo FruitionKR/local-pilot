@@ -4,7 +4,7 @@ import re
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from app.core.llm_env import (
     api_key_from_env,
@@ -27,7 +27,6 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditResult,
     MarkdownEditTarget,
 )
-from app.modules.markdown_edit.domain.exceptions import MarkdownSpecialistHandoffError
 from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownCreateOutputContractError,
     MarkdownOutputContractError,
@@ -94,19 +93,14 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         scope = build_markdown_target_scope(request.markdown, request.target, self._context_lines)
         scoped_request = replace(request, markdown=scope.markdown)
         requested_operation = request.edit_operation
-        source_range_plan = (
-            None if request.specialist_mode else build_source_range_plan(scoped_request)
-        )
+        source_range_plan = build_source_range_plan(scoped_request)
         if source_range_plan is not None:
             return self._generate_source_range_edit(scoped_request, source_range_plan, scope)
 
         protected = protect_markdown(scoped_request)
         payload = {
             "instruction": scoped_request.instruction,
-            "edit_goal": (
-                None if scoped_request.specialist_mode else scoped_request.edit_goal
-            ),
-            "specialist_mode": scoped_request.specialist_mode,
+            "edit_goal": scoped_request.edit_goal,
             "conversation_summary": scoped_request.conversation_summary,
             "reference_context": scoped_request.reference_context or {},
             "requested_target": {
@@ -117,14 +111,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "markdown": protected.markdown,
             "editable_context": _editable_context_payload(scope, protected.markdown),
         }
-        if scoped_request.specialist_mode:
-            payload["document_end_target"] = {
-                "type": "whole_document",
-                "start_line": 1,
-                "end_line": len(re.split(r"\r\n|\r|\n", request.markdown)),
-            }
-        else:
-            payload["requested_operation"] = requested_operation
+        payload["requested_operation"] = requested_operation
         system_prompt = with_response_preferences(
             with_schema_and_skill_prompt(
                 self._system_prompt,
@@ -267,17 +254,12 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             system_prompt,
             json.dumps(payload, ensure_ascii=False, indent=2),
         )
-        if request.specialist_mode:
-            handoff = _specialist_handoff(raw)
-            if handoff is not None:
-                raise handoff
         result, failures = _normalize_edit_result(
             raw,
             request.target,
             request.edit_operation,
-            specialist_mode=request.specialist_mode,
         )
-        if request.edit_operation == "insert_after" and not request.specialist_mode:
+        if request.edit_operation == "insert_after":
             result = replace(
                 result,
                 edit=replace(result.edit, target=request.target),
@@ -285,20 +267,8 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         protected_replacement = result.edit.replacement_markdown
         restored, protected_failures = protected.restore(protected_replacement)
         failures.extend(protected_failures)
-        actual_request = request
-        if request.specialist_mode:
-            actual_request = replace(
-                request,
-                edit_operation=result.edit.operation,
-                edit_destination=(
-                    "document_end"
-                    if result.edit.operation == "insert_after"
-                    and result.edit.actual_target.type == "whole_document"
-                    else "target"
-                ),
-            )
         actual_request = _actual_target_request(
-            actual_request,
+            request,
             result.edit.actual_target,
             scope,
             failures,
@@ -322,7 +292,6 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "instruction": request.instruction,
             "conversation_summary": request.conversation_summary,
             "reference_context": request.reference_context or {},
-            "specialist_mode": request.specialist_mode,
         }
         system_prompt = with_response_preferences(
             with_schema_and_skill_prompt(
@@ -377,10 +346,6 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         request: MarkdownCreateRequest,
     ) -> tuple[MarkdownCreateResult, list[str], dict[str, Any]]:
         raw = self._client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
-        if request.specialist_mode:
-            handoff = _specialist_handoff(raw, accepted_decision="create")
-            if handoff is not None:
-                raise handoff
         failures: list[str] = []
         result = _normalize_create_result(raw, failures)
         failures.extend(validate_markdown_create_output(result.document))
@@ -450,21 +415,12 @@ def _normalize_edit_result(
     value: dict[str, Any],
     requested_target: MarkdownEditTarget,
     requested_operation: EditOperationType,
-    *,
-    specialist_mode: bool = False,
 ) -> tuple[MarkdownEditResult, list[str]]:
     failures: list[str] = []
     raw_operation = value.get("operation")
-    if specialist_mode and value.get("decision") != "edit":
-        failures.append("decision must be edit, chat_answer, or clarify")
-    if specialist_mode and raw_operation in {"replace", "insert_after"}:
-        operation = cast(EditOperationType, raw_operation)
-    else:
-        operation = requested_operation
-    if not specialist_mode and raw_operation != requested_operation:
+    operation = requested_operation
+    if raw_operation != requested_operation:
         failures.append(f"operation must be {requested_operation}")
-    if specialist_mode and raw_operation not in {"replace", "insert_after"}:
-        failures.append("operation must be replace or insert_after")
     actual_target = _normalize_actual_target(
         value.get("actual_target"),
         requested_target,
@@ -490,49 +446,6 @@ def _normalize_edit_result(
     if not result.edit.replacement_markdown.strip():
         failures.append("replacement_markdown must not be empty")
     return result, failures
-
-
-def _specialist_handoff(
-    value: dict[str, Any],
-    *,
-    accepted_decision: str = "edit",
-) -> MarkdownSpecialistHandoffError | None:
-    decision = value.get("decision")
-    if decision in {None, accepted_decision}:
-        return None
-    reason = value.get("reason")
-    resolved_reason = (
-        reason.strip()
-        if isinstance(reason, str) and reason.strip()
-        else "Markdown specialist handoff"
-    )
-    if decision in {
-        "chat_answer",
-        "conversation_reply",
-        "markdown_edit",
-        "markdown_create",
-    }:
-        return MarkdownSpecialistHandoffError(decision, resolved_reason)
-    if decision == "clarify":
-        message = value.get("message")
-        if isinstance(message, str) and message.strip():
-            return MarkdownSpecialistHandoffError(
-                "clarify",
-                resolved_reason,
-                message.strip(),
-            )
-        return MarkdownSpecialistHandoffError(
-            "clarify",
-            resolved_reason,
-            "요청을 처리하는 데 필요한 내용을 조금 더 알려주세요.",
-        )
-    return MarkdownSpecialistHandoffError(
-        "clarify",
-        "Markdown specialist returned an unsupported decision",
-        "요청하신 작업을 조금 더 구체적으로 알려주세요.",
-    )
-
-
 def _normalize_actual_target(
     value: object,
     requested_target: MarkdownEditTarget,
