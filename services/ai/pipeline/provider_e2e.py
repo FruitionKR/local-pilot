@@ -195,7 +195,7 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
         ),
         (
             AgentTurnRequest(
-                message="Wiki 근거로 현재 문서를 보완해줘",
+                message="Wiki 근거 요약을 이 문서 아래에 추가해줘",
                 active_markdown_context=active_markdown,
             ),
             (
@@ -204,9 +204,9 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
                 "edit",
                 False,
                 ("document-edit",),
-                "other",
-                "replace",
-                "target",
+                "shorten",
+                "insert_after",
+                "document_end",
             ),
             (
                 (
@@ -216,6 +216,16 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
                     False,
                     ("document-edit",),
                     "other",
+                    "insert_after",
+                    "document_end",
+                ),
+                (
+                    "markdown_edit",
+                    "workspace",
+                    "edit",
+                    False,
+                    ("document-edit",),
+                    "bullet_list",
                     "insert_after",
                     "document_end",
                 ),
@@ -308,15 +318,19 @@ def _probe_agent_executors(client: ChatCompletionsJsonClient) -> None:
     )
     edit = editor.generate_edit(
         MarkdownEditRequest(
-            instruction="선택한 문장을 굵게 표시해줘.",
+            instruction="요약 내용을 이 문서 아래에 추가해줘.",
             markdown=active_markdown.markdown,
-            target=active_markdown.target,
-            edit_goal="style_change",
-            edit_operation="replace",
-            edit_destination="target",
+            target=MarkdownEditTarget(
+                type="whole_document",
+                start_line=1,
+                end_line=3,
+            ),
+            edit_goal="other",
+            edit_operation="insert_after",
+            edit_destination="document_end",
         )
     ).edit
-    if edit.operation != "replace" or not edit.replacement_markdown.strip():
+    if edit.operation != "insert_after" or not edit.replacement_markdown.strip():
         raise RuntimeError("Markdown edit executor violated the routed operation")
 
 

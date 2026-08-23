@@ -34,14 +34,14 @@ class _Client:
             return {"message": "오늘도 한 걸음씩 차근차근 나아가 보자."}
         if "Markdown edit executor" in system_prompt:
             return {
-                "operation": "replace",
+                "operation": "insert_after",
                 "actual_target": {
-                    "type": "selection",
-                    "start_line": 3,
+                    "type": "whole_document",
+                    "start_line": 1,
                     "end_line": 3,
                 },
-                "summary": "선택한 문장을 굵게 표시했습니다.",
-                "replacement_markdown": "**MongoDB는 사용하지 않는다.**",
+                "summary": "문서 아래에 요약을 추가했습니다.",
+                "replacement_markdown": "## 요약\n\nMongoDB를 사용하지 않습니다.",
             }
         if "Markdown document creation executor" in system_prompt:
             return {
