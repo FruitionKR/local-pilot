@@ -117,8 +117,8 @@ class _Client:
                     "required_capabilities": ["document-edit"],
                     "reason": "근거 기반 보완",
                     "edit_goal": "other",
-                    "edit_operation": "replace",
-                    "edit_destination": "target",
+                    "edit_operation": "insert_after",
+                    "edit_destination": "document_end",
                 }
             return {
                 "action": "chat_answer",
@@ -156,6 +156,33 @@ class _FailingClient(_Client):
             user_prompt,
             trusted_identifiers=trusted_identifiers,
         )
+
+
+class _MisroutingClient(_Client):
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        trusted_identifiers: tuple[str, ...] = (),
+    ) -> dict[str, object]:
+        response = super().complete_json(
+            system_prompt,
+            user_prompt,
+            trusted_identifiers=trusted_identifiers,
+        )
+        if (
+            "action" in system_prompt
+            and "chat_answer" in system_prompt
+            and json.loads(user_prompt)["message"]
+            == "RAG가 무엇인지 한 문장으로 설명해줘."
+        ):
+            return {
+                **response,
+                "action": "conversation_reply",
+                "retrieval_source": "none",
+            }
+        return response
 
 
 def test_runs_ingestion_agent_and_markdown_contracts() -> None:
@@ -204,3 +231,15 @@ def test_records_safe_failure_and_continues_other_probes() -> None:
     assert results[1]["passed"] is True
     assert results[2]["passed"] is True
     assert results[3]["passed"] is True
+
+
+def test_rejects_contract_valid_but_unexpected_agent_route() -> None:
+    results = run_provider_e2e(
+        _MisroutingClient(),  # type: ignore[arg-type]
+        prompt_root=Path(__file__).parents[1] / "prompts",
+    )
+
+    assert results[1]["passed"] is False
+    assert results[1]["error_type"] == "_ProbeAssertionError"
+    assert "case 1" in str(results[1]["failure"])
+    assert "conversation_reply" in str(results[1]["failure"])

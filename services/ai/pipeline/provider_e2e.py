@@ -66,6 +66,11 @@ REQUIRED_EXTRACTION_KEYS = {
     "context_problem",
 }
 
+
+class _ProbeAssertionError(RuntimeError):
+    pass
+
+
 def run_provider_e2e(
     client: ChatCompletionsJsonClient,
     *,
@@ -140,40 +145,130 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
             ),
         ),
     )
-    requests = (
-        AgentTurnRequest(message="RAG가 무엇인지 한 문장으로 설명해줘."),
-        AgentTurnRequest(
-            message="Mongo DB를 사용하지 않기로 판단한 이유가 뭐지?",
-            active_markdown_context=active_markdown,
+    cases = (
+        (
+            AgentTurnRequest(message="RAG가 무엇인지 한 문장으로 설명해줘."),
+            ("chat_answer", "workspace", "none", False, (), None, None, None),
+            (),
         ),
-        AgentTurnRequest(
-            message="Mongo가 이 문서를 저장하지 않는 이유가 뭐지?",
-            active_markdown_context=active_markdown,
+        (
+            AgentTurnRequest(
+                message="Mongo DB를 사용하지 않기로 판단한 이유가 뭐지?",
+                active_markdown_context=active_markdown,
+            ),
+            ("chat_answer", "workspace", "none", False, (), None, None, None),
+            (),
         ),
-        AgentTurnRequest(
-            message="현재 문서를 요약한 뒤 보관 폴더로 옮겨 저장해줘",
-            active_markdown_context=active_markdown,
+        (
+            AgentTurnRequest(
+                message="Mongo가 이 문서를 저장하지 않는 이유가 뭐지?",
+                active_markdown_context=active_markdown,
+            ),
+            ("chat_answer", "workspace", "none", False, (), None, None, None),
+            (),
         ),
-        AgentTurnRequest(
-            message="현재 문서를 요약해서 저장해줄래?",
-            active_markdown_context=active_markdown,
+        (
+            AgentTurnRequest(
+                message="현재 문서를 요약한 뒤 보관 폴더로 옮겨 저장해줘",
+                active_markdown_context=active_markdown,
+            ),
+            (
+                "workspace_workflow",
+                "none",
+                "edit",
+                True,
+                ("document-edit", "folder-organize"),
+                "shorten",
+                "replace",
+                "target",
+            ),
+            (),
         ),
-        AgentTurnRequest(
-            message="Wiki 근거로 현재 문서를 보완해줘",
-            active_markdown_context=active_markdown,
+        (
+            AgentTurnRequest(
+                message="현재 문서를 요약해서 저장해줄래?",
+                active_markdown_context=active_markdown,
+            ),
+            (
+                "workspace_workflow",
+                "none",
+                "edit",
+                True,
+                ("document-edit",),
+                "shorten",
+                "replace",
+                "target",
+            ),
+            (),
         ),
-        AgentTurnRequest(
-            message="선택한 완료 작업을 재사용 가능한 Skill로 만들어줘",
-            skill_draft_sources=(selected_work,),
+        (
+            AgentTurnRequest(
+                message="Wiki 근거로 현재 문서를 보완해줘",
+                active_markdown_context=active_markdown,
+            ),
+            (
+                "markdown_edit",
+                "workspace",
+                "edit",
+                False,
+                ("document-edit",),
+                "other",
+                "replace",
+                "target",
+            ),
+            (
+                (
+                    "markdown_edit",
+                    "workspace",
+                    "edit",
+                    False,
+                    ("document-edit",),
+                    "other",
+                    "insert_after",
+                    "document_end",
+                ),
+            ),
+        ),
+        (
+            AgentTurnRequest(
+                message="선택한 완료 작업을 재사용 가능한 Skill로 만들어줘",
+                skill_draft_sources=(selected_work,),
+            ),
+            (
+                "skill_draft_proposal",
+                "none",
+                "none",
+                False,
+                (),
+                None,
+                None,
+                None,
+            ),
+            (),
         ),
     )
-    for case_index, request in enumerate(requests, start=1):
+    for case_index, (request, expected, acceptable) in enumerate(cases, start=1):
         try:
-            router.route(request)
+            route = router.route(request)
         except AgentTurnRouteContractError:
             raise RuntimeError(
                 f"Agent router case {case_index} failed its output contract"
             ) from None
+        actual = (
+            route.action,
+            route.retrieval_source,
+            route.document_operation,
+            route.persist,
+            route.required_capabilities,
+            route.edit_goal,
+            route.edit_operation,
+            route.edit_destination,
+        )
+        if actual not in (expected, *acceptable):
+            raise _ProbeAssertionError(
+                f"Agent router case {case_index} returned {actual!r}; "
+                f"expected one of {(expected, *acceptable)!r}"
+            )
 
 
 def _probe_markdown_create(client: ChatCompletionsJsonClient) -> None:
@@ -280,6 +375,11 @@ def _run_probe(
             ),
             "error_type": type(error).__name__,
             "http_status": _http_status(error),
+            **(
+                {"failure": str(error)}
+                if isinstance(error, _ProbeAssertionError)
+                else {}
+            ),
         }
     return {
         "name": name,
