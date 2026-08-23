@@ -2,7 +2,6 @@ import json
 import unittest
 
 from app.modules.agent.domain.entities import (
-    ActiveMarkdownContext,
     AgentConversationContext,
     AgentTurnRequest,
     PendingSkillProposal,
@@ -635,6 +634,8 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
                 "required_capabilities must be an array of unique supported capabilities"
             ),
             "edit_goal": "edit_goal is required",
+            "edit_operation": "edit_operation is required",
+            "edit_destination": "edit_destination is required",
             "reason": "reason must be a non-empty string",
         }
 

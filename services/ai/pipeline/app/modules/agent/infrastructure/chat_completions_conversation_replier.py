@@ -22,10 +22,12 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
 )
+from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
 DEFAULT_CONVERSATION_REPLY_PROMPT = (
     Path(__file__).resolve().parents[4] / "prompts" / "conversation_reply.system.md"
 )
+JSON_OBJECT_CONTRACT_FAILURE = "conversation specialist output must be a JSON object"
 PRODUCT_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
@@ -61,11 +63,28 @@ class ChatCompletionsConversationReplier(ConversationReplierPort):
             request.output_language,
             request.response_length,
         )
-        raw = self._client.complete_json(
-            system_prompt,
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            trusted_identifiers=(current_date,),
-        )
+        try:
+            raw = self._client.complete_json(
+                system_prompt,
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                trusted_identifiers=(current_date,),
+            )
+        except JsonParseError:
+            retry_payload = {
+                **payload,
+                "contract_failures": [JSON_OBJECT_CONTRACT_FAILURE],
+                "retry_instruction": "Return the required JSON object again.",
+            }
+            try:
+                raw = self._client.complete_json(
+                    system_prompt,
+                    json.dumps(retry_payload, ensure_ascii=False, indent=2),
+                    trusted_identifiers=(current_date,),
+                )
+            except JsonParseError as exc:
+                raise AgentTurnRouteContractError(
+                    [JSON_OBJECT_CONTRACT_FAILURE]
+                ) from exc
         action = raw.get("action")
         reason = raw.get("reason")
         message = raw.get("message")

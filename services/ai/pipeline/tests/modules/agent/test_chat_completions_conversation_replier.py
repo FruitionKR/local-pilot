@@ -3,13 +3,17 @@ import unittest
 from datetime import datetime, timezone
 
 from app.modules.agent.domain.entities import AgentConversationContext, AgentTurnRequest
-from app.modules.agent.domain.exceptions import ConversationHandoffError
+from app.modules.agent.domain.exceptions import (
+    AgentTurnRouteContractError,
+    ConversationHandoffError,
+)
 from app.modules.agent.infrastructure.chat_completions_conversation_replier import (
     DEFAULT_CONVERSATION_REPLY_PROMPT,
     ChatCompletionsConversationReplier,
     _current_date,
 )
 from app.modules.query.domain.entities import ConversationMessage
+from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
 
 class FakeChatClient:
@@ -29,6 +33,25 @@ class FakeChatClient:
             "reason": "검색 없이 완성할 수 있는 대화 요청입니다.",
             "message": "  2026-08-17-덥고 습함-🥵  ",
         }
+
+
+class SequenceJsonClient:
+    def __init__(self, responses: list[dict[str, object] | Exception]) -> None:
+        self.responses = responses
+        self.calls: list[tuple[str, str, tuple[str, ...]]] = []
+
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        trusted_identifiers: tuple[str, ...] = (),
+    ) -> dict[str, object]:
+        self.calls.append((system_prompt, user_prompt, trusted_identifiers))
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class ChatCompletionsConversationReplierTest(unittest.TestCase):
@@ -83,6 +106,46 @@ class ChatCompletionsConversationReplierTest(unittest.TestCase):
             replier.reply(AgentTurnRequest(message="오늘 서울 날씨를 찾아줘."))
 
         self.assertEqual(raised.exception.action, "chat_answer")
+
+    def test_retries_json_parse_failure_once(self) -> None:
+        client = SequenceJsonClient(
+            [
+                JsonParseError("secret malformed reply"),
+                {
+                    "action": "conversation_reply",
+                    "reason": "검색 없는 대화 요청입니다.",
+                    "message": "다시 작성한 답변",
+                },
+            ]
+        )
+        replier = ChatCompletionsConversationReplier(client, "system")  # type: ignore[arg-type]
+
+        reply = replier.reply(AgentTurnRequest(message="다시 설명해줘."))
+
+        self.assertEqual(reply, "다시 작성한 답변")
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertEqual(
+            retry_payload["contract_failures"],
+            ["conversation specialist output must be a JSON object"],
+        )
+        self.assertNotIn("secret malformed reply", client.calls[1][1])
+
+    def test_converts_second_json_parse_failure_to_contract_error(self) -> None:
+        client = SequenceJsonClient(
+            [
+                JsonParseError("first malformed reply"),
+                JsonParseError("second malformed reply"),
+            ]
+        )
+        replier = ChatCompletionsConversationReplier(client, "system")  # type: ignore[arg-type]
+
+        with self.assertRaises(AgentTurnRouteContractError) as raised:
+            replier.reply(AgentTurnRequest(message="다시 설명해줘."))
+
+        self.assertEqual(
+            raised.exception.failures,
+            ["conversation specialist output must be a JSON object"],
+        )
 
 
 if __name__ == "__main__":
