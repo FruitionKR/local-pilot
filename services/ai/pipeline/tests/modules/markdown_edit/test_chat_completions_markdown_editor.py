@@ -2,8 +2,15 @@ import json
 import unittest
 from unittest.mock import patch
 
-from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
-from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, MarkdownEditRequest, MarkdownEditTarget
+from app.modules.markdown_edit.application.generate_markdown_edit import (
+    GenerateMarkdownEditUseCase,
+)
+from app.modules.markdown_edit.domain.entities import (
+    MarkdownCreateRequest,
+    MarkdownEditRequest,
+    MarkdownEditTarget,
+)
+from app.modules.markdown_edit.domain.exceptions import MarkdownSpecialistHandoffError
 from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownCreateOutputContractError,
     MarkdownOutputContractError,
@@ -16,7 +23,6 @@ from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor i
     build_markdown_editor,
 )
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
-
 
 TARGET = MarkdownEditTarget(type="whole_document", start_line=1, end_line=1)
 
@@ -40,6 +46,9 @@ def response(
     actual_target: dict[str, object] | None = None,
 ) -> dict[str, object]:
     result: dict[str, object] = {
+        "decision": "edit",
+        "reason": "Markdown 변경 요청입니다.",
+        "message": None,
         "operation": operation,
         "summary": "수정했습니다.",
         "replacement_markdown": replacement_markdown,
@@ -360,7 +369,8 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
             instruction="이 섹션 아래에 문제 해결 절을 추가해줘.",
             markdown="# 설치\n\n설치 방법입니다.",
             target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
-            edit_goal="insert_after",
+            edit_goal="other",
+            edit_operation="insert_after",
         )
 
         result = editor.generate_edit(request)
@@ -369,6 +379,119 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         self.assertEqual(payload["requested_operation"], "insert_after")
         self.assertEqual(result.edit.operation, "insert_after")
         self.assertEqual(result.edit.replacement_markdown, "## 문제 해결\n\n로그를 확인합니다.")
+
+    def test_specialist_hands_information_question_back_to_chat(self) -> None:
+        client = SequenceJsonClient(
+            [
+                {
+                    "decision": "chat_answer",
+                    "reason": "활성 문서에 대한 설명 요청입니다.",
+                    "message": None,
+                    "operation": None,
+                    "actual_target": None,
+                    "summary": None,
+                    "replacement_markdown": None,
+                }
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+
+        with self.assertRaises(MarkdownSpecialistHandoffError) as raised:
+            editor.generate_edit(
+                MarkdownEditRequest(
+                    instruction="이 내용이 틀린 이유가 뭐야?",
+                    markdown="# 설명\n\n기존 내용",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                    edit_goal="cleanup",
+                    specialist_mode=True,
+                )
+            )
+
+        self.assertEqual(raised.exception.action, "chat_answer")
+        payload = json.loads(client.calls[0][1])
+        self.assertTrue(payload["specialist_mode"])
+        self.assertNotIn("router_hints", payload)
+        self.assertIsNone(payload["edit_goal"])
+
+    def test_specialist_overrides_router_hint_and_appends_to_document_end(self) -> None:
+        client = SequenceJsonClient(
+            [
+                response(
+                    "## 추가 내용\n\n새 본문",
+                    operation="insert_after",
+                    actual_target={
+                        "type": "whole_document",
+                        "start_line": 1,
+                        "end_line": 3,
+                    },
+                )
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+
+        result = editor.generate_edit(
+            MarkdownEditRequest(
+                instruction="그 내용을 이 문서 아래에 추가해줘.",
+                markdown="# 제목\n선택 문장\n끝",
+                target=MarkdownEditTarget(type="selection", start_line=2, end_line=2),
+                edit_goal="other",
+                edit_operation="replace",
+                edit_destination="target",
+                specialist_mode=True,
+            )
+        )
+
+        self.assertEqual(result.edit.operation, "insert_after")
+        self.assertEqual(result.edit.actual_target.type, "whole_document")
+        payload = json.loads(client.calls[0][1])
+        self.assertNotIn("requested_operation", payload)
+        self.assertEqual(payload["document_end_target"]["end_line"], 3)
+
+    def test_edit_specialist_hands_new_document_request_to_create(self) -> None:
+        client = SequenceJsonClient(
+            [{
+                "decision": "markdown_create",
+                "reason": "활성 문서 수정이 아니라 새 문서 생성 요청입니다.",
+                "message": None,
+            }]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+
+        with self.assertRaises(MarkdownSpecialistHandoffError) as raised:
+            editor.generate_edit(
+                MarkdownEditRequest(
+                    instruction="이 내용을 새 문서로 만들어줘.",
+                    markdown="# 기존 문서",
+                    target=TARGET,
+                    specialist_mode=True,
+                )
+            )
+
+        self.assertEqual(raised.exception.action, "markdown_create")
+
+    def test_create_specialist_hands_question_to_query(self) -> None:
+        client = SequenceJsonClient(
+            [{
+                "decision": "chat_answer",
+                "reason": "문서 생성이 아니라 설명 요청입니다.",
+                "message": None,
+            }]
+        )
+        editor = ChatCompletionsMarkdownEditor(
+            client,
+            "system",
+            create_system_prompt="create",
+        )  # type: ignore[arg-type]
+
+        with self.assertRaises(MarkdownSpecialistHandoffError) as raised:
+            editor.generate_markdown(
+                MarkdownCreateRequest(
+                    instruction="RAG가 뭐야?",
+                    specialist_mode=True,
+                )
+            )
+
+        self.assertEqual(raised.exception.action, "chat_answer")
 
     def test_retries_markdown_create_with_contract_failures(self) -> None:
         client = SequenceJsonClient(
@@ -809,7 +932,7 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
             retry_payload["contract_failures"],
         )
 
-    def test_retries_insert_after_with_non_section_actual_target(self) -> None:
+    def test_uses_requested_target_for_insert_after(self) -> None:
         client = SequenceJsonClient(
             [
                 response(
@@ -820,16 +943,7 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
                         "start_line": 1,
                         "end_line": 2,
                     },
-                ),
-                response(
-                    "## 새 섹션",
-                    operation="insert_after",
-                    actual_target={
-                        "type": "current_section",
-                        "start_line": 1,
-                        "end_line": 2,
-                    },
-                ),
+                )
             ]
         )
         editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
@@ -837,18 +951,14 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
             instruction="현재 섹션 뒤에 새 섹션을 추가해줘.",
             markdown="# 현재 섹션\n본문",
             target=MarkdownEditTarget(type="current_section", start_line=1, end_line=2),
-            edit_goal="insert_after",
+            edit_goal="other",
+            edit_operation="insert_after",
         )
 
         result = editor.generate_edit(request)
 
         self.assertEqual(result.edit.actual_target.type, "current_section")
-        self.assertEqual(len(client.calls), 2)
-        retry_payload = json.loads(client.calls[1][1])
-        self.assertIn(
-            "insert_after operation requires a current_section actual_target",
-            retry_payload["contract_failures"],
-        )
+        self.assertEqual(len(client.calls), 1)
 
     def test_retries_actual_target_that_crosses_markdown_structure(self) -> None:
         client = SequenceJsonClient(
@@ -1119,6 +1229,7 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         self.assertEqual(client.calls[0][0], "system")
         retry_payload = json.loads(client.calls[1][1])
         self.assertIn("numbered list items must start directly", retry_payload["contract_failures"][0])
+        self.assertIn("previous output failed trusted application validation", client.calls[1][0])
         self.assertEqual(retry_payload["previous_replacement_markdown"], "- 1. 설치\n- 2. 테스트")
 
     def test_retries_edit_with_markdown_syntax_failures(self) -> None:

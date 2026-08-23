@@ -2,11 +2,18 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from app.modules.markdown_edit.domain.entities import (
+    EditDestination,
+    EditOperationType,
     GeneratedMarkdownDocument,
     MarkdownEditOperation,
     MarkdownEditTarget,
 )
-from app.modules.query.domain.entities import ConversationMessage, OutputLanguage, QueryAnswer, ResponseLength
+from app.modules.query.domain.entities import (
+    ConversationMessage,
+    OutputLanguage,
+    QueryAnswer,
+    ResponseLength,
+)
 from app.modules.skill.domain.entities import (
     SkillAuthoringMode,
     SkillAuthoringResult,
@@ -15,7 +22,6 @@ from app.modules.skill.domain.entities import (
     SkillScopeType,
     SkillTool,
 )
-
 
 AgentAction = Literal[
     "chat_answer",
@@ -32,6 +38,13 @@ AgentAction = Literal[
 SkillMode = Literal["auto", "explicit", "off"]
 RetrievalSource = Literal["none", "workspace", "web"]
 DocumentOperation = Literal["none", "create", "edit"]
+CoreSpecialistAction = Literal[
+    "chat_answer",
+    "conversation_reply",
+    "markdown_edit",
+    "markdown_create",
+    "clarify",
+]
 
 
 @dataclass(frozen=True)
@@ -98,12 +111,22 @@ class AgentTurnRoute:
     confidence: float
     reason: str
     edit_goal: str | None = None
+    edit_operation: EditOperationType | None = None
+    edit_destination: EditDestination | None = None
     selected_skill_id: str | None = None
     skill_candidates: tuple[str, ...] = ()
     retrieval_source: RetrievalSource = "none"
     document_operation: DocumentOperation = "none"
     persist: bool = False
     required_capabilities: tuple[SkillCapability, ...] = ()
+
+
+@dataclass(frozen=True)
+class QuerySpecialistDecision:
+    action: CoreSpecialistAction
+    retrieval_source: RetrievalSource
+    reason: str
+    message: str | None = None
 
 
 @dataclass(frozen=True)

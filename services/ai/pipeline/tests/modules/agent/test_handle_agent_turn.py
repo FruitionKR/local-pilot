@@ -2,17 +2,28 @@ import hashlib
 import unittest
 from dataclasses import replace
 
-from app.modules.agent.application.handle_agent_turn import HandleAgentTurnUseCase
+from app.modules.agent.application.handle_agent_turn import (
+    CLARIFY_HANDOFF_LOOP_MESSAGE,
+    HandleAgentTurnUseCase,
+)
 from app.modules.agent.domain.entities import (
     ActiveMarkdownContext,
     AgentConversationContext,
     AgentTurnRequest,
     AgentTurnRoute,
     PendingSkillProposal,
+    QuerySpecialistDecision,
 )
-from app.modules.agent.domain.exceptions import AgentConfigurationError
-from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
-from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
+from app.modules.agent.domain.exceptions import (
+    AgentConfigurationError,
+    ConversationHandoffError,
+)
+from app.modules.markdown_edit.application.generate_markdown_document import (
+    GenerateMarkdownDocumentUseCase,
+)
+from app.modules.markdown_edit.application.generate_markdown_edit import (
+    GenerateMarkdownEditUseCase,
+)
 from app.modules.markdown_edit.domain.entities import (
     GeneratedMarkdownDocument,
     MarkdownCreateRequest,
@@ -22,6 +33,7 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditResult,
     MarkdownEditTarget,
 )
+from app.modules.markdown_edit.domain.exceptions import MarkdownSpecialistHandoffError
 from app.modules.query.domain.entities import (
     ConversationMessage,
     EvidenceSnippet,
@@ -30,16 +42,17 @@ from app.modules.query.domain.entities import (
     QueryAnswer,
     RetrievalSummary,
 )
-from app.modules.skill.application.select_skill import SelectSkillUseCase
 from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
+from app.modules.skill.application.select_skill import SelectSkillUseCase
 from app.modules.skill.domain.entities import (
+    Skill,
     SkillAuthoringProposal,
     SkillAuthoringResult,
     SkillDraftProposal,
     SkillDraftSourceOperation,
     SkillDraftSourceRun,
+    SkillVersion,
 )
-from app.modules.skill.domain.entities import Skill, SkillVersion
 
 
 class FixedRouter:
@@ -105,18 +118,60 @@ class FakeQueryUseCase:
         )
 
 
+class FixedQuerySpecialist:
+    def __init__(
+        self,
+        action: str = "chat_answer",
+        retrieval_source: str | None = None,
+        reason: str = "query specialist accepted",
+        message: str | None = None,
+    ) -> None:
+        self.action = action
+        self.retrieval_source = retrieval_source
+        self.reason = reason
+        self.message = message
+        self.requests: list[AgentTurnRequest] = []
+
+    def decide(
+        self,
+        request: AgentTurnRequest,
+        *,
+        retrieval_source: str,
+    ) -> QuerySpecialistDecision:
+        self.requests.append(request)
+        resolved_source = self.retrieval_source
+        if resolved_source is None:
+            resolved_source = (
+                retrieval_source
+                if self.action == "chat_answer" and retrieval_source != "none"
+                else "workspace" if self.action == "chat_answer" else "none"
+            )
+        return QuerySpecialistDecision(
+            action=self.action,  # type: ignore[arg-type]
+            retrieval_source=resolved_source,  # type: ignore[arg-type]
+            reason=self.reason,
+            message=self.message,
+        )
+
+
 class RecordingConversationReplier:
-    def __init__(self, reply: str) -> None:
+    def __init__(self, reply: str | Exception) -> None:
         self.reply_text = reply
         self.requests: list[AgentTurnRequest] = []
 
     def reply(self, request: AgentTurnRequest) -> str:
         self.requests.append(request)
+        if isinstance(self.reply_text, Exception):
+            raise self.reply_text
         return self.reply_text
 
 
 class RecordingMarkdownEditor:
-    def __init__(self, result: MarkdownEditResult, create_result: MarkdownCreateResult | None = None) -> None:
+    def __init__(
+        self,
+        result: MarkdownEditResult | Exception,
+        create_result: MarkdownCreateResult | Exception | None = None,
+    ) -> None:
         self.result = result
         self.create_result = create_result or MarkdownCreateResult(
             document=GeneratedMarkdownDocument(
@@ -130,10 +185,15 @@ class RecordingMarkdownEditor:
 
     def generate_edit(self, request: MarkdownEditRequest) -> MarkdownEditResult:
         self.requests.append(request)
+        if isinstance(self.result, Exception):
+            raise self.result
         return self.result
 
     def generate_markdown(self, request: MarkdownCreateRequest) -> MarkdownCreateResult:
         self.create_requests.append(request)
+        if isinstance(self.create_result, Exception):
+            raise self.create_result
+        assert isinstance(self.create_result, MarkdownCreateResult)
         return self.create_result
 
 
@@ -381,6 +441,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
             markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
             conversation_summarizer=summarizer,  # type: ignore[arg-type]
+            query_specialist=FixedQuerySpecialist(),  # type: ignore[arg-type]
         )
         messages = tuple(
             ConversationMessage(
@@ -1031,6 +1092,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.95,
             reason="persistent document edit",
             edit_goal="cleanup",
+            edit_operation="replace",
+            edit_destination="target",
             retrieval_source="workspace",
             document_operation="edit",
             persist=True,
@@ -1103,6 +1166,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.95,
             reason="persistent document edit",
             edit_goal="cleanup",
+            edit_operation="replace",
+            edit_destination="target",
             document_operation="edit",
             persist=True,
         )
@@ -1248,6 +1313,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.99,
             reason="web-grounded edit",
             edit_goal="other",
+            edit_operation="replace",
+            edit_destination="target",
             retrieval_source="web",
             document_operation="edit",
             persist=True,
@@ -1257,6 +1324,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             retrieval_source="none",
             document_operation="none",
             edit_goal=None,
+            edit_operation=None,
+            edit_destination=None,
         )
         use_case = HandleAgentTurnUseCase(
             router=SequencedRouter(contextual_route, direct_route),
@@ -1352,6 +1421,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.99,
             reason="approve previous preview",
             edit_goal="other",
+            edit_operation="replace",
+            edit_destination="target",
             document_operation="edit",
             persist=True,
         )
@@ -1625,23 +1696,22 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertFalse(result.route.persist)
         self.assertEqual(starter.requests, [])
 
-    def test_persistent_insert_after_without_section_returns_clarification(self) -> None:
+    def test_persistent_edit_specialist_can_request_clarification(self) -> None:
         starter = RecordingAgentRunStarter()
         editor = RecordingMarkdownEditor(
-            MarkdownEditResult(
-                edit=MarkdownEditOperation(
-                    operation="insert_after",
-                    target=MarkdownEditTarget(type="current_section", start_line=1, end_line=1),
-                    summary="unused",
-                    replacement_markdown="unused",
-                )
+            MarkdownSpecialistHandoffError(
+                "clarify",
+                "추가 위치를 확인해야 합니다.",
+                "어느 섹션 아래에 추가할까요?",
             )
         )
         route = AgentTurnRoute(
             action="workspace_workflow",
             confidence=0.99,
             reason="append and persist",
-            edit_goal="insert_after",
+            edit_goal="other",
+            edit_operation="insert_after",
+            edit_destination="target",
             document_operation="edit",
             persist=True,
         )
@@ -1665,8 +1735,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         )
 
         self.assertEqual(result.action, "clarify")
-        self.assertIn("현재 섹션", result.message or "")
-        self.assertEqual(editor.requests, [])
+        self.assertEqual(result.message, "어느 섹션 아래에 추가할까요?")
+        self.assertTrue(editor.requests[0].specialist_mode)
         self.assertEqual(starter.requests, [])
 
     def test_persistent_noop_edit_does_not_start_approval_run(self) -> None:
@@ -1686,6 +1756,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             confidence=0.99,
             reason="persist edit",
             edit_goal="other",
+            edit_operation="replace",
+            edit_destination="target",
             document_operation="edit",
             persist=True,
         )
@@ -1940,7 +2012,14 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         )
         use_case = HandleAgentTurnUseCase(
             router=FixedRouter(
-                AgentTurnRoute(action="markdown_edit", confidence=0.9, reason="edit request", edit_goal="shorten")
+                AgentTurnRoute(
+                    action="markdown_edit",
+                    confidence=0.9,
+                    reason="edit request",
+                    edit_goal="shorten",
+                    edit_operation="replace",
+                    edit_destination="target",
+                )
             ),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
@@ -2042,7 +2121,16 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             )
         )
         use_case = HandleAgentTurnUseCase(
-            router=FixedRouter(AgentTurnRoute(action="markdown_edit", confidence=0.8, reason="edit request")),
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="markdown_edit",
+                    confidence=0.8,
+                    reason="edit request",
+                    edit_goal="cleanup",
+                    edit_operation="replace",
+                    edit_destination="target",
+                )
+            ),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
             markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
@@ -2078,7 +2166,14 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 )
                 use_case = HandleAgentTurnUseCase(
                     router=FixedRouter(
-                        AgentTurnRoute(action="markdown_edit", confidence=0.8, reason="edit request")
+                        AgentTurnRoute(
+                            action="markdown_edit",
+                            confidence=0.8,
+                            reason="edit request",
+                            edit_goal="cleanup",
+                            edit_operation="replace",
+                            edit_destination="target",
+                        )
                     ),
                     query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
                     markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
@@ -2166,7 +2261,9 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                     action="clarify",
                     confidence=1.0,
                     reason="insert_after operation is deferred",
-                    edit_goal="insert_after",
+                    edit_goal="other",
+                    edit_operation="insert_after",
+                    edit_destination="target",
                 )
             ),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
@@ -2179,15 +2276,12 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(result.action, "clarify")
         self.assertIn("현재 섹션을 선택", result.message or "")
 
-    def test_rechecks_insert_after_target_after_llm_routing(self) -> None:
+    def test_edit_specialist_can_override_router_with_clarification(self) -> None:
         editor = RecordingMarkdownEditor(
-            MarkdownEditResult(
-                edit=MarkdownEditOperation(
-                    operation="insert_after",
-                    target=MarkdownEditTarget(type="current_section", start_line=1, end_line=1),
-                    summary="unused",
-                    replacement_markdown="unused",
-                )
+            MarkdownSpecialistHandoffError(
+                "clarify",
+                "추가 위치를 확인해야 합니다.",
+                "어느 섹션 아래에 추가할까요?",
             )
         )
         use_case = HandleAgentTurnUseCase(
@@ -2196,7 +2290,9 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                     action="markdown_edit",
                     confidence=0.8,
                     reason="LLM routed an insert_after request",
-                    edit_goal="insert_after",
+                    edit_goal="other",
+                    edit_operation="insert_after",
+                    edit_destination="target",
                 )
             ),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
@@ -2212,8 +2308,107 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         )
 
         self.assertEqual(result.action, "clarify")
-        self.assertIn("현재 섹션을 선택", result.message or "")
-        self.assertEqual(editor.requests, [])
+        self.assertEqual(result.message, "어느 섹션 아래에 추가할까요?")
+        self.assertTrue(editor.requests[0].specialist_mode)
+
+    def test_edit_specialist_hands_question_to_query_without_mutation(self) -> None:
+        query_use_case = FakeQueryUseCase()
+        editor = RecordingMarkdownEditor(
+            MarkdownSpecialistHandoffError(
+                "chat_answer",
+                "활성 문서에 대한 설명 요청입니다.",
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="markdown_edit",
+                    confidence=0.8,
+                    reason="잘못된 편집 분류",
+                    edit_goal="cleanup",
+                    edit_operation="replace",
+                    edit_destination="target",
+                    document_operation="edit",
+                    required_capabilities=("document-edit",),
+                )
+            ),
+            query_use_case=query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            query_specialist=FixedQuerySpecialist(),  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="이 내용이 틀린 이유가 뭐야?",
+                workspace_id="workspace-1",
+                active_markdown_context=ActiveMarkdownContext(
+                    markdown="# 설명\n\n기존 내용",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "chat_answer")
+        self.assertEqual(query_use_case.questions, ["이 내용이 틀린 이유가 뭐야?"])
+        conversation_context = query_use_case.kwargs[0]["conversation_context"]
+        self.assertEqual(
+            conversation_context.reference_context["active_markdown"],  # type: ignore[union-attr]
+            {"target_type": "selection", "markdown": "기존 내용"},
+        )
+        self.assertEqual(result.route.document_operation, "none")
+        self.assertFalse(result.route.persist)
+        self.assertIsNone(result.edit)
+
+    def test_edit_specialist_overrides_router_destination_in_result_route(self) -> None:
+        document_target = MarkdownEditTarget(
+            type="whole_document",
+            start_line=1,
+            end_line=3,
+        )
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="insert_after",
+                    target=document_target,
+                    summary="문서 아래에 내용을 추가했습니다.",
+                    replacement_markdown="## 추가 내용",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="markdown_edit",
+                    confidence=0.8,
+                    reason="편집 담당으로 전달",
+                    edit_goal="other",
+                    edit_operation="replace",
+                    edit_destination="target",
+                    document_operation="edit",
+                    required_capabilities=("document-edit",),
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            query_specialist=FixedQuerySpecialist(),  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="그 내용을 이 문서 아래에 추가해줘.",
+                active_markdown_context=ActiveMarkdownContext(
+                    markdown="# 제목\n선택 문장\n끝",
+                    target=MarkdownEditTarget(type="selection", start_line=2, end_line=2),
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "markdown_edit")
+        self.assertEqual(result.route.edit_operation, "insert_after")
+        self.assertEqual(result.route.edit_destination, "document_end")
+        self.assertEqual(result.edit.actual_target, document_target)  # type: ignore[union-attr]
 
     def test_routes_chat_to_query_use_case(self) -> None:
         query_use_case = FakeQueryUseCase()
@@ -2232,6 +2427,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             query_use_case=query_use_case,  # type: ignore[arg-type]
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
             markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            query_specialist=FixedQuerySpecialist(),  # type: ignore[arg-type]
         )
 
         result = use_case.execute(
@@ -2280,6 +2476,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
             markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
             web_search_query_use_case_factory=lambda: web_search_query_use_case,  # type: ignore[arg-type]
+            query_specialist=FixedQuerySpecialist(retrieval_source="web"),  # type: ignore[arg-type]
         )
 
         use_case.execute(
@@ -2289,6 +2486,165 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(default_query_use_case.questions, [])
         self.assertEqual(web_search_query_use_case.questions, ["최신 정보를 찾아줘"])
         self.assertTrue(web_search_query_use_case.kwargs[0]["allow_web_search"])
+
+    def test_query_specialist_hands_document_change_to_edit(self) -> None:
+        query_use_case = FakeQueryUseCase()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                    summary="문장을 다듬었습니다.",
+                    replacement_markdown="자연스러운 문장",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="chat_answer",
+                    confidence=0.8,
+                    reason="질문으로 잘못 분류",
+                    retrieval_source="workspace",
+                )
+            ),
+            query_use_case=query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            query_specialist=FixedQuerySpecialist(action="markdown_edit"),  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="선택한 문장을 자연스럽게 고쳐줘.",
+                active_markdown_context=ActiveMarkdownContext(
+                    markdown="# 제목\n\n어색한 문장",
+                    target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "markdown_edit")
+        self.assertEqual(result.edit.replacement_markdown, "자연스러운 문장")  # type: ignore[union-attr]
+        self.assertEqual(query_use_case.questions, [])
+        self.assertTrue(editor.requests[0].specialist_mode)
+
+    def test_conversation_specialist_hands_grounded_question_to_query(self) -> None:
+        query_use_case = FakeQueryUseCase()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="conversation_reply",
+                    confidence=0.8,
+                    reason="대화로 잘못 분류",
+                )
+            ),
+            query_use_case=query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            conversation_replier=RecordingConversationReplier(
+                ConversationHandoffError(
+                    "chat_answer",
+                    "워크스페이스 근거가 필요한 질문입니다.",
+                )
+            ),
+            query_specialist=FixedQuerySpecialist(),  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="MongoDB를 사용하지 않는 이유가 뭐야?",
+                workspace_id="workspace-1",
+            )
+        )
+
+        self.assertEqual(result.action, "chat_answer")
+        self.assertEqual(query_use_case.questions, ["MongoDB를 사용하지 않는 이유가 뭐야?"])
+
+    def test_create_specialist_hands_explanation_to_query(self) -> None:
+        query_use_case = FakeQueryUseCase()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            ),
+            create_result=MarkdownSpecialistHandoffError(
+                "chat_answer",
+                "문서 생성이 아니라 설명 요청입니다.",
+            ),
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="markdown_create",
+                    confidence=0.8,
+                    reason="생성으로 잘못 분류",
+                )
+            ),
+            query_use_case=query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            query_specialist=FixedQuerySpecialist(),  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="RAG가 뭐야?",
+                workspace_id="workspace-1",
+            )
+        )
+
+        self.assertEqual(result.action, "chat_answer")
+        self.assertEqual(query_use_case.questions, ["RAG가 뭐야?"])
+        self.assertTrue(editor.create_requests[0].specialist_mode)
+
+    def test_stops_after_one_conflicting_handoff(self) -> None:
+        query_use_case = FakeQueryUseCase()
+        editor = RecordingMarkdownEditor(
+            MarkdownSpecialistHandoffError(
+                "chat_answer",
+                "편집 요청이 아니라 질문입니다.",
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="chat_answer",
+                    confidence=0.8,
+                    reason="질문으로 분류",
+                    retrieval_source="workspace",
+                )
+            ),
+            query_use_case=query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            query_specialist=FixedQuerySpecialist(action="markdown_edit"),  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="이걸 처리해줘.",
+                active_markdown_context=ActiveMarkdownContext(markdown="# 제목"),
+            )
+        )
+
+        self.assertEqual(result.action, "clarify")
+        self.assertEqual(result.message, CLARIFY_HANDOFF_LOOP_MESSAGE)
+        self.assertEqual(query_use_case.questions, [])
 
 
 if __name__ == "__main__":

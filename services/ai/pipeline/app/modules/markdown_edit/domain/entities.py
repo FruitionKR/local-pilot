@@ -3,13 +3,9 @@ from typing import Literal
 
 from app.core.response_preferences import OutputLanguage
 
-
 TargetType = Literal["selection", "current_section", "whole_document"]
 EditOperationType = Literal["replace", "insert_after"]
-
-
-def operation_for_edit_goal(edit_goal: str | None) -> EditOperationType:
-    return "insert_after" if edit_goal == "insert_after" else "replace"
+EditDestination = Literal["target", "document_end"]
 
 
 @dataclass(frozen=True)
@@ -29,6 +25,9 @@ class MarkdownEditRequest:
     conversation_summary: str | None = None
     reference_context: dict[str, object] | None = None
     edit_goal: str | None = None
+    edit_operation: EditOperationType = "replace"
+    edit_destination: EditDestination = "target"
+    specialist_mode: bool = False
     skill_instructions: str | None = None
     output_language: OutputLanguage | None = None
 
@@ -69,6 +68,7 @@ class MarkdownCreateRequest:
     user_id: str | None = None
     conversation_summary: str | None = None
     reference_context: dict[str, object] | None = None
+    specialist_mode: bool = False
     skill_instructions: str | None = None
     output_language: OutputLanguage | None = None
 

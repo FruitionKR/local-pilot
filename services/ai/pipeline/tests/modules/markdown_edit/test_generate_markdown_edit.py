@@ -1,6 +1,8 @@
 import unittest
 
-from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
+from app.modules.markdown_edit.application.generate_markdown_edit import (
+    GenerateMarkdownEditUseCase,
+)
 from app.modules.markdown_edit.domain.entities import (
     MarkdownEditOperation,
     MarkdownEditRequest,
@@ -38,7 +40,8 @@ class GenerateMarkdownEditUseCaseTest(unittest.TestCase):
                 instruction="이 섹션 아래에 문제 해결 절을 추가해줘.",
                 markdown="# 설치\n\n설치 방법입니다.",
                 target=target,
-                edit_goal="insert_after",
+                edit_goal="other",
+                edit_operation="insert_after",
             )
         )
 
@@ -64,11 +67,71 @@ class GenerateMarkdownEditUseCaseTest(unittest.TestCase):
                     instruction="아래에 추가해줘.",
                     markdown="본문",
                     target=target,
-                    edit_goal="insert_after",
+                    edit_goal="other",
+                    edit_operation="insert_after",
                 )
             )
 
         self.assertEqual(editor.requests, [])
+
+    def test_inserts_at_document_end_without_replacing_selected_content(self) -> None:
+        requested_target = MarkdownEditTarget(type="selection", start_line=2, end_line=2)
+        document_target = MarkdownEditTarget(type="whole_document", start_line=1, end_line=4)
+        editor = FakeMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="insert_after",
+                    target=document_target,
+                    summary="문서 아래에 내용을 추가했습니다.",
+                    replacement_markdown="## 추가 내용\n\n새 본문",
+                )
+            )
+        )
+
+        result = GenerateMarkdownEditUseCase(editor).execute(
+            MarkdownEditRequest(
+                instruction="그 부분을 이 문서 아래에 추가해줘",
+                markdown="# 제목\n기존 본문\n\n끝",
+                target=requested_target,
+                edit_goal="other",
+                edit_operation="insert_after",
+                edit_destination="document_end",
+            )
+        )
+
+        self.assertEqual(editor.requests[0].target, document_target)
+        self.assertEqual(result.edit.requested_target, requested_target)
+        self.assertEqual(result.edit.actual_target, document_target)
+        self.assertEqual(result.edit.operation, "insert_after")
+
+    def test_specialist_result_overrides_router_edit_hints(self) -> None:
+        requested_target = MarkdownEditTarget(type="selection", start_line=2, end_line=2)
+        document_target = MarkdownEditTarget(type="whole_document", start_line=1, end_line=3)
+        editor = FakeMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="insert_after",
+                    target=document_target,
+                    summary="문서 아래에 내용을 추가했습니다.",
+                    replacement_markdown="## 추가 내용",
+                )
+            )
+        )
+
+        result = GenerateMarkdownEditUseCase(editor).execute(
+            MarkdownEditRequest(
+                instruction="그 내용을 문서 아래에 추가해줘.",
+                markdown="# 제목\n선택 문장\n끝",
+                target=requested_target,
+                edit_operation="replace",
+                edit_destination="target",
+                specialist_mode=True,
+            )
+        )
+
+        self.assertEqual(result.edit.operation, "insert_after")
+        self.assertEqual(result.edit.actual_target, document_target)
+        self.assertEqual(editor.requests[0].target, requested_target)
 
     def test_returns_replace_operation_for_requested_target(self) -> None:
         target = MarkdownEditTarget(type="selection", start_line=2, end_line=4)

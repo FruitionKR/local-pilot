@@ -115,6 +115,8 @@ def _to_response(result: AgentTurnResult) -> AgentTurnResponse:
             confidence=result.route.confidence,
             reason=result.route.reason,
             edit_goal=result.route.edit_goal,
+            edit_operation=result.route.edit_operation,
+            edit_destination=result.route.edit_destination,
             selected_skill_id=result.route.selected_skill_id,
             skill_candidates=list(result.route.skill_candidates),
             retrieval_source=result.route.retrieval_source,

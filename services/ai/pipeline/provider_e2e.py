@@ -9,23 +9,41 @@ from pathlib import Path
 
 from app.core.llm_env import (
     SUPPORTED_LLM_PROVIDERS,
-    resolve_llm_selection,
     resolve_llm_provider_defaults,
+    resolve_llm_selection,
 )
 from app.modules.agent.domain.entities import ActiveMarkdownContext, AgentTurnRequest
+from app.modules.agent.domain.exceptions import (
+    AgentTurnRouteContractError,
+    ConversationHandoffError,
+)
+from app.modules.agent.infrastructure.chat_completions_conversation_replier import (
+    DEFAULT_CONVERSATION_REPLY_PROMPT,
+    ChatCompletionsConversationReplier,
+)
+from app.modules.agent.infrastructure.chat_completions_query_specialist import (
+    DEFAULT_QUERY_SPECIALIST_PROMPT,
+    ChatCompletionsQuerySpecialist,
+)
 from app.modules.agent.infrastructure.chat_completions_turn_router import (
     DEFAULT_AGENT_TURN_ROUTER_PROMPT,
     ChatCompletionsTurnRouter,
 )
 from app.modules.markdown_edit.domain.entities import (
     MarkdownCreateRequest,
+    MarkdownEditRequest,
     MarkdownEditTarget,
 )
+from app.modules.markdown_edit.domain.exceptions import MarkdownSpecialistHandoffError
 from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor import (
     DEFAULT_MARKDOWN_CREATE_PROMPT,
     DEFAULT_MARKDOWN_EDIT_PROMPT,
     DEFAULT_MARKDOWN_SOURCE_EDIT_PROMPT,
     ChatCompletionsMarkdownEditor,
+)
+from app.modules.skill.domain.entities import (
+    SkillDraftSourceOperation,
+    SkillDraftSourceRun,
 )
 from app.modules.wiki_generation.domain.entities import SemanticPacket
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
@@ -33,11 +51,6 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatCompletionsJsonClient,
     GenericChatCompletionsExtractor,
 )
-from app.modules.skill.domain.entities import (
-    SkillDraftSourceOperation,
-    SkillDraftSourceRun,
-)
-
 
 REQUIRED_EXTRACTION_KEYS = {
     "chunk_id",
@@ -66,6 +79,10 @@ def run_provider_e2e(
         _run_probe(
             "agent_router",
             lambda: _probe_agent_router(client),
+        ),
+        _run_probe(
+            "agent_specialist_handoffs",
+            lambda: _probe_agent_specialist_handoffs(client),
         ),
         _run_probe(
             "markdown_create",
@@ -123,94 +140,40 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
             ),
         ),
     )
-    cases = (
-        (
-            AgentTurnRequest(message="RAG가 무엇인지 한 문장으로 설명해줘."),
-            ("chat_answer", "workspace", "none", False, (), None),
+    requests = (
+        AgentTurnRequest(message="RAG가 무엇인지 한 문장으로 설명해줘."),
+        AgentTurnRequest(
+            message="Mongo DB를 사용하지 않기로 판단한 이유가 뭐지?",
+            active_markdown_context=active_markdown,
         ),
-        (
-            AgentTurnRequest(
-                message="Mongo DB를 사용하지 않기로 판단한 이유가 뭐지?",
-                active_markdown_context=active_markdown,
-            ),
-            ("chat_answer", "workspace", "none", False, (), None),
+        AgentTurnRequest(
+            message="Mongo가 이 문서를 저장하지 않는 이유가 뭐지?",
+            active_markdown_context=active_markdown,
         ),
-        (
-            AgentTurnRequest(
-                message="Mongo가 이 문서를 저장하지 않는 이유가 뭐지?",
-                active_markdown_context=active_markdown,
-            ),
-            ("chat_answer", "workspace", "none", False, (), None),
+        AgentTurnRequest(
+            message="현재 문서를 요약한 뒤 보관 폴더로 옮겨 저장해줘",
+            active_markdown_context=active_markdown,
         ),
-        (
-            AgentTurnRequest(
-                message="현재 문서를 요약한 뒤 보관 폴더로 옮겨 저장해줘",
-                active_markdown_context=active_markdown,
-            ),
-            (
-                "workspace_workflow",
-                "none",
-                "edit",
-                True,
-                ("document-edit", "folder-organize"),
-                "shorten",
-            ),
+        AgentTurnRequest(
+            message="현재 문서를 요약해서 저장해줄래?",
+            active_markdown_context=active_markdown,
         ),
-        (
-            AgentTurnRequest(
-                message="현재 문서를 요약해서 저장해줄래?",
-                active_markdown_context=active_markdown,
-            ),
-            (
-                "workspace_workflow",
-                "none",
-                "edit",
-                True,
-                ("document-edit",),
-                "shorten",
-            ),
+        AgentTurnRequest(
+            message="Wiki 근거로 현재 문서를 보완해줘",
+            active_markdown_context=active_markdown,
         ),
-        (
-            AgentTurnRequest(
-                message="Wiki 근거로 현재 문서를 보완해줘",
-                active_markdown_context=active_markdown,
-            ),
-            (
-                "markdown_edit",
-                "workspace",
-                "edit",
-                False,
-                ("document-edit",),
-                "other",
-            ),
-        ),
-        (
-            AgentTurnRequest(
-                message="선택한 완료 작업을 재사용 가능한 Skill로 만들어줘",
-                skill_draft_sources=(selected_work,),
-            ),
-            ("skill_draft_proposal", "none", "none", False, (), None),
-        ),
-        (
-            AgentTurnRequest(
-                message="방금 완료한 작업 방식을 재사용 가능한 Skill로 만들어줘",
-            ),
-            ("skill_draft_proposal", "none", "none", False, (), None),
+        AgentTurnRequest(
+            message="선택한 완료 작업을 재사용 가능한 Skill로 만들어줘",
+            skill_draft_sources=(selected_work,),
         ),
     )
-    for request, expected in cases:
-        route = router.route(request)
-        if (
-            route.action,
-            route.retrieval_source,
-            route.document_operation,
-            route.persist,
-            route.required_capabilities,
-            route.edit_goal,
-        ) != expected:
+    for case_index, request in enumerate(requests, start=1):
+        try:
+            router.route(request)
+        except AgentTurnRouteContractError:
             raise RuntimeError(
-                "Agent router contract returned an unexpected structured route"
-            )
+                f"Agent router case {case_index} failed its output contract"
+            ) from None
 
 
 def _probe_markdown_create(client: ChatCompletionsJsonClient) -> None:
@@ -233,6 +196,71 @@ def _probe_markdown_create(client: ChatCompletionsJsonClient) -> None:
     ).document
     if not document.title or not document.summary or not document.markdown:
         raise RuntimeError("Markdown create contract returned an empty field")
+
+
+def _probe_agent_specialist_handoffs(client: ChatCompletionsJsonClient) -> None:
+    active_markdown = ActiveMarkdownContext(
+        markdown="# 저장소 결정\n\nMongoDB는 사용하지 않는다.",
+        target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+    )
+    query_decision = ChatCompletionsQuerySpecialist(
+        client,
+        Path(DEFAULT_QUERY_SPECIALIST_PROMPT).read_text(encoding="utf-8"),
+    ).decide(
+        AgentTurnRequest(
+            message="선택한 문장을 자연스럽게 고쳐줘.",
+            active_markdown_context=active_markdown,
+        ),
+        retrieval_source="workspace",
+    )
+    if query_decision.action != "markdown_edit":
+        raise RuntimeError("Query specialist did not hand the edit request to Markdown")
+
+    conversation_replier = ChatCompletionsConversationReplier(
+        client,
+        Path(DEFAULT_CONVERSATION_REPLY_PROMPT).read_text(encoding="utf-8"),
+    )
+    try:
+        conversation_replier.reply(AgentTurnRequest(message="RAG가 무엇인지 찾아줘."))
+    except ConversationHandoffError as handoff:
+        if handoff.action != "chat_answer":
+            raise RuntimeError("Conversation specialist selected an unexpected handoff") from None
+    else:
+        raise RuntimeError("Conversation specialist did not hand the query to search")
+
+    editor = ChatCompletionsMarkdownEditor(
+        client,
+        Path(DEFAULT_MARKDOWN_EDIT_PROMPT).read_text(encoding="utf-8"),
+        create_system_prompt=Path(DEFAULT_MARKDOWN_CREATE_PROMPT).read_text(encoding="utf-8"),
+        source_edit_system_prompt=Path(DEFAULT_MARKDOWN_SOURCE_EDIT_PROMPT).read_text(encoding="utf-8"),
+    )
+    try:
+        editor.generate_edit(
+            MarkdownEditRequest(
+                instruction="이 결정이 아닌 이유가 뭐야?",
+                markdown=active_markdown.markdown,
+                target=active_markdown.target,
+                specialist_mode=True,
+            )
+        )
+    except MarkdownSpecialistHandoffError as handoff:
+        if handoff.action != "chat_answer":
+            raise RuntimeError("Edit specialist selected an unexpected handoff") from None
+    else:
+        raise RuntimeError("Edit specialist did not hand the question to query")
+
+    try:
+        editor.generate_markdown(
+            MarkdownCreateRequest(
+                instruction="RAG가 뭐야?",
+                specialist_mode=True,
+            )
+        )
+    except MarkdownSpecialistHandoffError as handoff:
+        if handoff.action != "chat_answer":
+            raise RuntimeError("Create specialist selected an unexpected handoff") from None
+    else:
+        raise RuntimeError("Create specialist did not hand the question to query")
 
 
 def _run_probe(

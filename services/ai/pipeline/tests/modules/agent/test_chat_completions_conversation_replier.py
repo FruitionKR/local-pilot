@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timezone
 
 from app.modules.agent.domain.entities import AgentConversationContext, AgentTurnRequest
+from app.modules.agent.domain.exceptions import ConversationHandoffError
 from app.modules.agent.infrastructure.chat_completions_conversation_replier import (
     DEFAULT_CONVERSATION_REPLY_PROMPT,
     ChatCompletionsConversationReplier,
@@ -15,15 +16,19 @@ class FakeChatClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, tuple[str, ...]]] = []
 
-    def complete_text(
+    def complete_json(
         self,
         system_prompt: str,
         user_prompt: str,
         *,
         trusted_identifiers: tuple[str, ...] = (),
-    ) -> str:
+    ) -> dict[str, object]:
         self.calls.append((system_prompt, user_prompt, trusted_identifiers))
-        return "  2026-08-17-덥고 습함-🥵  "
+        return {
+            "action": "conversation_reply",
+            "reason": "검색 없이 완성할 수 있는 대화 요청입니다.",
+            "message": "  2026-08-17-덥고 습함-🥵  ",
+        }
 
 
 class ChatCompletionsConversationReplierTest(unittest.TestCase):
@@ -64,6 +69,20 @@ class ChatCompletionsConversationReplierTest(unittest.TestCase):
         self.assertIn("Current date:", system_prompt)
         self.assertEqual(payload["recent_messages"][1]["action"], "conversation_reply")
         self.assertEqual(len(trusted_identifiers), 1)
+
+    def test_hands_grounded_question_to_query_specialist(self) -> None:
+        client = FakeChatClient()
+        client.complete_json = lambda *args, **kwargs: {  # type: ignore[method-assign]
+            "action": "chat_answer",
+            "reason": "외부 정보 검색이 필요합니다.",
+            "message": None,
+        }
+        replier = ChatCompletionsConversationReplier(client, "system")  # type: ignore[arg-type]
+
+        with self.assertRaises(ConversationHandoffError) as raised:
+            replier.reply(AgentTurnRequest(message="오늘 서울 날씨를 찾아줘."))
+
+        self.assertEqual(raised.exception.action, "chat_answer")
 
 
 if __name__ == "__main__":

@@ -61,7 +61,9 @@ class FixedInsertAfterUseCase:
                 action="markdown_edit",
                 confidence=1.0,
                 reason="insert after request",
-                edit_goal="insert_after",
+                edit_goal="other",
+                edit_operation="insert_after",
+                edit_destination="target",
                 document_operation="edit",
             ),
             edit=MarkdownEditOperation(

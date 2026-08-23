@@ -10,3 +10,16 @@ class AgentConfigurationError(RuntimeError):
     요청이 잘못된 것이 아니므로 400이 아니라 500으로 응답해야 한다.
     400으로 내보내면 호출부가 재시도하지 않고 사용자에게 내부 메시지가 노출된다.
     """
+
+
+class ConversationHandoffError(Exception):
+    def __init__(
+        self,
+        action: str,
+        reason: str,
+        message: str | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.action = action
+        self.reason = reason
+        self.message = message

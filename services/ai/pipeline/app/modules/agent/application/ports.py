@@ -1,6 +1,11 @@
 from typing import Protocol
 
-from app.modules.agent.domain.entities import AgentTurnRequest, AgentTurnRoute
+from app.modules.agent.domain.entities import (
+    AgentTurnRequest,
+    AgentTurnRoute,
+    QuerySpecialistDecision,
+    RetrievalSource,
+)
 
 
 class AgentTurnRouterPort(Protocol):
@@ -10,4 +15,14 @@ class AgentTurnRouterPort(Protocol):
 
 class ConversationReplierPort(Protocol):
     def reply(self, request: AgentTurnRequest) -> str:
+        ...
+
+
+class QuerySpecialistPort(Protocol):
+    def decide(
+        self,
+        request: AgentTurnRequest,
+        *,
+        retrieval_source: RetrievalSource,
+    ) -> QuerySpecialistDecision:
         ...

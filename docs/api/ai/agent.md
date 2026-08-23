@@ -48,7 +48,7 @@ Agent turn과 run·artifact·Tool 인가 내부 API다. 공개 Gateway 계약은
 <a id="detail-post-agent-turn"></a>
 ### `POST /agent/turn` 상세
 
-문서에 내용만 추가하거나 보강하는 편집은 기존의 비어 있지 않은 Markdown 줄을 순서대로 보존해야 하며, 누락된 모델 출력은 한 번 재시도한 뒤 실패로 처리합니다.
+`edit_goal`은 내용 변환, `edit_operation`은 교체·추가 방식, `edit_destination`은 적용 위치를 각각 나타냅니다. `insert_after`는 기존 Markdown을 교체하지 않고 대상 뒤에 새 Markdown만 삽입합니다.
 
 #### 1. Method + Path
 
@@ -106,6 +106,8 @@ Agent 요청을 분류하고 Query·문서 생성·편집 작업을 실행합니
           "document_operation": "edit",
           "persist": false,
           "edit_goal": "other",
+          "edit_operation": "replace",
+          "edit_destination": "target",
           "selected_skill_id": null
         }
       }
@@ -135,10 +137,21 @@ Agent 실행 계획에는 별도의 권한·tool·승인 검사를 계속 적용
 `source_markdown_sha256`까지 일치해야 한다. 일치하는 실행을 확인할 수 없으면 새 승인 작업을 만들지 않고
 미리보기를 다시 요청한다.
 복합 요청은 `retrieval_source`(`none|workspace|web`),
-`document_operation`(`none|create|edit`), `persist`, `required_capabilities`로 분해한 뒤 전체 조합을
+`document_operation`(`none|create|edit`), `persist`, `required_capabilities`, `edit_goal`,
+`edit_operation`(`replace|insert_after`), `edit_destination`(`target|document_end`)으로 분해한 뒤 전체 조합을
 대표하는 action을 선택한다. `required_capabilities`는 요청의 모든 절에 필요한
 `document-create|document-edit|folder-organize|template`을 담는다. 서버는 일부 capability만 가진
 Skill을 선택하지 않으며, 선택된 Skill의 capability별 확정 Tool 권한을 합쳐 planner에 전달한다.
+1차 라우터는 Query·대화·Markdown 편집·Markdown 생성의 큰 실행 영역을 선택한다. 선택된 specialist는
+사용자 원문과 대화·문서 문맥을 다시 확인해 요청을 수락하거나 다른 core specialist로 handoff하거나
+한 번의 확인 질문을 반환한다. Query specialist는 `workspace|web` 검색 출처를 최종 확정하며,
+주제 없는 `검색해줘` 같은 요청은 검색을 실행하지 않고 검색 대상을 묻는다. specialist 간 handoff는
+한 번만 허용하고 두 번째 specialist도 요청을 수락하지 않으면 `clarify`로 종료해 순환을 막는다.
+Markdown 편집의 `edit_goal`·`edit_operation`·`edit_destination`은 라우터 단계의 힌트다.
+Markdown specialist는 최종 편집 방식과 대상을 정하며 설명·질문이면 `chat_answer`, 새 문서 요청이면
+`markdown_create`, 비검색 대화면 `conversation_reply`로 handoff한다.
+specialist가 확정한 `insert_after + whole_document`는 `edit_destination=document_end`로 응답하며,
+활성 선택 영역이 있더라도 문서 끝 추가가 선택 영역 교체로 바뀌지 않는다.
 서버는 검색·문서 작업 의미를 문장 패턴으로 덮어쓰지 않는다. action과 필드 조합이 모순되거나
 명시적인 Skill 생성·완료 작업 일반화 의도와 route가 충돌할 때만 LLM에 한 번 재요청한다.
 두 번째 응답도 계약을 만족하지 못하면 HTTP 422로 종료한다.
@@ -174,6 +187,8 @@ Markdown 편집 미리보기 응답 예시:
     "confidence": 0.98,
     "reason": "현재 문서 편집 미리보기 요청",
     "edit_goal": "other",
+    "edit_operation": "replace",
+    "edit_destination": "target",
     "selected_skill_id": null,
     "skill_candidates": [],
     "retrieval_source": "workspace",
@@ -258,7 +273,7 @@ curl -X POST "$PIPELINE/agent/turn" \
   -H 'X-Internal-Token: <value>' \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"message":"이대로 저장해줘","provider":"openai","model":"gpt-5-nano","workspace_id":"workspace_123","user_id":"user_123","document_id":"doc_123","base_version":3,"active_markdown_context":{"markdown":"# 회의록\n\n기존 내용","target":{"type":"whole_document","start_line":1,"end_line":3}},"conversation_context":{"recent_messages":[{"role":"assistant","content":"편집 미리보기를 만들었습니다.","action":"markdown_edit","run_id":"agent_preview_123","agent_route":{"action":"markdown_edit","retrieval_source":"workspace","document_operation":"edit","persist":false,"edit_goal":"other","selected_skill_id":null}}]}}'
+  --data '{"message":"이대로 저장해줘","provider":"openai","model":"gpt-5-nano","workspace_id":"workspace_123","user_id":"user_123","document_id":"doc_123","base_version":3,"active_markdown_context":{"markdown":"# 회의록\n\n기존 내용","target":{"type":"whole_document","start_line":1,"end_line":3}},"conversation_context":{"recent_messages":[{"role":"assistant","content":"편집 미리보기를 만들었습니다.","action":"markdown_edit","run_id":"agent_preview_123","agent_route":{"action":"markdown_edit","retrieval_source":"workspace","document_operation":"edit","persist":false,"edit_goal":"other","edit_operation":"replace","edit_destination":"target","selected_skill_id":null}}]}}'
 ```
 
 ```json
@@ -269,6 +284,8 @@ curl -X POST "$PIPELINE/agent/turn" \
     "confidence": 1.0,
     "reason": "확인한 편집안 저장 요청",
     "edit_goal": "other",
+    "edit_operation": "replace",
+    "edit_destination": "target",
     "selected_skill_id": null,
     "skill_candidates": [],
     "retrieval_source": "workspace",

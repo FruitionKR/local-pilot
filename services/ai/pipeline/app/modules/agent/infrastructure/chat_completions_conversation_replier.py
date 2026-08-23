@@ -14,11 +14,14 @@ from app.core.llm_env import (
 from app.core.response_preferences import with_response_preferences
 from app.modules.agent.application.ports import ConversationReplierPort
 from app.modules.agent.domain.entities import AgentTurnRequest
+from app.modules.agent.domain.exceptions import (
+    AgentTurnRouteContractError,
+    ConversationHandoffError,
+)
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
 )
-
 
 DEFAULT_CONVERSATION_REPLY_PROMPT = (
     Path(__file__).resolve().parents[4] / "prompts" / "conversation_reply.system.md"
@@ -58,14 +61,42 @@ class ChatCompletionsConversationReplier(ConversationReplierPort):
             request.output_language,
             request.response_length,
         )
-        reply = self._client.complete_text(
+        raw = self._client.complete_json(
             system_prompt,
             json.dumps(payload, ensure_ascii=False, indent=2),
             trusted_identifiers=(current_date,),
-        ).strip()
-        if not reply:
-            raise RuntimeError("Conversation reply must not be empty.")
-        return reply
+        )
+        action = raw.get("action")
+        reason = raw.get("reason")
+        message = raw.get("message")
+        failures = []
+        if action not in {
+            "conversation_reply",
+            "chat_answer",
+            "markdown_edit",
+            "markdown_create",
+            "clarify",
+        }:
+            failures.append("action must be a supported core specialist action")
+        if not isinstance(reason, str) or not reason.strip():
+            failures.append("reason must be a non-empty string")
+        if message is not None and not isinstance(message, str):
+            failures.append("message must be a string or null")
+        if action in {"conversation_reply", "clarify"} and (
+            not isinstance(message, str) or not message.strip()
+        ):
+            failures.append(f"{action} requires a non-empty message")
+        if failures:
+            raise AgentTurnRouteContractError(failures)
+        resolved_reason = reason.strip()  # type: ignore[union-attr]
+        resolved_message = message.strip() if isinstance(message, str) else None
+        if action == "conversation_reply":
+            return resolved_message or ""
+        raise ConversationHandoffError(
+            str(action),
+            resolved_reason,
+            resolved_message,
+        )
 
 
 def build_conversation_replier(
@@ -91,7 +122,7 @@ def build_conversation_replier(
                 temperature=None,
                 timeout_seconds=int_env("CONVERSATION_REPLY_LLM_TIMEOUT_SECONDS", 180),
                 max_tokens=optional_int_env("CONVERSATION_REPLY_LLM_MAX_TOKENS"),
-                json_mode=False,
+                json_mode=True,
                 provider=resolved_provider,
             )
         ),
