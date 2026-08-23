@@ -379,6 +379,39 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         self.assertEqual(result.edit.operation, "insert_after")
         self.assertEqual(result.edit.replacement_markdown, "## 문제 해결\n\n로그를 확인합니다.")
 
+    def test_inserts_styled_content_at_document_end_without_replacing_source(self) -> None:
+        markdown = "# 제목\n\n[기존 링크](https://example.com)"
+        client = SequenceJsonClient(
+            [
+                response(
+                    "## 대화 정리\n\n정리한 내용입니다.",
+                    operation="insert_after",
+                    actual_target={
+                        "type": "whole_document",
+                        "start_line": 1,
+                        "end_line": 3,
+                    },
+                )
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+        request = MarkdownEditRequest(
+            instruction="방금 다듬은 문장을 이 문서 아래에 추가해줘.",
+            markdown=markdown,
+            target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=3),
+            edit_goal="style_change",
+            edit_operation="insert_after",
+            edit_destination="document_end",
+        )
+
+        result = editor.generate_edit(request)
+
+        payload = json.loads(client.calls[0][1])
+        self.assertEqual(payload["markdown"], markdown)
+        self.assertEqual(payload["requested_operation"], "insert_after")
+        self.assertEqual(result.edit.operation, "insert_after")
+        self.assertEqual(result.edit.replacement_markdown, "## 대화 정리\n\n정리한 내용입니다.")
+
     def test_retries_markdown_create_with_contract_failures(self) -> None:
         client = SequenceJsonClient(
             [

@@ -84,6 +84,9 @@ def validate_markdown_create_output(document: GeneratedMarkdownDocument) -> list
 
 
 def protect_markdown(request: MarkdownEditRequest) -> ProtectedMarkdown:
+    if request.edit_operation != "replace":
+        return ProtectedMarkdown(markdown=request.markdown, fragments=())
+
     preserves_structured_markdown = request.edit_goal in PROTECTED_EDIT_GOALS
     preserves_task_markers = request.edit_goal in TASK_LIST_EDIT_GOALS
     if (not preserves_structured_markdown and not preserves_task_markers) or _explicit_structure_change(
@@ -132,7 +135,7 @@ def validate_markdown_output(request: MarkdownEditRequest, replacement: str) -> 
         if re.match(r"^\s*(?:[-*+]\s+|\d+\.\s+)", replacement):
             failures.append("plain-text edit must not add a list marker")
 
-    if request.edit_goal in PROTECTED_EDIT_GOALS:
+    if request.edit_operation == "replace" and request.edit_goal in PROTECTED_EDIT_GOALS:
         failures.extend(_protected_content_failures(request.markdown, replacement))
         failures.extend(_protected_fragment_failures(request, replacement))
 
