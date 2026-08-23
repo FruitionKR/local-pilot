@@ -325,7 +325,7 @@ def _probe_agent_executors(client: ChatCompletionsJsonClient) -> None:
                 start_line=1,
                 end_line=3,
             ),
-            edit_goal="other",
+            edit_goal="style_change",
             edit_operation="insert_after",
             edit_destination="document_end",
         )
