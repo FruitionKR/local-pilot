@@ -15,14 +15,24 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from psycopg.types.json import Json
 
 from app.core.llm_env import api_key_from_env, resolve_llm_selection
+from app.modules.agent.domain.exceptions import (
+    AgentConfigurationError,
+    AgentTurnRouteContractError,
+)
 from app.modules.agent.interfaces.http.dependencies import build_handle_agent_turn_use_case
 from app.modules.agent.interfaces.http.routes import _to_response as agent_to_response
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
+from app.modules.markdown_edit.domain.markdown_output_contract import (
+    MarkdownCreateOutputContractError,
+    MarkdownOutputContractError,
+)
+from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
 from app.modules.query.application.ports import QueryEventPublisherPort
 from app.modules.query.domain.entities import ConversationContext, ConversationMessage
 from app.modules.query.interfaces.http.dependencies import build_answer_query_use_case
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
 from app.modules.query.infrastructure.postgres_wiki_repository import PostgresWikiRepository
+from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
 from app.modules.wiki_embedding.application.build_wiki_page_embeddings import (
     embedding_result,
 )
@@ -180,14 +190,21 @@ def _handle_agent(
                 event_publisher=event_publisher,
             ).execute(payload.to_domain())
         ).model_dump(mode="json")
-    except Exception:
+    except Exception as exc:
+        error_code = _agent_failure_code(exc)
+        logger.error(
+            "Agent turn 처리 실패: run_id=%s error_code=%s error_type=%s",
+            run_id,
+            error_code,
+            type(exc).__name__,
+        )
         with database.connect_ai() as conn:
             conn.execute(
                 """
-                UPDATE agent_runs SET status = 'failed', error_code = 'agent_turn_failed',
+                UPDATE agent_runs SET status = 'failed', error_code = %s, result = %s,
                     updated_at = now(), finished_at = now() WHERE id = %s
                 """,
-                (run_id,),
+                (error_code, Json(_agent_failure_result(exc)), run_id),
             )
             conn.execute(
                 "UPDATE agent_jobs SET status = 'failed', updated_at = now() WHERE run_id = %s AND job_type = 'markdown_turn'",
@@ -206,6 +223,35 @@ def _handle_agent(
             "UPDATE agent_jobs SET status = 'completed', updated_at = now() WHERE run_id = %s AND job_type = 'markdown_turn'",
             (run_id,),
         )
+    return result
+
+
+def _agent_failure_code(error: Exception) -> str:
+    if isinstance(error, AgentTurnRouteContractError):
+        return "agent_turn_route_contract_failed"
+    if isinstance(error, MarkdownCreateOutputContractError):
+        return "markdown_create_output_contract_failed"
+    if isinstance(error, MarkdownOutputContractError):
+        return "markdown_output_contract_failed"
+    if isinstance(error, MarkdownTargetBoundaryError):
+        return "markdown_target_crosses_structure"
+    if isinstance(error, (SkillNotFoundError, SkillDisabledError)):
+        return error.code
+    if isinstance(error, AgentConfigurationError):
+        return "agent_not_configured"
+    if isinstance(error, ValueError):
+        return "invalid_agent_turn_request"
+    return "agent_turn_failed"
+
+
+def _agent_failure_result(error: Exception) -> dict[str, object]:
+    result: dict[str, object] = {
+        "outcome": "failed",
+        "error_code": _agent_failure_code(error),
+        "failure_type": type(error).__name__,
+    }
+    if isinstance(error, AgentTurnRouteContractError):
+        result["contract_failures"] = error.failures
     return result
 
 
@@ -917,13 +963,27 @@ async def consume() -> None:
                             with_request=command.get("kind") != "post_ingest",
                         )
                     except Exception as exc:
-                        logger.exception("[AI command 실패] kind=%s run_id=%s", command.get("kind"), command.get("run_id"))
+                        if command.get("kind") == "agent":
+                            error = _agent_failure_code(exc)
+                            logger.error(
+                                "[AI command 실패] kind=agent run_id=%s error_code=%s error_type=%s",
+                                command.get("run_id"),
+                                error,
+                                type(exc).__name__,
+                            )
+                        else:
+                            error = str(exc)[:1000]
+                            logger.exception(
+                                "[AI command 실패] kind=%s run_id=%s",
+                                command.get("kind"),
+                                command.get("run_id"),
+                            )
                         if not _failure_is_durable(command):
                             raise
                         event = _event(
                             command,
                             "failed",
-                            error=str(exc)[:1000],
+                            error=error,
                             with_request=command.get("kind") != "post_ingest",
                         )
                     await producer.send_and_wait(RESULT_TOPIC, event, key=event["run_id"].encode("utf-8"))

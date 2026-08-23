@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 from pydantic import ValidationError
 
+from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.domain.entities import (
     ConversationContext,
@@ -1031,6 +1032,49 @@ def test_unregistered_agent_failure_is_not_durable() -> None:
 
     with patch.object(task_worker.database, "connect_ai", return_value=context):
         assert task_worker._failure_is_durable(command) is False
+
+
+def test_agent_route_contract_failure_keeps_specific_error_code() -> None:
+    error = AgentTurnRouteContractError(["invalid route"])
+
+    assert task_worker._agent_failure_code(error) == "agent_turn_route_contract_failed"
+
+
+def test_agent_route_contract_failure_persists_safe_diagnostic() -> None:
+    command = {
+        "run_id": "agent_route_failure",
+        "kind": "agent",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "message": "문서를 보완해줘",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+    }
+    error = AgentTurnRouteContractError(
+        ["document_operation edit requires edit_operation"]
+    )
+    use_case = MagicMock()
+    use_case.execute.side_effect = error
+    connection = MagicMock()
+    context = MagicMock()
+    context.__enter__.return_value = connection
+
+    with (
+        patch.object(task_worker, "_register_agent_command", return_value=("execute", None)),
+        patch.object(task_worker, "build_handle_agent_turn_use_case", return_value=use_case),
+        patch.object(task_worker.database, "connect_ai", return_value=context),
+        pytest.raises(AgentTurnRouteContractError),
+    ):
+        task_worker._handle_agent(command)
+
+    update = connection.execute.call_args_list[0]
+    assert "result = %s" in update.args[0]
+    assert update.args[1][1].obj == {
+        "outcome": "failed",
+        "error_code": "agent_turn_route_contract_failed",
+        "failure_type": "AgentTurnRouteContractError",
+        "contract_failures": ["document_operation edit requires edit_operation"],
+    }
 
 
 @pytest.mark.parametrize(
