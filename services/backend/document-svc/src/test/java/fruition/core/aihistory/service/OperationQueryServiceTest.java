@@ -63,7 +63,7 @@ class OperationQueryServiceTest {
                 "Wiki lint로 페이지 2개를 변경했습니다.", 2,
                 Instant.parse("2026-08-04T01:00:00Z"));
         when(operationLogRepository.findPage(eq(WORKSPACE_ID), eq(OperationType.lint),
-                eq(null), any(Instant.class), anyString(), anyCollection(),
+                eq(null), any(Instant.class), anyString(),
                 eq(OperationStatus.succeeded), eq(OperationType.document_edit), anyCollection(),
                 any(Pageable.class)))
                 .thenReturn(List.of(lint));
@@ -294,7 +294,7 @@ class OperationQueryServiceTest {
                 "op_aaa", WORKSPACE_ID, USER_ID, OperationType.ingest, null, "B", 1, sameInstant);
         // size+1건을 돌려주면 서비스가 다음 페이지가 있다고 판단한다.
         when(operationLogRepository.findPage(eq(WORKSPACE_ID), eq(null), eq(null),
-                any(Instant.class), anyString(), anyCollection(),
+                any(Instant.class), anyString(),
                 eq(OperationStatus.succeeded), eq(OperationType.document_edit), anyCollection(),
                 any(Pageable.class)))
                 .thenReturn(List.of(first, second));
@@ -309,7 +309,7 @@ class OperationQueryServiceTest {
         doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
         when(operationLogRepository.findPage(eq(WORKSPACE_ID), eq(null), eq(null),
                 eq(Instant.parse("2026-08-20T05:33:40.036572Z")), eq("op__hIetMtPO1nVEXY3cBvAdw"),
-                anyCollection(), eq(OperationStatus.succeeded), eq(OperationType.document_edit),
+                eq(OperationStatus.succeeded), eq(OperationType.document_edit),
                 anyCollection(), any(Pageable.class)))
                 .thenReturn(List.of());
 
@@ -338,6 +338,6 @@ class OperationQueryServiceTest {
                 .isInstanceOf(WorkspaceNotFoundException.class);
 
         verify(operationLogRepository, never()).findPage(
-                any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 }

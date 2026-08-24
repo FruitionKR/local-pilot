@@ -21,8 +21,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Import(TestcontainersConfiguration.class)
 class OperationLogRepositoryVisibilityIntegrationTest {
 
-    private static final Set<OperationStatus> HIDDEN =
-            Set.of(OperationStatus.failed, OperationStatus.conflict);
     private static final Set<OperationStatus> IN_PROGRESS =
             Set.of(OperationStatus.processing, OperationStatus.applying,
                     OperationStatus.notify_pending, OperationStatus.rebuilding);
@@ -30,7 +28,7 @@ class OperationLogRepositoryVisibilityIntegrationTest {
     @Autowired OperationLogRepository operationLogRepository;
 
     @Test
-    void findPage_hidesOperationsWithNothingToShow() {
+    void findPage_hidesUnchangedSuccessesButKeepsFailures() {
         String workspaceId = "ws_" + UUID.randomUUID();
         Instant now = Instant.now();
         OperationLog editChanged = OperationLog.completed(
@@ -60,9 +58,12 @@ class OperationLogRepositoryVisibilityIntegrationTest {
 
         List<OperationLog> visible = findPage(workspaceId, null, now.plusSeconds(1), "", 20);
 
+        // 반영에 실패한 작업은 되돌릴 대상이 없어도 남긴다. 사용자가 실패 사실을 알아야 하고,
+        // 알림도 이 목록을 보고 띄운다. 문서 편집은 성공만 남기는 규칙이 따로 있어 conflict가 빠진다.
         assertThat(visible)
                 .extracting(OperationLog::getOperationId)
-                .containsExactly(ingestSucceeded.getOperationId(), editChanged.getOperationId());
+                .containsExactly(ingestSucceeded.getOperationId(), ingestFailed.getOperationId(),
+                        editChanged.getOperationId());
     }
 
     @Test
@@ -85,7 +86,7 @@ class OperationLogRepositoryVisibilityIntegrationTest {
     }
 
     @Test
-    void findPage_hidesFailedEvenWhenStatusIsExplicitlyRequested() {
+    void findPage_keepsFailedInDefaultAndExplicitStatusQuery() {
         String workspaceId = "ws_" + UUID.randomUUID();
         Instant now = Instant.now();
         OperationLog failed = OperationLog.processing(
@@ -94,7 +95,33 @@ class OperationLogRepositoryVisibilityIntegrationTest {
         failed.complete(OperationStatus.failed, "Wiki ingest에 실패했습니다.", 0, null, now.minusSeconds(1));
         operationLogRepository.save(failed);
 
-        assertThat(findPage(workspaceId, OperationStatus.failed, now.plusSeconds(1), "", 20)).isEmpty();
+        assertThat(findPage(workspaceId, null, now.plusSeconds(1), "", 20))
+                .extracting(OperationLog::getOperationId)
+                .containsExactly(failed.getOperationId());
+        assertThat(findPage(workspaceId, OperationStatus.failed, now.plusSeconds(1), "", 20))
+                .extracting(OperationLog::getOperationId)
+                .containsExactly(failed.getOperationId());
+    }
+
+    @Test
+    void findPage_keepsRestoreConflict() {
+        String workspaceId = "ws_" + UUID.randomUUID();
+        Instant now = Instant.now();
+        // restored_from은 ai_operation_logs를 참조하는 FK라 되돌릴 대상이 실제로 있어야 한다.
+        OperationLog target = OperationLog.completed(
+                "op_target_" + UUID.randomUUID(), workspaceId, "user_1",
+                OperationType.ingest, null, "페이지 1개 반영", 1, now.minusSeconds(3));
+        operationLogRepository.save(target);
+        // 미리보기가 낡아 반영하지 못한 복구. AiTaskResultApplier가 conflict으로 확정한다.
+        OperationLog restore = OperationLog.applying(
+                "op_restore_" + UUID.randomUUID(), workspaceId, "user_1", null,
+                target.getOperationId(), "{}", now.minusSeconds(1));
+        restore.complete(OperationStatus.conflict, "미리보기가 낡았습니다.", 0, null, now.minusSeconds(1));
+        operationLogRepository.save(restore);
+
+        assertThat(findPage(workspaceId, null, now.plusSeconds(1), "", 20))
+                .extracting(OperationLog::getOperationId)
+                .containsExactly(restore.getOperationId(), target.getOperationId());
     }
 
     @Test
@@ -126,7 +153,7 @@ class OperationLogRepositoryVisibilityIntegrationTest {
     private List<OperationLog> findPage(String workspaceId, OperationStatus status,
                                         Instant cursor, String cursorOperationId, int size) {
         return operationLogRepository.findPage(workspaceId, null, status, cursor, cursorOperationId,
-                HIDDEN, OperationStatus.succeeded, OperationType.document_edit, IN_PROGRESS,
+                OperationStatus.succeeded, OperationType.document_edit, IN_PROGRESS,
                 PageRequest.of(0, size));
     }
 }

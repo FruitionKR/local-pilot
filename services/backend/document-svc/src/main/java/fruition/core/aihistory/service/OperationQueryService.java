@@ -37,13 +37,6 @@ public class OperationQueryService {
     /** 커서 문자열의 두 키를 가르는 문자. Instant 표기와 operation_id(base64url) 어디에도 없다. */
     private static final String CURSOR_SEPARATOR = ",";
 
-    /**
-     * 목록에서 감추는 상태. 둘 다 아무것도 반영하지 못한 시도라 되돌릴 대상이 없다.
-     * 상세 조회는 그대로 열리므로 감사 기록 자체가 사라지지는 않는다.
-     */
-    private static final Set<OperationStatus> HIDDEN_STATUSES =
-            Set.of(OperationStatus.failed, OperationStatus.conflict);
-
     /** status를 생략한 조회에서만 감추는 상태. status=processing 명시 조회는 활성 작업 탐지에 쓴다. */
     private static final Set<OperationStatus> IN_PROGRESS_STATUSES =
             Set.of(OperationStatus.processing, OperationStatus.applying,
@@ -76,8 +69,7 @@ public class OperationQueryService {
         Cursor parsed = parseCursor(cursor);
         List<OperationLog> found = operationLogRepository.findPage(
                 workspaceId, parseType(type), parseStatus(status), parsed.createdAt(), parsed.operationId(),
-                HIDDEN_STATUSES, OperationStatus.succeeded, OperationType.document_edit,
-                IN_PROGRESS_STATUSES,
+                OperationStatus.succeeded, OperationType.document_edit, IN_PROGRESS_STATUSES,
                 PageRequest.of(0, limit + 1));
 
         // 한 건 더 읽어 다음 페이지가 있는지 본다.

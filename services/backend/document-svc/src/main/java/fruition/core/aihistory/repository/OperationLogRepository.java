@@ -103,9 +103,10 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
     /**
      * 목록 조회. 최신순이며 커서보다 오래된 것만 가져온다.
      *
-     * <p>되돌릴 것이 남지 않은 작업은 걷어낸다. {@code hiddenStatuses}(반영 실패)와 변경이 0건인
-     * 성공은 사용자가 목록에서 할 수 있는 일이 없다. {@code successOnlyType}은 결과가 나기 전에
-     * 감사 행을 먼저 커밋하는 유형이라, 끝난 성공만 남긴다.
+     * <p>변경이 0건인 성공은 사용자가 목록에서 할 수 있는 일이 없어 걷어낸다.
+     * {@code successOnlyType}은 결과가 나기 전에 감사 행을 먼저 커밋하는 유형이라, 끝난 성공만
+     * 남긴다. 그 유형을 뺀 나머지는 반영에 실패했더라도 남긴다. 되돌릴 대상이 없어도 사용자가
+     * 실패 사실을 알아야 하고, 알림도 이 목록을 보고 띄운다.
      *
      * <p>{@code hiddenDefaultStatuses}(진행 중)는 {@code status}를 생략했을 때만 걷어낸다.
      * {@code status=processing} 같은 명시 조회는 활성 작업 탐지에 쓰므로 그대로 통과시킨다.
@@ -123,7 +124,6 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
               AND (:type IS NULL OR l.operationType = :type)
               AND (:status IS NULL OR l.status = :status)
               AND (:status IS NOT NULL OR l.status NOT IN :hiddenDefaultStatuses)
-              AND l.status NOT IN :hiddenStatuses
               AND (l.status <> :successStatus OR l.changedResourceCount > 0)
               AND (l.operationType <> :successOnlyType OR l.status = :successStatus)
               AND (l.createdAt < :cursor
@@ -136,7 +136,6 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
             @Param("status") OperationStatus status,
             @Param("cursor") Instant cursor,
             @Param("cursorOperationId") String cursorOperationId,
-            @Param("hiddenStatuses") Collection<OperationStatus> hiddenStatuses,
             @Param("successStatus") OperationStatus successStatus,
             @Param("successOnlyType") OperationType successOnlyType,
             @Param("hiddenDefaultStatuses") Collection<OperationStatus> hiddenDefaultStatuses,
