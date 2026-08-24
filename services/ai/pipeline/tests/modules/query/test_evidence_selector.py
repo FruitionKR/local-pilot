@@ -227,7 +227,7 @@ class EvidenceSelectorTest(unittest.TestCase):
 
         self.assertEqual([snippet.source_document_id for snippet in snippets], ["doc-valid"])
 
-    def test_ranks_one_evidence_per_related_page_before_extra_evidence(self) -> None:
+    def test_returns_only_global_top_k_evidence(self) -> None:
         first_page = WikiPage(
             id="concept:first",
             page_type="concept",
@@ -245,6 +245,7 @@ class EvidenceSelectorTest(unittest.TestCase):
         selector = EvidenceSelector(
             embedding_search=EmptySearch(),
             text_search=EmptySearch(),
+            max_evidence_snippets=2,
         )
 
         snippets = selector.select(
@@ -264,12 +265,10 @@ class EvidenceSelectorTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(
-            [snippet.source_document_id for snippet in snippets[:2]],
-            ["doc-second", "doc-first"],
-        )
+        self.assertEqual(len(snippets), 2)
+        self.assertEqual(snippets[0].source_document_id, "doc-second")
 
-    def test_keeps_score_sorted_page_coverage_ahead_of_higher_scoring_extra(self) -> None:
+    def test_global_ranking_does_not_force_page_coverage(self) -> None:
         first_page = WikiPage(
             id="concept:first-coverage",
             page_type="concept",
@@ -291,7 +290,11 @@ class EvidenceSelectorTest(unittest.TestCase):
             slug="third-coverage",
             summary="세 번째 개념 요약",
         )
-        selector = EvidenceSelector(embedding_search=EmptySearch(), text_search=EmptySearch())
+        selector = EvidenceSelector(
+            embedding_search=EmptySearch(),
+            text_search=EmptySearch(),
+            max_evidence_snippets=2,
+        )
 
         snippets = selector.select(
             question="관련 없는 질문",
@@ -347,10 +350,9 @@ class EvidenceSelectorTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            [snippet.source_document_id for snippet in snippets[:3]],
-            ["doc-second", "doc-first", "doc-third"],
+            [snippet.source_document_id for snippet in snippets],
+            ["doc-first", "doc-first"],
         )
-        self.assertEqual(snippets[3].source_block_ids, ["B0002"])
 
 
 if __name__ == "__main__":

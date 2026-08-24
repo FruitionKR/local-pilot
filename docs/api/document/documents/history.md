@@ -258,7 +258,7 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/doc
 #### 10. 구현 파일
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/document/controller/DocumentController.java`
-- 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: delete_1`)
+- 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: delete_2`)
 
 [↑ 요약으로 돌아가기](#summary-delete-api-workspaces-workspace-id-documents-document-id)
 

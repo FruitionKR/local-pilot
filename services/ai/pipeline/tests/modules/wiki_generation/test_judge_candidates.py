@@ -6,6 +6,7 @@ import unittest
 from app.modules.wiki_generation.application.judge_candidates import (
     judge_concept_update_candidates,
     judge_meaning_cluster_candidates,
+    normalize_concept_update_decisions,
 )
 
 
@@ -83,7 +84,7 @@ class JudgeCandidatesTest(unittest.TestCase):
     def test_rejects_relation_to_unknown_concept(self) -> None:
         completion = FakeCompletion(
             {
-                "decisions": [
+                "concept_update_decisions": [
                     {
                         "candidate_id": "cand_001",
                         "decision": "relation_candidate",
@@ -94,8 +95,8 @@ class JudgeCandidatesTest(unittest.TestCase):
             }
         )
 
-        result = judge_concept_update_candidates(
-            completion=completion,
+        result = normalize_concept_update_decisions(
+            completion.response,
             concepts=[{"slug": "motor", "title": "Motor"}],
             candidates=[candidate()],
         )
@@ -111,7 +112,26 @@ class JudgeCandidatesTest(unittest.TestCase):
             },
         )
 
-    def test_skips_completion_when_inputs_are_empty(self) -> None:
+    def test_remaps_update_target_to_resolved_canonical_slug(self) -> None:
+        result = normalize_concept_update_decisions(
+            {
+                "concept_update_decisions": [
+                    {
+                        "candidate_id": "cand_001",
+                        "decision": "same_concept",
+                        "concept_slug": "counter-emf",
+                    }
+                ]
+            },
+            concepts=[{"slug": "back-emf", "title": "Back EMF"}],
+            candidates=[candidate()],
+            concept_slug_map={"counter-emf": "back-emf"},
+        )
+
+        self.assertEqual(result[0]["decision"], "same_concept")
+        self.assertEqual(result[0]["concept_slug"], "back-emf")
+
+    def test_skips_concept_update_completion_when_inputs_are_empty(self) -> None:
         completion = FakeCompletion({"decisions": []})
 
         result = judge_concept_update_candidates(

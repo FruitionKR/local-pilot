@@ -1,11 +1,15 @@
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from pydantic import ValidationError
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase
-from app.modules.query.domain.entities import ConversationContext, ConversationMessage
+from app.modules.query.domain.entities import (
+    ConversationContext,
+    ConversationMessage,
+)
 from app.modules.query.infrastructure.in_memory_wiki_repository import InMemoryWikiRepository
 from app.workers import task_worker
 from tests.modules.query.test_answer_query import (
@@ -390,6 +394,497 @@ def test_restore_rejects_changed_contribution_manifest() -> None:
 def test_unknown_command_is_rejected() -> None:
     with pytest.raises(ValueError, match="unsupported AI command kind"):
         task_worker._handle({"run_id": "run-1", "kind": "unknown"})
+
+
+def test_post_ingest_command_retries_in_process() -> None:
+    command = {"run_id": "post-run-1", "kind": "post_ingest"}
+    result = {"quality_status": "ready"}
+
+    with (
+        patch.object(
+            task_worker,
+            "_handle_post_ingest",
+            side_effect=[
+                RuntimeError("evidence evaluator omitted case indexes: [1, 2]"),
+                result,
+            ],
+        ) as handle,
+        patch.object(task_worker, "_failure_is_durable", return_value=False) as durable,
+    ):
+        assert task_worker._handle(command) == result
+
+    assert handle.call_count == 2
+    durable.assert_called_once_with(command)
+
+
+def test_post_ingest_command_does_not_retry_durable_failure() -> None:
+    command = {"run_id": "post-run-1", "kind": "post_ingest"}
+
+    with (
+        patch.object(
+            task_worker,
+            "_handle_post_ingest",
+            side_effect=RuntimeError("post_ingest run failed"),
+        ) as handle,
+        patch.object(task_worker, "_failure_is_durable", return_value=True),
+        pytest.raises(RuntimeError, match="post_ingest run failed"),
+    ):
+        task_worker._handle(command)
+
+    handle.assert_called_once_with(command)
+
+
+@pytest.mark.parametrize(
+    ("embedding_mode", "runs_embedding"),
+    [("bge-m3", True), ("text-only", False)],
+)
+def test_post_ingest_runs_configured_embedding_before_quality_evaluation(
+    embedding_mode: str,
+    runs_embedding: bool,
+) -> None:
+    command = {
+        "run_id": "post-run-1",
+        "ingest_run_id": "ingest-run-1",
+        "kind": "post_ingest",
+        "document_id": "document-1",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "cluster_normalized": {"document": {"document_id": "document-1"}},
+        "page_ids": ["page-1"],
+    }
+    calls = []
+    artifact = {"maintenance_summary": {"promotion_candidate_count": 0}}
+    parent = {
+        "status": "succeeded",
+        "manifest": {
+            "post_ingest": {
+                "cluster_normalized": command["cluster_normalized"],
+                "page_ids": command["page_ids"],
+                "quality_required": True,
+                "generation_evaluation_status": "passed",
+            },
+            "source_blocks": [{"block_id": "B0001", "text": "근거"}],
+        },
+    }
+
+    with (
+        patch.dict(
+            task_worker.os.environ,
+            {"QUERY_EMBEDDING_MODE": embedding_mode},
+        ),
+        patch.object(
+            task_worker.database,
+            "get_pipeline_run",
+            side_effect=lambda run_id: parent if run_id == "ingest-run-1" else None,
+        ),
+        patch.object(task_worker.database, "create_pipeline_run"),
+        patch.object(
+            task_worker.database,
+            "checkpoint_pipeline_run",
+            side_effect=lambda *_args: calls.append("checkpoint"),
+        ),
+        patch.object(task_worker.database, "update_pipeline_run_post_ingest"),
+        patch.object(task_worker.database, "update_pipeline_run_cluster_contribution"),
+        patch.object(
+            task_worker,
+            "build_post_ingest_cluster_artifact",
+            side_effect=lambda **_kwargs: calls.append("cluster") or artifact,
+        ),
+        patch.object(task_worker, "_post_ingest_client", return_value=MagicMock()),
+        patch.object(task_worker, "read_optional_text_object", return_value=""),
+        patch.object(
+            task_worker.database,
+            "persist_post_ingest_clusters",
+            side_effect=lambda *_args: calls.append("persist") or [],
+        ),
+        patch.object(
+            task_worker,
+            "build_wiki_embeddings",
+            side_effect=lambda _ids: calls.append("embedding")
+            or {
+                "target_count": 1,
+                "embedded_count": 1,
+                "skipped_count": 0,
+                "failed_count": 0,
+            },
+        ),
+        patch.object(
+            task_worker,
+            "_run_post_ingest_wiki_quality_evaluation",
+            side_effect=lambda *_args: calls.append("quality")
+            or [
+                {"question": f"질문 {index}", "passed": True}
+                for index in range(3)
+            ],
+        ),
+        patch.object(task_worker.database, "finish_pipeline_run") as finish,
+    ):
+        result = task_worker._handle_post_ingest(command)
+
+    assert result["quality_status"] == "ready"
+    assert calls.index("cluster") < calls.index("persist")
+    assert calls.index("persist") < calls.index("quality")
+    if runs_embedding:
+        assert calls.index("persist") < calls.index("embedding")
+        assert calls.index("embedding") < calls.index("quality")
+    else:
+        assert "embedding" not in calls
+        assert result["embedding"] == {
+            "target_count": 1,
+            "embedded_count": 0,
+            "skipped_count": 1,
+            "failed_count": 0,
+        }
+    finish.assert_called_once()
+
+
+def test_post_ingest_marks_needs_review_after_third_failure() -> None:
+    command = {
+        "run_id": "post-run-1",
+        "ingest_run_id": "ingest-run-1",
+        "kind": "post_ingest",
+        "document_id": "document-1",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "cluster_normalized": {},
+        "page_ids": ["page-1"],
+    }
+    existing = {
+        "status": "running",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "manifest": {
+            "attempt": 2,
+            "cluster_artifact": {},
+            "cluster_applied": True,
+            "page_ids": ["page-1"],
+        },
+    }
+
+    parent = {
+        "status": "succeeded",
+        "manifest": {
+            "post_ingest": {
+                "cluster_normalized": {},
+                "page_ids": ["page-1"],
+            }
+        },
+    }
+    with (
+        patch.dict(
+            task_worker.os.environ,
+            {"QUERY_EMBEDDING_MODE": "bge-m3"},
+        ),
+        patch.object(
+            task_worker.database,
+            "get_pipeline_run",
+            side_effect=lambda run_id: parent if run_id == "ingest-run-1" else existing,
+        ),
+        patch.object(task_worker.database, "checkpoint_pipeline_run"),
+        patch.object(task_worker.database, "update_pipeline_run_post_ingest") as update_parent,
+        patch.object(
+            task_worker,
+            "build_wiki_embeddings",
+            side_effect=RuntimeError("embedding unavailable"),
+        ),
+        patch.object(task_worker.database, "fail_pipeline_run") as fail,
+        pytest.raises(RuntimeError, match="embedding unavailable"),
+    ):
+        task_worker._handle_post_ingest(command)
+
+    fail.assert_called_once_with("post-run-1", "embedding unavailable")
+    assert update_parent.call_args.args[1]["status"] == "needs_review"
+
+
+def test_post_ingest_quality_uses_source_and_concept_rag_with_source_evaluator() -> None:
+    use_case = MagicMock()
+    use_case.retrieve_evidence.return_value = SimpleNamespace(
+        evidence_snippets=[
+            SimpleNamespace(
+                rank=1,
+                source_document_id="document-1",
+                source_block_ids=["B0001"],
+                source_refs=[
+                    SimpleNamespace(
+                        source_document_id="document-1",
+                        source_block_id="B0001",
+                    ),
+                    SimpleNamespace(
+                        source_document_id="document-2",
+                        source_block_id="B0002",
+                    ),
+                ],
+                text="근거",
+            )
+        ],
+        retrieval_summary=SimpleNamespace(
+            source_candidate_count=1,
+            concept_candidate_count=2,
+            used_source_count=1,
+            used_concept_count=1,
+        ),
+    )
+    command = {
+        "run_id": "post-run-1",
+        "document_id": "document-1",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+    }
+    state = {}
+    quality_cases = [
+        {
+            "question": "질문",
+            "expected_claims": ["근거"],
+            "source_document_id": "document-1",
+            "source_block_ids": ["B0001"],
+        }
+    ]
+    with (
+        patch.object(
+            task_worker,
+            "build_answer_query_use_case",
+            return_value=use_case,
+        ) as build_query,
+        patch.object(task_worker, "_post_ingest_client", return_value=MagicMock()),
+        patch.object(
+            task_worker.database,
+            "list_source_blocks",
+            return_value=[{"document_id": "document-1", "block_id": "B0001", "text": "근거"}],
+        ) as load_question_source,
+        patch.object(
+            task_worker,
+            "generate_post_ingest_quality_cases",
+            return_value=quality_cases,
+        ) as generate_cases,
+        patch.object(
+            task_worker.database,
+            "list_source_blocks_for_refs",
+            return_value=[
+                {
+                    "source_document_id": "document-1",
+                    "block_id": "B0001",
+                    "text": "근거",
+                },
+                {
+                    "source_document_id": "document-2",
+                    "block_id": "B0002",
+                    "text": "추가 근거",
+                },
+            ],
+        ) as load_source_blocks,
+        patch.object(
+            task_worker,
+            "evaluate_post_ingest_evidence",
+            return_value=[
+                {
+                    "passed": True,
+                    "evidence_recall": 1.0,
+                    "evidence_precision": 1.0,
+                    "source_alignment": 1.0,
+                }
+            ],
+        ) as evaluate,
+        patch.object(task_worker.database, "checkpoint_pipeline_run"),
+    ):
+        evaluations = task_worker._run_post_ingest_wiki_quality_evaluation(command, state)
+
+    build_arguments = build_query.call_args.kwargs
+    repository = build_arguments.pop("wiki_repository")
+    assert repository._concept_only is False
+    assert build_arguments == {
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "allow_web_search": False,
+        "evaluator_mode": "disabled",
+    }
+    assert evaluations[0]["passed"] is True
+    assert "answer" not in evaluations[0]
+    assert evaluations[0]["gold_ref_hit"] is True
+    assert evaluations[0]["gold_ref_rank"] == 1
+    assert evaluations[0]["evidence_snippets"] == [
+        {
+            "rank": 1,
+            "source_document_id": "document-1",
+            "source_block_ids": ["B0001"],
+            "source_refs": [
+                {
+                    "source_document_id": "document-1",
+                    "source_block_id": "B0001",
+                },
+                {
+                    "source_document_id": "document-2",
+                    "source_block_id": "B0002",
+                },
+            ],
+            "text": "근거",
+        }
+    ]
+    assert evaluations[0]["retrieval_summary"] == {
+        "source_candidate_count": 1,
+        "concept_candidate_count": 2,
+        "used_source_count": 1,
+        "used_concept_count": 1,
+    }
+    load_question_source.assert_called_once_with("document-1")
+    generate_cases.assert_called_once()
+    load_source_blocks.assert_called_once_with(
+        ["document-1:B0001", "document-2:B0002"]
+    )
+    evaluate.assert_called_once()
+    use_case.retrieve_evidence.assert_called_once_with(
+        "질문",
+        workspace_id="workspace-1",
+        user_id="user-1",
+    )
+    use_case.execute.assert_not_called()
+
+
+def test_post_ingest_quality_retry_reuses_checkpointed_batch() -> None:
+    command = {
+        "run_id": "post-run-1",
+        "document_id": "document-1",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+    }
+    state = {
+        "wiki_quality_evaluations": [
+            {"question": "첫 번째 질문", "passed": True}
+        ]
+    }
+
+    evaluations = task_worker._run_post_ingest_wiki_quality_evaluation(
+        command,
+        state,
+    )
+
+    assert evaluations == [{"question": "첫 번째 질문", "passed": True}]
+
+
+def test_post_ingest_quality_retries_when_three_aligned_cases_are_unavailable() -> None:
+    command = {
+        "run_id": "post-run-1",
+        "document_id": "document-1",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+    }
+    state = {}
+
+    with (
+        patch.object(task_worker, "_post_ingest_client", return_value=MagicMock()),
+        patch.object(
+            task_worker.database,
+            "list_source_blocks",
+            return_value=[{"block_id": "B0001", "text": "원문"}],
+        ),
+        patch.object(
+            task_worker,
+            "generate_post_ingest_quality_cases",
+            return_value=[],
+        ),
+        patch.object(task_worker.database, "checkpoint_pipeline_run") as checkpoint,
+        pytest.raises(RuntimeError, match="평가 질문을 생성하지 못했습니다"),
+    ):
+        task_worker._run_post_ingest_wiki_quality_evaluation(command, state)
+
+    assert "quality_cases" not in state
+    checkpoint.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("generation_status", "evaluation_count"),
+    [("unresolved", 3), ("passed", 1)],
+)
+def test_post_ingest_requires_source_and_wiki_quality_to_be_ready(
+    generation_status: str,
+    evaluation_count: int,
+) -> None:
+    evaluations = [
+        {"question": f"질문 {index}", "passed": True}
+        for index in range(evaluation_count)
+    ]
+    command = {
+        "run_id": "post-run-1",
+        "ingest_run_id": "ingest-run-1",
+        "kind": "post_ingest",
+        "document_id": "document-1",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+    }
+    parent = {
+        "status": "succeeded",
+        "manifest": {
+            "post_ingest": {
+                "cluster_normalized": {},
+                "page_ids": [],
+                "quality_required": True,
+                "generation_evaluation_status": generation_status,
+            },
+            "source_blocks": [],
+        },
+    }
+
+    with (
+        patch.object(
+            task_worker.database,
+            "get_pipeline_run",
+            side_effect=lambda run_id: parent if run_id == "ingest-run-1" else None,
+        ),
+        patch.object(task_worker.database, "create_pipeline_run"),
+        patch.object(task_worker.database, "checkpoint_pipeline_run"),
+        patch.object(task_worker.database, "update_pipeline_run_post_ingest"),
+        patch.object(task_worker.database, "update_pipeline_run_cluster_contribution"),
+        patch.object(task_worker, "build_post_ingest_cluster_artifact", return_value={}),
+        patch.object(task_worker, "_post_ingest_client", return_value=MagicMock()),
+        patch.object(task_worker, "read_optional_text_object", return_value=""),
+        patch.object(task_worker.database, "persist_post_ingest_clusters", return_value=[]),
+        patch.object(
+            task_worker,
+            "build_wiki_embeddings",
+            return_value={
+                "target_count": 0,
+                "embedded_count": 0,
+                "skipped_count": 0,
+                "failed_count": 0,
+            },
+        ),
+        patch.object(
+            task_worker,
+            "_run_post_ingest_wiki_quality_evaluation",
+            return_value=evaluations,
+        ),
+        patch.object(task_worker.database, "finish_pipeline_run"),
+    ):
+        result = task_worker._handle_post_ingest(command)
+
+    assert result["quality_status"] == "needs_review"
+    assert result["generation_evaluation_status"] == generation_status
+
+
+@pytest.mark.parametrize(("status", "expected"), [("running", False), ("failed", True)])
+def test_post_ingest_failure_durability_follows_pipeline_run(
+    status: str,
+    expected: bool,
+) -> None:
+    with patch.object(
+        task_worker.database,
+        "get_pipeline_run",
+        return_value={"status": status},
+    ):
+        assert task_worker._failure_is_durable(
+            {"run_id": "post-run-1", "kind": "post_ingest"}
+        ) is expected
 
 
 @pytest.mark.parametrize(

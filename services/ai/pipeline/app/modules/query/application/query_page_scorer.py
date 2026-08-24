@@ -13,12 +13,14 @@ class QueryPageScorer:
         source_candidate_limit: int = 15,
         concept_candidate_limit: int = 10,
         focus_concept_threshold: float = 0.45,
+        score_source_structures: bool = True,
     ) -> None:
         self._embedding_search = embedding_search
         self._text_search = text_search
         self._source_candidate_limit = source_candidate_limit
         self._concept_candidate_limit = concept_candidate_limit
         self._focus_concept_threshold = focus_concept_threshold
+        self._score_source_structures_enabled = score_source_structures
 
     def score_pages(self, query_rewrite: QueryRewrite, pages: list[WikiPage], embedding_weight: float) -> dict[str, float]:
         embedding_query = (
@@ -41,7 +43,11 @@ class QueryPageScorer:
             )
             for page, embedding_score, text_score in zip(pages, embedding_scores, text_scores)
         }
-        if pages and all(page.is_source for page in pages):
+        if (
+            self._score_source_structures_enabled
+            and pages
+            and all(page.is_source for page in pages)
+        ):
             structure_scores = self._score_source_structures(
                 embedding_query,
                 text_query,

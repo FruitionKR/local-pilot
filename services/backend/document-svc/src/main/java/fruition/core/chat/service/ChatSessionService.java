@@ -3,6 +3,7 @@ package fruition.core.chat.service;
 import fruition.core.chat.domain.ChatSession;
 import fruition.core.chat.dto.ChatSessionCreateRequest;
 import fruition.core.chat.dto.ChatSessionListResponse;
+import fruition.core.chat.dto.ChatSessionRenameRequest;
 import fruition.core.chat.dto.ChatSessionResponse;
 import fruition.core.chat.exception.ChatSessionLimitExceededException;
 import fruition.core.chat.exception.ChatSessionNotFoundException;
@@ -76,6 +77,14 @@ public class ChatSessionService {
                         .map(this::toResponse)
                         .toList()
         );
+    }
+
+    @Transactional
+    public ChatSessionResponse rename(String workspaceId, String userId, String sessionId,
+                                      ChatSessionRenameRequest request) {
+        ChatSession session = verifyOwnedSession(workspaceId, userId, sessionId);
+        session.rename(request.title());
+        return toResponse(session);
     }
 
     @Transactional

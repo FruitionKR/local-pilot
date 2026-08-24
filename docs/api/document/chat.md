@@ -5,7 +5,7 @@
 채팅 세션·메시지와 Wiki 내보내기 Gateway API다. Wiki 내보내기는 Backend가 채팅을 검증·직렬화해
 문서로 저장한 뒤 Kafka `ai.ingest.command`로 전달하며, 클라이언트는 ai-svc DTO를 보내지 않는다.
 
-- API 수: 6
+- API 수: 7
 
 ## API 목차
 
@@ -13,6 +13,7 @@
 |---|---|
 | [`GET /api/workspaces/{workspace_id}/chat/sessions`](#summary-get-api-workspaces-workspace-id-chat-sessions) | 가장 최근 메시지 순으로 정렬해 반환합니다. |
 | [`POST /api/workspaces/{workspace_id}/chat/sessions`](#summary-post-api-workspaces-workspace-id-chat-sessions) | 워크스페이스당 최대 10개까지 생성할 수 있습니다. |
+| [`PATCH /api/workspaces/{workspace_id}/chat/sessions/{session_id}`](#summary-patch-api-workspaces-workspace-id-chat-sessions-session-id) | 지정한 채팅 세션의 제목을 변경합니다. 목록 정렬 기준인 last_message_at은 바뀌지 않습니다. |
 | [`DELETE /api/workspaces/{workspace_id}/chat/sessions/{session_id}`](#summary-delete-api-workspaces-workspace-id-chat-sessions-session-id) | 워크스페이스에서 지정한 채팅 세션과 해당 세션의 메시지 기록을 삭제합니다. |
 | [`GET /api/workspaces/{workspace_id}/chat/sessions/{session_id}/messages`](#summary-get-api-workspaces-workspace-id-chat-sessions-session-id-messages) | 세션 내 채팅 메시지를 생성 순서대로 반환합니다. |
 | [`POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki`](#summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki) | 세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다. |
@@ -244,6 +245,123 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
 
 </details>
 
+<a id="summary-patch-api-workspaces-workspace-id-chat-sessions-session-id"></a>
+### `PATCH /api/workspaces/{workspace_id}/chat/sessions/{session_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 지정한 채팅 세션의 제목을 변경합니다. 목록 정렬 기준인 last_message_at은 바뀌지 않습니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string`<br>**Body** — `ChatSessionRenameRequest` |
+| 출력 | `200` 변경 성공 — `ChatSessionResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `400` 제목이 비었거나 255자를 초과함 — `ErrorResponse`<br>`404` 세션 또는 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+<a id="detail-patch-api-workspaces-workspace-id-chat-sessions-session-id"></a>
+### `PATCH /api/workspaces/{workspace_id}/chat/sessions/{session_id}` 상세
+
+#### 1. Method + Path
+
+`PATCH /api/workspaces/{workspace_id}/chat/sessions/{session_id}`
+
+#### 2. 목적
+
+지정한 채팅 세션의 제목을 변경합니다. 목록 정렬 기준인 last_message_at은 바뀌지 않습니다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- `Authorization: Bearer <access_token>`을 검증한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| path | `workspace_id` | `string` | 예 | - |
+| path | `session_id` | `string` | 예 | 채팅 세션 ID |
+
+- Content-Type: `application/json` (`ChatSessionRenameRequest`)
+
+```json
+{
+  "title": "검색 인덱싱 질문"
+}
+```
+
+`title`은 필수다. 생성과 달리 빈 값을 기본 제목으로 채우지 않고 `400`으로 거절한다. 이름 변경은 명시적인
+의도이므로 조용히 기본값으로 되돌리지 않는다. 최대 255자다.
+
+#### 5. Response body
+
+- HTTP `200`: 변경 성공
+- Content-Type: `*/*` (`ChatSessionResponse`)
+
+```json
+{
+  "created_at": "2026-08-13T04:25:24.371948Z",
+  "id": "session_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+  "last_message_at": "2026-08-13T04:25:24.371948Z",
+  "title": "검색 인덱싱 질문"
+}
+```
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 응답 스키마 |
+|---|---|---|
+| `400` | 제목이 비었거나 255자를 초과함 | `ErrorResponse` |
+| `404` | 세션 또는 워크스페이스를 찾을 수 없음 | `ErrorResponse` |
+
+```json
+{
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다."
+  }
+}
+```
+
+#### 7. Pagination / filtering
+
+- 페이지네이션: 지원하지 않음
+- 필터링: 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 인증된 사용자만 호출할 수 있다.
+- path의 `workspace_id`에 대한 활성 멤버십을 검증한다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/session_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83" \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"검색 인덱싱 질문"}'
+```
+
+```json
+{
+  "created_at": "2026-08-13T04:25:24.371948Z",
+  "id": "session_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+  "last_message_at": "2026-08-13T04:25:24.371948Z",
+  "title": "검색 인덱싱 질문"
+}
+```
+
+제목은 이 세션을 위키화한 문서의 이름으로 쓰인다. 이미 내보낸 뒤 제목을 바꿔도 기존 문서 이름은 그대로다.
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/document-svc/src/main/java/fruition/core/chat/controller/ChatSessionController.java`
+- 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: rename_3`)
+
+[↑ 요약으로 돌아가기](#summary-patch-api-workspaces-workspace-id-chat-sessions-session-id)
+
+</details>
+
 <a id="summary-delete-api-workspaces-workspace-id-chat-sessions-session-id"></a>
 ### `DELETE /api/workspaces/{workspace_id}/chat/sessions/{session_id}`
 
@@ -328,7 +446,7 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/cha
 #### 10. 구현 파일
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/chat/controller/ChatSessionController.java`
-- 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: delete_2`)
+- 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: delete_1`)
 
 [↑ 요약으로 돌아가기](#summary-delete-api-workspaces-workspace-id-chat-sessions-session-id)
 

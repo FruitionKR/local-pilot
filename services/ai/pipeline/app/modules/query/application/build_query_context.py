@@ -24,6 +24,7 @@ class BuildQueryContextUseCase:
         evidence_embedding_weight: float = 0.75,
         min_evidence_score: float = 0.0,
         evidence_relative_score_floor: float = 0.85,
+        max_evidence_snippets: int = 8,
         answer_context_formatter: AnswerContextFormatter | None = None,
         evidence_selector: EvidenceSelector | None = None,
     ) -> None:
@@ -35,6 +36,7 @@ class BuildQueryContextUseCase:
             evidence_embedding_weight=evidence_embedding_weight,
             min_evidence_score=min_evidence_score,
             evidence_relative_score_floor=evidence_relative_score_floor,
+            max_evidence_snippets=max_evidence_snippets,
         )
         self._answer_context_formatter = answer_context_formatter or AnswerContextFormatter(
             max_related_pages=max_related_pages,

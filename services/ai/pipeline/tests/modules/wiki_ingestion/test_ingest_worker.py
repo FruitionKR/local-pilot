@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -62,7 +63,7 @@ def test_handle_retries_running_redelivered_run() -> None:
 
     with (
         patch.object(ingest_worker, "get_pipeline_run_repository", return_value=repository),
-        patch.object(ingest_worker, "get_pipeline_run_use_case") as get_use_case,
+        patch.object(ingest_worker, "get_deferred_pipeline_run_use_case") as get_use_case,
         patch.object(ingest_worker, "get_pipeline_source_reader") as get_source_reader,
         patch.object(ingest_worker, "_run_pipeline_request") as run_request,
     ):
@@ -76,6 +77,7 @@ def test_handle_retries_running_redelivered_run() -> None:
         source_reader=get_source_reader.return_value,
         run_id="run-1",
     )
+    get_use_case.assert_called_once_with()
 
 
 def test_handle_rejects_command_that_reuses_another_run_context() -> None:
@@ -252,6 +254,67 @@ def test_terminal_failed_result_keeps_failed_event_status() -> None:
     assert event["event_id"] == "ingest:run-1:failed"
     assert event["status"] == "failed"
     assert event["error"] == "pipeline failed"
+
+
+def test_post_ingest_command_is_stable_for_redelivery() -> None:
+    repository = MagicMock()
+    repository.get_run.return_value = {
+        "status": "succeeded",
+        "manifest": {
+            "post_ingest": {
+                "cluster_normalized": {"document": {"document_id": "document-1"}},
+                "page_ids": ["page-1"],
+            }
+        },
+    }
+    command = {
+        "run_id": "00000000-0000-0000-0000-000000000001",
+        "kind": "document",
+        "document_id": "document-1",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+    }
+
+    with patch.object(
+        ingest_worker,
+        "get_pipeline_run_repository",
+        return_value=repository,
+    ):
+        first = ingest_worker._post_ingest_command(command)
+        second = ingest_worker._post_ingest_command(command)
+
+    assert first == second
+    assert first is not None
+    assert first["kind"] == "post_ingest"
+    assert first["ingest_run_id"] == command["run_id"]
+    assert "cluster_normalized" not in first
+    assert "page_ids" not in first
+
+
+def test_post_ingest_dispatch_failure_is_not_treated_as_finished_ingest() -> None:
+    producer = MagicMock()
+    producer.send_and_wait = AsyncMock(side_effect=RuntimeError("kafka unavailable"))
+    post_command = {
+        "run_id": "post-run-1",
+        "workspace_id": "workspace-1",
+    }
+
+    with (
+        patch.object(
+            ingest_worker,
+            "_post_ingest_command",
+            return_value=post_command,
+        ),
+        pytest.raises(ingest_worker.PostIngestDispatchError, match="kafka unavailable"),
+    ):
+        asyncio.run(
+            ingest_worker._dispatch_post_ingest(
+                producer,
+                {"run_id": "ingest-run-1"},
+            )
+        )
 
 
 def test_event_request_excludes_top_level_secrets() -> None:

@@ -105,6 +105,58 @@ Schema:
         )
     return normalized_decisions
 
+def normalize_concept_update_decisions(
+    raw: dict[str, Any],
+    *,
+    concepts: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    concept_slug_map: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    if not concepts or not candidates:
+        return []
+    valid_candidate_ids = {item["candidate_id"] for item in candidates}
+    valid_concept_slugs = {str(concept.get("slug")) for concept in concepts if concept.get("slug")}
+    slug_map = concept_slug_map or {}
+    normalized_decisions: list[dict[str, Any]] = []
+    for item, candidate_id in _valid_candidate_decisions(
+        raw,
+        valid_candidate_ids,
+        key="concept_update_decisions",
+    ):
+        decision = str(item.get("decision") or "not_same_concept")
+        raw_concept_slug = str(item.get("concept_slug") or "")
+        concept_slug = slug_map.get(raw_concept_slug, raw_concept_slug)
+        relation = str(item.get("relation") or "")
+        if relation not in {
+            "part_of",
+            "child_of",
+            "uses_or_depends_on",
+            "contrasts_with",
+            "supports_or_enables",
+            "related_evidence",
+            "insufficient_evidence",
+        }:
+            relation = ""
+        if decision == "same_concept" and concept_slug in valid_concept_slugs:
+            relation = "same_concept"
+        elif decision == "relation_candidate" and concept_slug in valid_concept_slugs and relation:
+            pass
+        else:
+            decision = "not_same_concept"
+            concept_slug = ""
+            relation = ""
+        normalized_decisions.append(
+            {
+                "candidate_id": candidate_id,
+                "decision": decision,
+                "concept_slug": concept_slug,
+                "relation": relation,
+                "reason": item.get("reason"),
+            }
+        )
+    return normalized_decisions
+
+
 def judge_concept_update_candidates(
     *,
     completion: JsonCompletionPort,
@@ -163,49 +215,24 @@ Schema:
             for item in candidates
         ],
     }
-    raw = completion.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
-    valid_candidate_ids = {item["candidate_id"] for item in candidates}
-    valid_concept_slugs = {str(concept.get("slug")) for concept in concepts if concept.get("slug")}
-    normalized_decisions: list[dict[str, Any]] = []
-    for item, candidate_id in _valid_candidate_decisions(raw, valid_candidate_ids):
-        decision = str(item.get("decision") or "not_same_concept")
-        concept_slug = str(item.get("concept_slug") or "")
-        relation = str(item.get("relation") or "")
-        if relation not in {
-            "part_of",
-            "child_of",
-            "uses_or_depends_on",
-            "contrasts_with",
-            "supports_or_enables",
-            "related_evidence",
-            "insufficient_evidence",
-        }:
-            relation = ""
-        if decision == "same_concept" and concept_slug in valid_concept_slugs:
-            relation = "same_concept"
-        elif decision == "relation_candidate" and concept_slug in valid_concept_slugs and relation:
-            pass
-        else:
-            decision = "not_same_concept"
-            concept_slug = ""
-            relation = ""
-        normalized_decisions.append(
-            {
-                "candidate_id": candidate_id,
-                "decision": decision,
-                "concept_slug": concept_slug,
-                "relation": relation,
-                "reason": item.get("reason"),
-            }
-        )
-    return normalized_decisions
+    raw = completion.complete_json(
+        system_prompt,
+        json.dumps(payload, ensure_ascii=False, indent=2),
+    )
+    return normalize_concept_update_decisions(
+        {"concept_update_decisions": raw.get("decisions", [])},
+        concepts=concepts,
+        candidates=candidates,
+    )
 
 
 def _valid_candidate_decisions(
     raw: dict[str, Any],
     valid_candidate_ids: set[str],
+    *,
+    key: str = "decisions",
 ) -> list[tuple[dict[str, Any], str]]:
-    decisions = raw.get("decisions", [])
+    decisions = raw.get(key, [])
     if not isinstance(decisions, list):
         return []
 

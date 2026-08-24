@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import signal
+from uuid import NAMESPACE_URL, uuid5
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from pydantic import ValidationError
@@ -30,8 +31,8 @@ from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_ingestion_repository as database,
 )
 from app.modules.wiki_ingestion.interfaces.http.dependencies import (
+    get_deferred_pipeline_run_use_case,
     get_pipeline_run_repository,
-    get_pipeline_run_use_case,
     get_pipeline_source_reader,
 )
 from app.modules.wiki_ingestion.interfaces.http.routes import _run_pipeline_request
@@ -47,6 +48,10 @@ TOPIC = os.environ.get("INGEST_COMMAND_TOPIC", "ai.ingest.command")
 BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 GROUP_ID = os.environ.get("INGEST_CONSUMER_GROUP", "ingest-worker")
 RESULT_TOPIC = os.environ.get("AI_TASK_EVENT_TOPIC", "ai.task.event")
+POST_INGEST_TOPIC = os.environ.get(
+    "MAINTENANCE_COMMAND_TOPIC",
+    "ai.maintenance.command",
+)
 TERMINAL_STATUSES = {"succeeded", "failed", "notify_pending"}
 # ingest 1건이 분 단위라 poll 간격 한도를 넉넉히 둔다. 이 시간을 넘기면 리밸런싱된다.
 MAX_POLL_INTERVAL_MS = int(os.environ.get("INGEST_MAX_POLL_INTERVAL_MS", "1800000"))
@@ -59,6 +64,10 @@ class UnprocessableIngestCommand(ValueError):
     offset이 전진하지 않고 파티션 전체가 막히므로, 실패로 확정하고 넘어간다.
     (예: 배포 전환기에 남은 구 형식 command)
     """
+
+
+class PostIngestDispatchError(RuntimeError):
+    """후속 command 발행 전에는 원본 ingest offset을 커밋하면 안 된다."""
 
 
 def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
@@ -129,6 +138,46 @@ def _result_event(command: dict, result: dict) -> dict:
     return _event(command, "succeeded", payload=result)
 
 
+def _post_ingest_command(command: dict) -> dict | None:
+    if command.get("kind") == "document_deleted":
+        return None
+    run_id = str(command.get("run_id") or "")
+    run = get_pipeline_run_repository().get_run(run_id)
+    if not run or run.get("status") != "succeeded":
+        return None
+    if not isinstance((run.get("manifest") or {}).get("post_ingest"), dict):
+        return None
+    return {
+        "run_id": str(uuid5(NAMESPACE_URL, f"fruition:post-ingest:{run_id}")),
+        "ingest_run_id": run_id,
+        "kind": "post_ingest",
+        "document_id": command.get("document_id"),
+        "workspace_id": command.get("workspace_id"),
+        "user_id": command.get("user_id"),
+        "provider": command.get("provider"),
+        "model": command.get("model"),
+    }
+
+
+async def _dispatch_post_ingest(
+    producer: AIOKafkaProducer,
+    command: dict,
+) -> None:
+    try:
+        post_ingest_command = await asyncio.to_thread(
+            _post_ingest_command,
+            command,
+        )
+        if post_ingest_command is not None:
+            await producer.send_and_wait(
+                POST_INGEST_TOPIC,
+                post_ingest_command,
+                key=str(post_ingest_command["workspace_id"]).encode("utf-8"),
+            )
+    except Exception as exc:
+        raise PostIngestDispatchError(str(exc)) from exc
+
+
 def _handle(command: dict) -> dict:
     if command.get("kind") == "document_deleted":
         database.delete_document_wiki_data(command["workspace_id"], command["document_id"])
@@ -163,7 +212,7 @@ def _handle(command: dict) -> dict:
         response = _run_pipeline_request(
             payload,
             background_tasks=None,
-            use_case=get_pipeline_run_use_case(),
+            use_case=get_deferred_pipeline_run_use_case(),
             repository=repository,
             source_reader=get_pipeline_source_reader(),
             run_id=run_id,
@@ -208,7 +257,16 @@ async def consume() -> None:
                     try:
                         # 실행은 스레드로 넘겨 이벤트 루프(heartbeat)를 비워 둔다.
                         result = await asyncio.to_thread(_handle, message.value)
+                        await _dispatch_post_ingest(producer, message.value)
                         event = _result_event(message.value, result)
+                    except PostIngestDispatchError:
+                        logger.exception(
+                            "[post-ingest command 발행 실패] run_id=%s offset_commit=false",
+                            message.value.get("run_id")
+                            if isinstance(message.value, dict)
+                            else "?",
+                        )
+                        raise
                     except UnprocessableIngestCommand as exc:
                         # 재시도해도 같은 지점에서 실패한다. 실패로 확정하고 offset을 전진시켜
                         # 이 command 하나가 파티션 전체를 막지 않게 한다.

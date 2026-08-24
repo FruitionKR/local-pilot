@@ -44,6 +44,7 @@ from app.modules.wiki_ingestion.infrastructure.object_storage import (
 )
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_output_persistence import (
     lock_concept_persistence as _lock_concept_persistence,
+    _persist_meaning_cluster_artifacts,
     persist_wiki_outputs as _persist_wiki_outputs,
 )
 from app.modules.wiki_ingestion.infrastructure.source_contribution_reconciliation import (
@@ -848,20 +849,25 @@ def finish_pipeline_run(
     document_id = row["document_id"] if row else None
     user_id = row["user_id"] if row else None
     workspace_id = row["workspace_id"] if row else None
-    with connect() as conn:
-        if document_id:
-            embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
-            manifest["source_contribution"] = _source_contribution_payload(manifest)
-            manifest = _stored_manifest(manifest)
-        conn.execute(
-            """
-            UPDATE pipeline_runs
-            SET status = 'succeeded', manifest = %s,
-                updated_at = now(), finished_at = now()
-            WHERE id = %s
-            """,
-            (Json(manifest), run_id),
-        )
+    lock = concept_write_lock(str(workspace_id), run_id) if document_id else nullcontext()
+    with lock:
+        with connect() as conn:
+            if document_id:
+                embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
+                post_ingest = manifest.get("post_ingest")
+                if isinstance(post_ingest, dict):
+                    post_ingest["page_ids"] = embedded_page_ids
+                manifest["source_contribution"] = _source_contribution_payload(manifest)
+                manifest = _stored_manifest(manifest)
+            conn.execute(
+                """
+                UPDATE pipeline_runs
+                SET status = 'succeeded', manifest = %s,
+                    updated_at = now(), finished_at = now()
+                WHERE id = %s
+                """,
+                (Json(manifest), run_id),
+            )
     if document_id:
         try:
             invalidate_concept_index(str(user_id), str(workspace_id))
@@ -913,6 +919,89 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
             """,
             (error_message, run_id),
         )
+
+
+def checkpoint_pipeline_run(run_id: str, manifest: dict[str, Any]) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE pipeline_runs
+            SET manifest = %s, updated_at = now()
+            WHERE id = %s AND status = 'running'
+            """,
+            (Json(manifest), run_id),
+        )
+
+
+def update_pipeline_run_post_ingest(
+    run_id: str,
+    values: dict[str, Any],
+) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE pipeline_runs
+            SET manifest = jsonb_set(
+                    coalesce(manifest, '{}'::jsonb),
+                    '{post_ingest}',
+                    coalesce(manifest->'post_ingest', '{}'::jsonb) || %s::jsonb
+                ),
+                updated_at = now()
+            WHERE id = %s
+            """,
+            (Json(values), run_id),
+        )
+
+
+def update_pipeline_run_cluster_contribution(
+    run_id: str,
+    artifact: dict[str, Any],
+) -> None:
+    contribution = _source_contribution_payload(
+        {"meaning_clusters": artifact}
+    )
+    values = {
+        "claim_signatures": contribution["claim_signatures"],
+        "relation_signatures": contribution["relation_signatures"],
+    }
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE pipeline_runs
+            SET manifest = jsonb_set(
+                    manifest,
+                    '{source_contribution}',
+                    coalesce(manifest->'source_contribution', '{}'::jsonb)
+                        || %s::jsonb
+                ),
+                updated_at = now()
+            WHERE id = %s AND status = 'succeeded'
+            """,
+            (Json(values), run_id),
+        )
+
+
+def persist_post_ingest_clusters(
+    document_id: str,
+    user_id: str,
+    workspace_id: str,
+    artifact: dict[str, Any],
+) -> list[str]:
+    manifest = {
+        "user_id": user_id,
+        "workspace_id": workspace_id,
+        "meaning_clusters": artifact,
+    }
+    with concept_write_lock(workspace_id, f"post-ingest:{document_id}"):
+        with connect() as conn:
+            changed_pages = _persist_meaning_cluster_artifacts(
+                conn,
+                document_id,
+                manifest,
+            )
+    if changed_pages:
+        invalidate_concept_index(user_id, workspace_id)
+    return [str(page["page_id"]) for page in changed_pages]
 
 
 def touch_pipeline_run(run_id: str) -> bool:
@@ -1041,6 +1130,20 @@ def list_source_blocks(document_id: str) -> list[dict[str, Any]]:
             (document_id,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def list_source_blocks_for_refs(refs: list[str]) -> list[dict[str, str]]:
+    with connect() as conn:
+        blocks = _source_blocks_for_refs(conn, refs)
+    return [
+        {
+            "source_document_id": ref.partition(":")[0],
+            "block_id": ref.partition(":")[2],
+            "text": str(block.get("text") or ""),
+        }
+        for block in blocks
+        if (ref := str(block.get("ref") or "")) and ":" in ref
+    ]
 
 
 def _concept_index_from_markdown(slug: str, title: str, markdown_uri: str, markdown: str) -> dict[str, Any]:
