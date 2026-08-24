@@ -1,5 +1,7 @@
 package fruition.core.chat.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.core.chat.domain.ChatPartialWiki;
 import fruition.core.chat.repository.ChatPartialWikiRepository;
 import fruition.core.document.domain.Document;
@@ -28,35 +30,36 @@ import java.util.regex.Pattern;
  * {@code chat_partial_wiki}에 기록하는 것뿐이다(1:N). export마다 독립 source page가 생기므로
  * 세션을 특정 page에 연결하지 않는다. 멱등하게 동작한다.
  *
- * session_id와 pair_id는 채팅 전용 처리의 source block ID 또는 일반 ingest가 보존한 원문
- * {@code [session_id:pair_id]Q : ...}에서 파싱한다(별도 저장 없음).
+ * session_id와 pair_id는 export 시점에 문서에 저장해 둔 {@code documents.pipeline_input_blocks}에서 읽는다.
+ * 파이프라인이 block ID를 새로 부여하므로 왕복시킨 값으로는 원본을 특정할 수 없다.
  */
 @Component
 public class ChatWikiExportReconciler {
 
     private static final Logger log = LoggerFactory.getLogger(ChatWikiExportReconciler.class);
 
-    /** source_block block_id의 {@code session_id:pair_id} provenance. group(1)=session_id, group(2)=pair_id. */
+    /** export 블록 id의 {@code session_id:pair_id} provenance. group(1)=session_id, group(2)=pair_id. */
     private static final Pattern PAIR_REF = Pattern.compile("(?U)^([^:\\s]+):([^:\\s]+)$");
-    /** 일반 document ingest의 source block 본문에 남는 채팅 원문 prefix. */
-    private static final Pattern PAIR_TEXT_REF = Pattern.compile("(?U)^\\[([^:\\s\\]]+):([^:\\s\\]]+)]Q\\s*:");
 
     private final DocumentRepository documentRepository;
     private final PipelineWikiStateRequester pipelineWikiStateRequester;
     private final ChatPartialWikiRepository chatPartialWikiRepository;
     private final DocumentService documentService;
     private final TransactionTemplate transactionTemplate;
+    private final ObjectMapper objectMapper;
 
     public ChatWikiExportReconciler(DocumentRepository documentRepository,
                                     PipelineWikiStateRequester pipelineWikiStateRequester,
                                     ChatPartialWikiRepository chatPartialWikiRepository,
                                     DocumentService documentService,
-                                    TransactionTemplate transactionTemplate) {
+                                    TransactionTemplate transactionTemplate,
+                                    ObjectMapper objectMapper) {
         this.documentRepository = documentRepository;
         this.pipelineWikiStateRequester = pipelineWikiStateRequester;
         this.chatPartialWikiRepository = chatPartialWikiRepository;
         this.documentService = documentService;
         this.transactionTemplate = transactionTemplate;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -82,68 +85,73 @@ public class ChatWikiExportReconciler {
         var wikiContext = pipelineWikiStateRequester.documentContext(
                 document.getWorkspaceId(), document.getId());
 
-        // 채팅 전용 block_id 또는 일반 ingest가 보존한 원문 prefix에서 세션과 문답을 파싱한다.
-        Set<String> sessionIds = new LinkedHashSet<>();
-        Set<String> pairIds = new LinkedHashSet<>();
-        for (var block : wikiContext.sourceBlocks()) {
-            Matcher matcher = pairReference(block);
-            if (matcher == null) {
-                continue;
-            }
-            sessionIds.add(matcher.group(1));
-            pairIds.add(matcher.group(2));
-        }
-        if (sessionIds.size() != 1) {
-            return; // 유효 provenance가 없거나 여러 세션이 섞여 있으면 재시도
-        }
-        String sessionId = sessionIds.iterator().next();
-
         PipelineWikiStateRequester.DocumentPage sourcePage = wikiContext.pages().stream()
                 .filter(page -> "source_of".equals(page.relationType()))
                 .findFirst()
                 .orElse(null);
         if (sourcePage == null) {
-            return;
+            return; // Wiki 페이지가 아직 없으면 다음 tick에 다시 본다
         }
+
+        ChatProvenance provenance = readProvenance(document);
 
         transactionTemplate.execute(status -> {
             // export 시점 이름은 첫 질문을 줄인 임시값이다. 내용을 요약한 페이지 제목이 나왔으면 그걸로 확정한다.
             documentService.confirmChatExportName(document, sourcePage.title());
 
-            if (!recordPairs(document.getWorkspaceId(), sessionId, pairIds, sourcePage.id(), document.getId())) {
-                return null; // 모든 pair 멤버십이 준비될 때까지 reconciled_at을 남기지 않고 재시도
+            if (provenance != null) {
+                recordPairs(document.getWorkspaceId(), provenance.sessionId(), provenance.pairIds(),
+                        sourcePage.id(), document.getId());
+                log.info("[chat-wiki][reconcile] session={} page={} 발췌기록 완료 (document={})",
+                        provenance.sessionId(), sourcePage.id(), document.getId());
             }
-            log.info("[chat-wiki][reconcile] session={} page={} 발췌기록 완료 (document={})",
-                    sessionId, sourcePage.id(), document.getId());
 
             // 후처리 완료 → reconciled_at 세팅(다음 tick 조회에서 제외).
+            // provenance를 못 읽은 문서도 여기서 제외한다. 재시도해도 결과가 같은데 3초마다
+            // 같은 경고를 반복하면 다른 문서의 일시적 실패가 로그에 묻힌다.
             document.markReconciled(Instant.now());
             documentRepository.save(document);
             return null;
         });
     }
 
-    private Matcher pairReference(PipelineWikiStateRequester.SourceBlock block) {
-        if (block.blockId() != null) {
-            Matcher blockIdMatcher = PAIR_REF.matcher(block.blockId());
-            if (blockIdMatcher.matches()) {
-                return blockIdMatcher;
+    /** 문서 한 건이 담고 있는 채팅 출처. export가 한 세션에서만 만들어지므로 세션은 하나로 확정된다. */
+    private record ChatProvenance(String sessionId, Set<String> pairIds) {}
+
+    /**
+     * export 시점에 문서에 저장해 둔 문답 블록에서 세션과 문답을 읽는다. 읽을 수 없으면 {@code null}.
+     *
+     * <p>블록은 export 시점에 한 번 쓰고 그 뒤 바뀌지 않으므로(채팅 문서는 재처리가 막혀 있다)
+     * 여기서 실패하면 재시도해도 결과가 같다. 그래서 예외로 올리지 않고 경고를 한 번만 남긴다.
+     */
+    private ChatProvenance readProvenance(Document document) {
+        JsonNode blocks;
+        try {
+            blocks = objectMapper.readTree(document.getPipelineInputBlocks());
+        } catch (Exception e) {
+            log.warn("[chat-wiki][reconcile] 문답 블록 JSON을 읽을 수 없어 발췌기록을 건너뛴다 document={}",
+                    document.getId(), e);
+            return null;
+        }
+        Set<String> sessionIds = new LinkedHashSet<>();
+        Set<String> pairIds = new LinkedHashSet<>();
+        for (JsonNode block : blocks) {
+            Matcher matcher = PAIR_REF.matcher(block.path("block_id").asText(""));
+            if (matcher.matches()) {
+                sessionIds.add(matcher.group(1));
+                pairIds.add(matcher.group(2));
             }
         }
-        if (block.text() != null) {
-            Matcher textMatcher = PAIR_TEXT_REF.matcher(block.text());
-            if (textMatcher.find()) {
-                return textMatcher;
-            }
+        if (sessionIds.size() != 1) {
+            log.warn("[chat-wiki][reconcile] 문답 블록의 세션 provenance가 유효하지 않아 발췌기록을 건너뛴다"
+                    + " document={} sessions={}", document.getId(), sessionIds);
+            return null;
         }
-        return null;
+        return new ChatProvenance(sessionIds.iterator().next(), pairIds);
     }
 
     /** 내보낸 문답을 pair별로 기록한다(멱등·부분 실패 후 재시도 가능). */
-    private boolean recordPairs(String workspaceId, String sessionId, Set<String> pairIds, String wikiPageId, String documentId) {
-        if (pairIds.isEmpty()) {
-            return false;
-        }
+    private void recordPairs(String workspaceId, String sessionId, Set<String> pairIds, String wikiPageId, String documentId) {
         Instant now = Instant.now();
         for (String pairId : pairIds) {
             if (chatPartialWikiRepository.existsByDocumentIdAndPairId(documentId, pairId)) {
@@ -152,6 +160,5 @@ public class ChatWikiExportReconciler {
             String id = "cpw_" + UUID.randomUUID().toString().replace("-", "");
             chatPartialWikiRepository.save(new ChatPartialWiki(id, workspaceId, sessionId, pairId, wikiPageId, documentId, now));
         }
-        return true;
     }
 }

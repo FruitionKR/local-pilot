@@ -19,6 +19,40 @@ from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repositor
 )
 
 
+def test_list_source_blocks_for_refs_preserves_document_scope(monkeypatch) -> None:
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(repository, "connect", Connection)
+    monkeypatch.setattr(
+        repository,
+        "_source_blocks_for_refs",
+        lambda _conn, _refs: [
+            {"ref": "doc-a:B0001", "text": "첫 근거"},
+            {"ref": "doc-b:B0001", "text": "둘째 근거"},
+        ],
+    )
+
+    assert repository.list_source_blocks_for_refs(
+        ["doc-a:B0001", "doc-b:B0001"]
+    ) == [
+        {
+            "source_document_id": "doc-a",
+            "block_id": "B0001",
+            "text": "첫 근거",
+        },
+        {
+            "source_document_id": "doc-b",
+            "block_id": "B0001",
+            "text": "둘째 근거",
+        },
+    ]
+
+
 def test_promotion_generator_preserves_representative_and_allowed_refs(monkeypatch) -> None:
     payloads = []
 

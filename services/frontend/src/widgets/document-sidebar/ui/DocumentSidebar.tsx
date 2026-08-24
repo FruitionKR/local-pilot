@@ -12,7 +12,7 @@ import { SidebarProfile } from "./SidebarProfile";
 import { SidebarWorkspaceHeader } from "./SidebarWorkspaceHeader";
 import { DocumentSearch } from "@/features/document-search/ui/DocumentSearch";
 import type { SelectableTreeItem, TreeInteractionProps } from "../model/types";
-import { canCreateProjectFromView } from "../model/sidebarMenu";
+import { canCreateProjectFromView, getBlankAreaContextProjectId } from "../model/sidebarMenu";
 import { useFileDropZone } from "../lib/useFileDropZone";
 import styles from "./DocumentSidebar.module.css";
 
@@ -160,7 +160,16 @@ export function DocumentSidebar({
         onChange={onUploadPickerChange}
       />
 
-      <div className={styles["sidebar-content"]}>
+      <div
+        className={styles["sidebar-content"]}
+        onContextMenu={(event) => {
+          // 문서 관리 뷰에서는 트리 밖 빈 영역 우클릭도 프로젝트 메뉴(새 노트 등)를 연다.
+          // 폴더·프로젝트에서 이미 연 메뉴(preventDefault됨)는 덮어쓰지 않는다.
+          const projectId = getBlankAreaContextProjectId(activeView, event.defaultPrevented, projects);
+          if (projectId === null) return;
+          onContextMenuProject(event, projectId);
+        }}
+      >
         {activeView === "graph" && graphActions ? (
           <GraphSidebarActions {...graphActions} />
         ) : activeView === "logs" && logEntries ? (

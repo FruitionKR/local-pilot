@@ -1,4 +1,10 @@
 const NOTE_MARKER_PATTERN = /^(<!--\s*fruition-(?:note|workspace):\s*[^\r\n]+?\s*-->)\r?\n?/;
+// converter가 남기는 페이지 구분 주석. 사용자 정보가 아니라 편집 화면에서 숨긴다.
+const PAGE_COMMENT_PATTERN = /^<!--\s*page\s+\d+\s*-->\r?\n{0,2}/gm;
+
+export function stripPageComments(markdown: string): string {
+  return markdown.replace(PAGE_COMMENT_PATTERN, "");
+}
 
 export type EditableNoteMarkdown = {
   marker: string;

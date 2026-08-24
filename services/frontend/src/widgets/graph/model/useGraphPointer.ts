@@ -28,6 +28,7 @@ export function useGraphPointer({
   scheduleGraphCacheWrite,
   setDraggingNodeId,
   onOpenNodePreview,
+  onClearNodeFocus,
   setHoveredNode,
   setSelectedNode,
   stopDragging
@@ -47,6 +48,7 @@ export function useGraphPointer({
   scheduleGraphCacheWrite: () => void;
   setDraggingNodeId: Dispatch<SetStateAction<string | null>>;
   onOpenNodePreview: (node: GraphNode) => void;
+  onClearNodeFocus?: () => void;
   setHoveredNode: (nodeId: string | null) => void;
   setSelectedNode: (nodeId: string | null) => void;
   stopDragging: (pointerId?: number) => void;
@@ -122,7 +124,10 @@ export function useGraphPointer({
     }
 
     // 빈 영역 클릭은 선택 해제. pan은 d3-zoom이 처리한다.
+    // 외부 포커스(사이드바·채팅에서 연 노드)도 함께 지워, 이후 데이터 갱신 때 선택이 되살아나지 않게 한다.
     setSelectedNode(null);
+    externalFocusedNodeIdRef.current = null;
+    onClearNodeFocus?.();
   }
 
   function updateNodeDrag(event: ReactPointerEvent<HTMLDivElement>) {

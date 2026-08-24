@@ -46,6 +46,7 @@ from app.modules.query.domain.entities import (
     QueryAnswer,
     QueryContext,
     QueryEvaluation,
+    QueryRetrieval,
     QueryRewrite,
     ResponseLength,
     RetrievedPage,
@@ -112,6 +113,7 @@ class AnswerQueryUseCase:
         candidate_pool_multiplier: int = 4,
         graph_link_limit: int = 200,
         graph_expansion_depth: int = 3,
+        max_evidence_snippets: int = 8,
         conversation_summarizer: ConversationSummarizerPort | None = None,
     ) -> None:
         self._wiki_repository = wiki_repository
@@ -127,6 +129,7 @@ class AnswerQueryUseCase:
         self._build_query_context = build_query_context or BuildQueryContextUseCase(
             embedding_search=embedding_search,
             text_search=text_search,
+            max_evidence_snippets=max_evidence_snippets,
         )
         self._query_answer_assembler = query_answer_assembler or QueryAnswerAssembler(answer_generator)
         self._query_page_scorer = query_page_scorer or QueryPageScorer(
@@ -135,6 +138,10 @@ class AnswerQueryUseCase:
             source_candidate_limit=source_candidate_limit,
             concept_candidate_limit=concept_candidate_limit,
             focus_concept_threshold=focus_concept_threshold,
+            score_source_structures=not isinstance(
+                embedding_search,
+                SemanticQueryEmbeddingPort,
+            ),
         )
         self._query_web_answer_builder = query_web_answer_builder
         if self._query_web_answer_builder is None and web_search is not None:
@@ -188,6 +195,48 @@ class AnswerQueryUseCase:
             allow_web_search=allow_web_search,
         )
         return replace(result, updated_conversation_summary=updated_summary)
+
+    def retrieve_evidence(
+        self,
+        question: str,
+        *,
+        workspace_id: str,
+        user_id: str | None = None,
+    ) -> QueryRetrieval:
+        normalized_question = Question(question).normalized
+        query_rewrite = self._rewrite_query(normalized_question)
+        candidates = self._score_wiki_candidates(
+            workspace_id,
+            query_rewrite,
+            None,
+        )
+        context = self._build_internal_query_context(
+            original_question=normalized_question,
+            contextual_question=normalized_question,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            conversation_context=None,
+            output_language=None,
+            response_length=None,
+            allow_web_search=False,
+            candidates=candidates,
+            event_publisher=None,
+        )
+        return QueryRetrieval(
+            evidence_snippets=context.query_context.evidence_snippets,
+            retrieval_summary=build_retrieval_summary(
+                related_pages=context.related_pages,
+                source_candidate_count=min(
+                    len(candidates.source_pages),
+                    self._source_candidate_limit,
+                ),
+                concept_candidate_count=min(
+                    len(candidates.concept_pages),
+                    self._concept_candidate_limit,
+                ),
+                stop_reason=context.stop_reason,
+            ),
+        )
 
     def _execute(
         self,
@@ -335,6 +384,7 @@ class AnswerQueryUseCase:
             traversal_paths=internal_context.traversal_paths,
             retrieval_summary=summary,
             web_search=web_search_telemetry,
+            evaluation=query_evaluation,
         )
 
     def _build_internal_query_context(

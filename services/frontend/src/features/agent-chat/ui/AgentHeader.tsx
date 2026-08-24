@@ -1,11 +1,11 @@
-import { ChevronDown, Folder, MoreHorizontal, MoreVertical, Search } from "lucide-react";
+import { ChevronDown, MoreHorizontal, MoreVertical, Plus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createChatSession, deleteChatSession, fetchChatSessions } from "@/entities/chat/api/chat";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useDismissOnOutside } from "@/shared/lib/useDismissOnOutside";
 import type { ChatSessionResponse } from "@/entities/chat/model/chat";
-import { fruitionLogo, sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { chatBubbleIcon, fruitionLogo, sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import { cx } from "@/shared/lib/classNames";
 import styles from "./AgentChat.module.css";
 
@@ -32,6 +32,8 @@ export function AgentHeader({
   const [searchTerm, setSearchTerm] = useState("");
   const [sessions, setSessions] = useState<ChatSessionResponse[]>([]);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
+  // 세션 생성 요청 진행 중 여부. 연타로 인한 중복 POST를 막는다.
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
   // 행 옵션 메뉴는 스크롤 컨테이너에 클리핑되지 않도록 portal(fixed)로 띄운다.
   const [rowMenu, setRowMenu] = useState<{ id: string; top: number; left: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -46,13 +48,20 @@ export function AgentHeader({
 
   useDismissOnOutside(menuRef, isMenuOpen, () => setIsMenuOpen(false));
 
+  // 성공 여부를 반환해 호출부가 실패 시 에러 표시 상태(목록 열림)를 유지할 수 있게 한다.
   async function startNewChat() {
+    if (isCreatingChat) return false;
     setIsMenuOpen(false);
+    setIsCreatingChat(true);
     try {
       const created = await createChatSession();
       onSelectSession(created.id, created.title);
+      return true;
     } catch (error: unknown) {
       setLoadErrorMessage(getErrorMessage(error, "새 채팅을 만들지 못했습니다."));
+      return false;
+    } finally {
+      setIsCreatingChat(false);
     }
   }
 
@@ -158,6 +167,20 @@ export function AgentHeader({
               onChange={(event) => setSearchTerm(event.target.value)}
             />
           </label>
+          <button
+            type="button"
+            className={styles["chat-session-new"]}
+            disabled={isInteractionLocked || isCreatingChat}
+            onClick={() => {
+              // 실패 시 목록을 열어 둔 채 에러 문구를 보여주기 위해 성공했을 때만 닫는다.
+              void startNewChat().then((created) => {
+                if (created) setIsListOpen(false);
+              });
+            }}
+          >
+            <Plus size={12} />
+            <span>새 채팅</span>
+          </button>
           {loadErrorMessage ? (
             <p className={styles["chat-session-error"]} role="alert">{loadErrorMessage}</p>
           ) : visibleSessions.length === 0 ? (
@@ -183,7 +206,7 @@ export function AgentHeader({
                   >
                     {isActive
                       ? <SvgIcon src={fruitionLogo} className={styles["chat-session-logo"]} />
-                      : <Folder size={12} />}
+                      : <SvgIcon src={chatBubbleIcon} className={styles["chat-session-icon"]} />}
                     <span>{session.title ?? fallbackTitle}</span>
                   </button>
                   {isActive && (

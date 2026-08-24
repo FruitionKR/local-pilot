@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Barrier
 from types import SimpleNamespace
 
 from app.modules.wiki_generation.infrastructure.generation_loop_adapters import (
@@ -50,7 +51,47 @@ class FakePatchCompletion:
         }
 
 
+class BlockingCompletion:
+    def __init__(self) -> None:
+        self.barrier = Barrier(2)
+
+    def complete_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
+        self.barrier.wait(timeout=1)
+        chunk_id = "chunk_0001" if "B0001" in user_prompt else "chunk_0002"
+        return {"chunk_id": chunk_id, "key_points": []}
+
+
 class SemanticGenerationAdapterTest(unittest.TestCase):
+    def test_rejects_non_positive_worker_count(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be at least 1"):
+            SemanticGenerationAdapter(
+                FakeCompletion(),
+                [],
+                None,
+                FakeEvents(),
+                max_workers=0,
+            )
+
+    def test_extracts_packets_concurrently_and_preserves_order(self) -> None:
+        packets = [
+            SimpleNamespace(chunk_id="chunk_0001", document_id="doc-1", block_ids=["B0001"], text="[B0001] 첫째"),
+            SimpleNamespace(chunk_id="chunk_0002", document_id="doc-1", block_ids=["B0002"], text="[B0002] 둘째"),
+        ]
+        adapter = SemanticGenerationAdapter(
+            BlockingCompletion(),
+            packets,
+            None,
+            FakeEvents(),
+            max_workers=2,
+        )
+
+        notes = adapter.generate("prompt", 1, None)
+
+        self.assertEqual(
+            [note["chunk_id"] for note in notes],
+            ["chunk_0001", "chunk_0002"],
+        )
+
     def test_regenerates_only_packets_containing_target_blocks(self) -> None:
         completion = FakeCompletion()
         events = FakeEvents()

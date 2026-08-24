@@ -1,4 +1,5 @@
 import { apiFetch, throwIfNotOk, parseJsonOrThrow, getWorkspaceId, workspacePath, ERROR_MESSAGES } from "@/shared/api/client";
+import { publishConvertStarted } from "@/entities/document/model/convertEvents";
 import type { DocumentItemResponse, DocumentRole, DocumentUploadResponse } from "@/entities/document/model/document";
 
 export async function uploadDocumentFile(file: File) {
@@ -38,7 +39,10 @@ export async function convertDocumentToMarkdown(documentId: string) {
       headers: { "Idempotency-Key": crypto.randomUUID() }
     }
   );
-  return parseJsonOrThrow<DocumentItemResponse>(response, ERROR_MESSAGES.documentConvertFailed);
+  const created = await parseJsonOrThrow<DocumentItemResponse>(response, ERROR_MESSAGES.documentConvertFailed);
+  // 트리거 경로와 무관하게 변환 완료 후 자동 열기가 동작하도록 시작 이벤트를 발행한다.
+  publishConvertStarted(created.id);
+  return created;
 }
 
 /**
@@ -56,12 +60,35 @@ export async function reflectDocumentToWiki(
   await convertDocumentToMarkdown(documentId);
 }
 
-/** 문서를 삭제한다. 성공 시 204를 반환한다. */
+/**
+ * 문서를 소프트 삭제한다.
+ * 낙관적 잠금 계약이라 현재 버전을 조회해 base_version으로 보낸다(불일치 시 409).
+ */
 export async function deleteDocument(documentId: string): Promise<void> {
   const workspaceId = getWorkspaceId();
+  const detailResponse = await apiFetch(
+    workspacePath(workspaceId, "documents", documentId),
+    { cache: "no-store" }
+  );
+  const detail = await parseJsonOrThrow<{ current_version?: unknown } | null>(
+    detailResponse,
+    ERROR_MESSAGES.documentDeleteFailed
+  );
+  // 상세 응답이 null이거나 값이 없는 필드의 키가 빠질 수 있어 base_version 유실을 막기 위해 검증한다.
+  const current_version = detail?.current_version;
+  if (typeof current_version !== "number" || !Number.isFinite(current_version)) {
+    throw new Error(ERROR_MESSAGES.documentDeleteFailed);
+  }
   const response = await apiFetch(
     workspacePath(workspaceId, "documents", documentId),
-    { method: "DELETE" }
+    {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": crypto.randomUUID()
+      },
+      body: JSON.stringify({ base_version: current_version })
+    }
   );
   await throwIfNotOk(response, ERROR_MESSAGES.documentDeleteFailed);
 }

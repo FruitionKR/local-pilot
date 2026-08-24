@@ -16,7 +16,7 @@ const FAILURE_STATUSES = ["failed", "conflict"] as const;
 
 // ingest는 문서 처리 알림이 담당하고, document_edit은 채팅 화면에서 즉시 확인되므로 제외한다.
 const WATCHED_TYPES: Record<string, string> = {
-  lint: "위키 다듬기",
+  lint: "Lint",
   restore: "복구"
 };
 

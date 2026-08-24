@@ -2,6 +2,7 @@ package fruition.core.chat.service;
 
 import fruition.core.chat.domain.ChatSession;
 import fruition.core.chat.dto.ChatSessionCreateRequest;
+import fruition.core.chat.dto.ChatSessionRenameRequest;
 import fruition.core.chat.dto.ChatSessionResponse;
 import fruition.core.chat.exception.ChatSessionLimitExceededException;
 import fruition.core.chat.exception.ChatSessionNotFoundException;
@@ -103,6 +104,33 @@ class ChatSessionServiceTest {
 
         assertThat(response.sessions()).hasSize(1);
         assertThat(response.sessions().get(0).title()).isEqualTo("세션 A");
+    }
+
+    @Test
+    void rename_ownedSession_changesTitleAndKeepsLastMessageAt() {
+        stubOwnedWorkspace();
+        ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, "이전 제목");
+        var lastMessageAt = session.getLastMessageAt();
+        when(chatSessionRepository.findByIdAndWorkspaceIdAndUserId(SESSION_ID, WORKSPACE_ID, USER_ID))
+                .thenReturn(Optional.of(session));
+
+        ChatSessionResponse response = chatSessionService.rename(
+                WORKSPACE_ID, USER_ID, SESSION_ID, new ChatSessionRenameRequest("새 제목"));
+
+        assertThat(response.title()).isEqualTo("새 제목");
+        // 제목만 바꿨는데 세션이 목록 맨 위로 올라오면 안 된다.
+        assertThat(response.lastMessageAt()).isEqualTo(lastMessageAt);
+    }
+
+    @Test
+    void rename_notOwnedSession_throwsChatSessionNotFound() {
+        stubOwnedWorkspace();
+        when(chatSessionRepository.findByIdAndWorkspaceIdAndUserId(SESSION_ID, WORKSPACE_ID, USER_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatSessionService.rename(
+                WORKSPACE_ID, USER_ID, SESSION_ID, new ChatSessionRenameRequest("새 제목")))
+                .isInstanceOf(ChatSessionNotFoundException.class);
     }
 
     @Test

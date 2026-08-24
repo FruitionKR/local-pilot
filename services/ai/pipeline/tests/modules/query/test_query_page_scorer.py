@@ -122,6 +122,31 @@ class QueryPageScorerTest(unittest.TestCase):
 
         self.assertAlmostEqual(scores["source:motor"], 0.35)
 
+    def test_can_skip_source_structure_rescoring_for_stored_unit_vectors(self) -> None:
+        page = source_page(
+            "source:motor",
+            "Motor Paper",
+            "## Section Candidates\nmotor design variables",
+        )
+        representation = "\n".join([page.title, page.summary, page.markdown])
+        search = ScoreSearch({representation: 0.10})
+        scorer = QueryPageScorer(
+            embedding_search=search,
+            text_search=EmptyTextSearch(),
+            score_source_structures=False,
+        )
+
+        scores = scorer.score_pages(
+            QueryRewrite(
+                original_question="design variables",
+                retrieval_query="design variables",
+            ),
+            [page],
+            embedding_weight=1.0,
+        )
+
+        self.assertAlmostEqual(scores["source:motor"], 0.10)
+
     def test_selects_direct_concept_match_from_alias(self) -> None:
         page = concept_page(
             "concept:persistent-wiki",

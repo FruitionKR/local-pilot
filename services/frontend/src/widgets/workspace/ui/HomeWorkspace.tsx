@@ -27,7 +27,7 @@ import { useDocumentUpload } from "@/features/document-upload/model/useDocumentU
 import { useProjectTree } from "../model/useProjectTree";
 import { useTreeSelection } from "../model/useTreeSelection";
 import { buildGraphFromBackend } from "@/entities/graph/lib/graph";
-import { reflectDocumentToWiki, uploadDocumentFile } from "@/entities/document";
+import { reflectDocumentToWiki, subscribeConvertStarted, uploadDocumentFile } from "@/entities/document";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { buildGeneratedMarkdownFilename } from "@/features/agent-chat/lib/markdownAgent";
 import type { GeneratedMarkdownDraft } from "@/features/agent-chat/lib/markdownAgent";
@@ -61,6 +61,14 @@ function findParentLabel(items: TreeItem[], itemId: string, parentLabel: string)
   return null;
 }
 
+function findTreeItemInProjects(projects: ReadonlyArray<{ items: TreeItem[] }>, documentId: string): TreeItem | null {
+  for (const project of projects) {
+    const item = findTreeItemByDocumentId(project.items, documentId);
+    if (item) return item;
+  }
+  return null;
+}
+
 function findFirstSelectableNote(items: TreeItem[], documentIds: Set<string>): TreeItem | null {
   for (const item of items) {
     if ((item.documentId && documentIds.has(item.documentId)) || (!item.documentId && item.graphNodeId)) return item;
@@ -76,6 +84,7 @@ export function HomeWorkspace() {
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const [pendingExportDocumentId, setPendingExportDocumentId] = useState<string | null>(null);
+  const [pendingConvertDocumentIds, setPendingConvertDocumentIds] = useState<readonly string[]>([]);
   const [wikiActionPending, setWikiActionPending] = useState<"ingest" | "lint" | null>(null);
   const operationLogFeed = useOperationLogFeed(activeView === "logs");
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
@@ -128,16 +137,39 @@ export function HomeWorkspace() {
     if (!pendingExportDocumentId) return;
     const exportedDocument = documents.find((document) => document.id === pendingExportDocumentId);
     if (!exportedDocument) return;
-    let exportedTreeItem: TreeItem | null = null;
-    for (const project of projectTree.projects) {
-      exportedTreeItem = findTreeItemByDocumentId(project.items, pendingExportDocumentId);
-      if (exportedTreeItem) break;
-    }
+    const exportedTreeItem = findTreeItemInProjects(projectTree.projects, pendingExportDocumentId);
     if (!exportedTreeItem) return;
     setPendingExportDocumentId(null);
     setActiveView("home");
     selection.selectTreeGraphNode(exportedTreeItem);
   }, [documents, pendingExportDocumentId, projectTree.projects, selection]);
+
+  // 어떤 경로로 변환을 시작했든(사이드바 메뉴·그래프/문서 화면 위키 반영) 시작 이벤트로 추적한다.
+  // 병렬 변환도 각각 자동으로 열리도록 대기 목록으로 쌓는다.
+  useEffect(() => subscribeConvertStarted((documentId) => {
+    setPendingConvertDocumentIds((ids) => (ids.includes(documentId) ? ids : [...ids, documentId]));
+  }), []);
+
+  // PDF→Markdown 변환 완료를 폴링 결과로 감지해 변환된 markdown 문서를 홈 화면에 연다.
+  // 한 실행에 하나만 열고, 나머지 완료 건은 대기 목록 변경으로 재실행될 때 처리한다.
+  useEffect(() => {
+    for (const pendingDocumentId of pendingConvertDocumentIds) {
+      const convertedDocument = documents.find((document) => document.id === pendingDocumentId);
+      if (!convertedDocument) continue;
+      // 실패 시 열기는 포기한다. 실패 알림은 DocumentProcessingNotifications가 담당한다.
+      if (convertedDocument.status === "failed") {
+        setPendingConvertDocumentIds((ids) => ids.filter((id) => id !== pendingDocumentId));
+        continue;
+      }
+      if (convertedDocument.status !== "completed") continue;
+      const convertedTreeItem = findTreeItemInProjects(projectTree.projects, pendingDocumentId);
+      if (!convertedTreeItem) continue;
+      setPendingConvertDocumentIds((ids) => ids.filter((id) => id !== pendingDocumentId));
+      setActiveView("home");
+      selection.selectTreeGraphNode(convertedTreeItem);
+      return;
+    }
+  }, [documents, pendingConvertDocumentIds, projectTree.projects, selection]);
 
   const selectedDocumentParentLabel = useMemo(() => {
     if (!selection.selectedTreeItemId) return "업로드 문서";
@@ -156,6 +188,10 @@ export function HomeWorkspace() {
   const selectedDocumentRole = useMemo(() => {
     if (!selection.selectedDocumentId) return undefined;
     return documents.find((item) => item.id === selection.selectedDocumentId)?.document_role;
+  }, [documents, selection.selectedDocumentId]);
+  const selectedDocumentStatus = useMemo(() => {
+    if (!selection.selectedDocumentId) return undefined;
+    return documents.find((item) => item.id === selection.selectedDocumentId)?.status;
   }, [documents, selection.selectedDocumentId]);
   const firstSidebarNote = useMemo(() => {
     const documentIds = new Set(documents.map((document) => document.id));
@@ -176,6 +212,9 @@ export function HomeWorkspace() {
   }, [firstSidebarNote, isGraphLoading, isHomeView, selection]);
 
   function handleViewChange(view: RailView) {
+    // 다른 화면에서 열어 둔 문서(홈 자동 열기 포함)의 포커스가 그래프 선택으로 이어지지 않게 한다.
+    // 그래프 화면 안에서의 노드 선택(사이드바·더블클릭)은 전환 이후 동작이라 영향 없다.
+    if (view === "graph") selection.clearGraphFocus();
     setActiveView(view);
   }
 
@@ -255,14 +294,14 @@ export function HomeWorkspace() {
       void refreshBackendData();
       publishNotice({
         kind: "completed",
-        title: "위키 다듬기 완료",
+        title: "Lint 완료",
         message: `${changedPageCount}개 페이지를 다듬었습니다.`
       });
     } catch (error: unknown) {
       publishNotice({
         kind: "failed",
-        title: "위키 다듬기 실패",
-        message: getErrorMessage(error, "위키 다듬기 요청에 실패했습니다.")
+        title: "Lint 실패",
+        message: getErrorMessage(error, "Lint 요청에 실패했습니다.")
       });
     } finally {
       setWikiActionPending(null);
@@ -377,6 +416,7 @@ export function HomeWorkspace() {
             onRenameDocument={projectTree.renameDocumentById}
             onRefreshDocuments={() => void refreshBackendData()}
             documentRole={selectedDocumentRole}
+            documentStatus={selectedDocumentStatus}
             parentLabel={selectedDocumentParentLabel}
             editedAt={selectedDocumentEditedAt}
             isAgentPanelOpen={isHomeAgentPanelOpen}
@@ -397,6 +437,7 @@ export function HomeWorkspace() {
             rawDocumentCount={documents.length}
             focusedNodeId={selection.focusedGraphNodeId}
             onOpenNodePreview={selection.openGraphNodePreview}
+            onClearNodeFocus={selection.clearGraphFocus}
             loading={isGraphLoading}
             errorMessage={apiError}
           />

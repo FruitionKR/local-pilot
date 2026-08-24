@@ -153,7 +153,8 @@ public class OperationIngestService {
                     "본문 해시가 일치하지 않습니다: pageId=" + page.pageId());
         }
         String contributionKey = page.contributionKey() != null
-                ? page.contributionKey()
+                ? objectReader.validateContributionKey(page.contributionKey(),
+                        operation.getWorkspaceId(), page.pageId(), operation.getOperationId())
                 : objectReader.contributionKey(operation.getWorkspaceId(), page.pageId(),
                         operation.getOperationId());
         return new OperationApplier.LoadedPage(

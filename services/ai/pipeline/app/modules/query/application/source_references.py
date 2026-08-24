@@ -72,9 +72,16 @@ def dedupe_source_refs(refs: list[SourceReference]) -> list[SourceReference]:
     return deduped
 
 
-def remove_block_refs(text: str) -> str:
-    cleaned = re.sub(rf"\s*\[(?:{_REF_PATTERN})(?:\s*,\s*(?:{_REF_PATTERN}))*\]", "", text)
-    return cleaned.strip()
+def remove_block_refs(text: str, *, strip: bool = True) -> str:
+    """블록 참조를 걷어낸다.
+
+    evidence 문장은 앞뒤 공백까지 다듬어야 해서 기본값이 strip=True다. 답변 본문처럼
+    원문 공백이 의미를 갖는(들여쓰기 코드블록 등) 입력은 strip=False로 부른다.
+    """
+    # 참조 앞은 가로 공백만 걷는다. \s*로 개행까지 먹으면 줄 맨 앞 참조를 지울 때
+    # 앞의 빈 줄이 함께 사라져 제목·문단이 붙어버린다.
+    cleaned = re.sub(rf"[ \t]*\[(?:{_REF_PATTERN})(?:\s*,\s*(?:{_REF_PATTERN}))*\]", "", text)
+    return cleaned.strip() if strip else cleaned
 
 
 def is_block_ref_only(text: str) -> bool:

@@ -56,7 +56,11 @@ export function useDocumentSearch(projects: Project[]) {
 
   const normalizedQuery = query.trim().toLowerCase();
   const matched = useMemo(() => {
-    if (!normalizedQuery) return [];
+    // 검색어가 없으면 현재 있는 문서를 전부, 최근 수정순으로 보여준다.
+    // (트리 순회 순서 그대로면 MAX_RESULTS 상한 때문에 첫 프로젝트가 목록을 독점한다)
+    if (!normalizedQuery) {
+      return [...allItems].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+    }
     const isChoseongMode = isChoseongQuery(normalizedQuery);
     return allItems.filter((item) => {
       const label = item.label.toLowerCase();

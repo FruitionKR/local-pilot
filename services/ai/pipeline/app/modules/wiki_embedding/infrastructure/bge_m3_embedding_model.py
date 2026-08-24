@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 from typing import Any
 
 from app.modules.wiki_embedding.application.ports import EmbeddingModelPort
@@ -30,14 +31,18 @@ class BgeM3EmbeddingModel(EmbeddingModelPort):
         if self._model is not None:
             return self._model
 
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError as exc:
-            raise RuntimeError(
-                "BGE-M3 embedding generation requires sentence-transformers. "
-                "Install llmPipeline requirements before enabling wiki page embedding jobs."
-            ) from exc
-
-        self._model = SentenceTransformer(self._model_name)
+        self._model = _load_sentence_transformer(self._model_name)
         return self._model
 
+
+@lru_cache(maxsize=None)
+def _load_sentence_transformer(model_name: str) -> Any:
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise RuntimeError(
+            "BGE-M3 embedding generation requires sentence-transformers. "
+            "Install llmPipeline requirements before enabling wiki page embedding jobs."
+        ) from exc
+
+    return SentenceTransformer(model_name)

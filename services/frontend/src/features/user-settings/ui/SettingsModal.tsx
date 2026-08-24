@@ -35,7 +35,7 @@ type NotificationKey = "completed" | "failed" | "lint" | "restore" | "query" | "
 const NOTIFICATION_ROWS: { key: NotificationKey; title: string; description: string }[] = [
   { key: "completed", title: "문서 처리 완료", description: "문서(ingest) 분석이 끝나면 알림 카드를 표시합니다." },
   { key: "failed", title: "문서 처리 실패", description: "문서 처리가 실패하면 알림 카드를 표시합니다." },
-  { key: "lint", title: "위키 다듬기", description: "위키 다듬기(lint) 작업이 끝나면 알립니다." },
+  { key: "lint", title: "Lint", description: "Lint 작업이 끝나면 알립니다." },
   { key: "restore", title: "복구(롤백)", description: "AI 작업 되돌리기가 끝나면 알립니다." },
   { key: "query", title: "질의 완료", description: "채팅 질의의 답변 도착·실패를 알립니다." },
   { key: "browser", title: "브라우저 알림", description: "탭이 백그라운드일 때 브라우저 알림으로도 보냅니다." }

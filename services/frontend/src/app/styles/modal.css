@@ -81,6 +81,12 @@
   background: var(--line-soft);
 }
 
+/* 단독 사용용 confirm 버튼을 취소/실행 2버튼 줄에 넣을 때 정렬 보정 */
+.modal-actions .modal-confirm-button {
+  width: auto;
+  margin-top: 0;
+}
+
 .modal-delete-button {
   background: #f04452;
   color: #fff;

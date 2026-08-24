@@ -14,7 +14,7 @@ from typing import Any
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from psycopg.types.json import Json
 
-from app.core.llm_env import resolve_llm_selection
+from app.core.llm_env import api_key_from_env, resolve_llm_selection
 from app.modules.agent.interfaces.http.dependencies import build_handle_agent_turn_use_case
 from app.modules.agent.interfaces.http.routes import _to_response as agent_to_response
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
@@ -22,7 +22,29 @@ from app.modules.query.application.ports import QueryEventPublisherPort
 from app.modules.query.domain.entities import ConversationContext, ConversationMessage
 from app.modules.query.interfaces.http.dependencies import build_answer_query_use_case
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
+from app.modules.query.infrastructure.postgres_wiki_repository import PostgresWikiRepository
+from app.modules.wiki_embedding.application.build_wiki_page_embeddings import (
+    embedding_result,
+)
+from app.modules.wiki_embedding.infrastructure.threaded_wiki_embedding_job import (
+    build_wiki_embeddings,
+)
+from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
+    ChatClientConfig,
+    ChatCompletionsJsonClient,
+)
+from app.modules.wiki_generation.infrastructure.post_ingest_cluster import (
+    build_post_ingest_cluster_artifact,
+)
+from app.modules.wiki_generation.infrastructure.post_ingest_quality import (
+    evaluate_post_ingest_evidence,
+    generate_post_ingest_quality_cases,
+    retrieval_reference_metrics,
+)
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
+from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
+    read_optional_text_object,
+)
 from app.modules.wiki_ingestion.interfaces.http.dependencies import (
     get_restore_wiki_pages_use_case,
     get_wiki_embedding_job,
@@ -44,6 +66,8 @@ COMMAND_TOPIC = os.environ.get("AI_COMMAND_TOPIC", "ai.query.command")
 RESULT_TOPIC = os.environ.get("AI_TASK_EVENT_TOPIC", "ai.task.event")
 GROUP_ID = os.environ.get("AI_COMMAND_CONSUMER_GROUP", f"{COMMAND_TOPIC}-worker")
 MAX_POLL_INTERVAL_MS = int(os.environ.get("AI_TASK_MAX_POLL_INTERVAL_MS", "1800000"))
+POST_INGEST_MAX_ATTEMPTS = 3
+POST_INGEST_AUDIT_LIMIT = 3
 
 
 def _required(command: dict[str, Any], *fields: str) -> None:
@@ -382,6 +406,325 @@ def _handle_restore(command: dict[str, Any]) -> dict[str, Any]:
         raise
 
 
+def _post_ingest_client(command: dict[str, Any]) -> ChatCompletionsJsonClient:
+    provider, model = resolve_llm_selection(
+        str(command["provider"]).strip(),
+        str(command["model"]).strip(),
+    )
+    api_key = api_key_from_env(provider=provider)
+    if not api_key:
+        raise RuntimeError(f"{provider} API key가 없습니다.")
+    return ChatCompletionsJsonClient(
+        ChatClientConfig(
+            api_key=api_key,
+            model=model,
+            temperature=None,
+            timeout_seconds=180,
+            json_mode=True,
+            provider=provider,
+        )
+    )
+
+
+def _run_post_ingest_wiki_quality_evaluation(
+    command: dict[str, Any],
+    state: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not command.get("quality_required", True):
+        return []
+    evaluations = list(state.get("wiki_quality_evaluations") or [])
+    if evaluations:
+        return evaluations
+    completion = _post_ingest_client(command)
+    if "quality_cases" not in state:
+        cases = generate_post_ingest_quality_cases(
+            completion=completion,
+            source_document_id=str(command["document_id"]),
+            source_blocks=database.list_source_blocks(str(command["document_id"])),
+            limit=POST_INGEST_AUDIT_LIMIT,
+        )
+        if not cases:
+            raise RuntimeError("원문 기반 RAG 평가 질문을 생성하지 못했습니다.")
+        state["quality_cases"] = cases
+        database.checkpoint_pipeline_run(str(command["run_id"]), state)
+    cases = [
+        case
+        for case in list(state.get("quality_cases") or [])[:POST_INGEST_AUDIT_LIMIT]
+        if isinstance(case, dict) and str(case.get("question") or "").strip()
+    ]
+    if not cases:
+        return []
+    use_case = build_answer_query_use_case(
+        provider=str(command["provider"]).strip(),
+        model=str(command["model"]).strip(),
+        allow_web_search=False,
+        evaluator_mode="disabled",
+        wiki_repository=PostgresWikiRepository(),
+    )
+    retrieved_cases = []
+    source_refs = []
+    for case in cases:
+        question = str(case["question"])
+        result = use_case.retrieve_evidence(
+            question,
+            workspace_id=str(command["workspace_id"]),
+            user_id=str(command["user_id"]),
+        )
+        evidence_snippets = [
+            {
+                "rank": snippet.rank,
+                "source_document_id": snippet.source_document_id,
+                "source_block_ids": snippet.source_block_ids,
+                "source_refs": [
+                    {
+                        "source_document_id": ref.source_document_id,
+                        "source_block_id": ref.source_block_id,
+                    }
+                    for ref in snippet.source_refs
+                ],
+                "text": snippet.text,
+            }
+            for snippet in result.evidence_snippets
+        ]
+        case_source_refs = [
+            f"{case.get('source_document_id') or command['document_id']}:{block_id}"
+            for block_id in case.get("source_block_ids", [])
+        ]
+        for snippet in evidence_snippets:
+            if snippet["source_refs"]:
+                case_source_refs.extend(
+                    f"{ref['source_document_id']}:{ref['source_block_id']}"
+                    for ref in snippet["source_refs"]
+                )
+                continue
+            case_source_refs.extend(
+                f"{snippet['source_document_id']}:{block_id}"
+                for block_id in snippet["source_block_ids"]
+            )
+        source_refs.extend(case_source_refs)
+        retrieved_cases.append(
+            {
+                "question": question,
+                "expected_claims": list(case.get("expected_claims") or []),
+                "source_document_id": str(
+                    case.get("source_document_id") or command["document_id"]
+                ),
+                "source_block_ids": list(case.get("source_block_ids") or []),
+                "evidence_snippets": evidence_snippets,
+                "retrieval_summary": {
+                    "source_candidate_count": (
+                        result.retrieval_summary.source_candidate_count
+                    ),
+                    "concept_candidate_count": (
+                        result.retrieval_summary.concept_candidate_count
+                    ),
+                    "used_source_count": result.retrieval_summary.used_source_count,
+                    "used_concept_count": result.retrieval_summary.used_concept_count,
+                },
+                **retrieval_reference_metrics(case, evidence_snippets),
+            }
+        )
+    source_blocks = list(command.get("source_blocks") or [])
+    if not source_blocks:
+        source_blocks = database.list_source_blocks_for_refs(
+            list(dict.fromkeys(source_refs))
+        )
+    judgments = evaluate_post_ingest_evidence(
+        completion=completion,
+        cases=retrieved_cases,
+        source_blocks=source_blocks,
+    )
+    evaluations = [
+        {**retrieved, **judgment}
+        for retrieved, judgment in zip(retrieved_cases, judgments, strict=True)
+    ]
+    state["wiki_quality_evaluations"] = evaluations
+    database.checkpoint_pipeline_run(str(command["run_id"]), state)
+    return evaluations
+
+
+def _handle_post_ingest(command: dict[str, Any]) -> dict[str, Any]:
+    _required(command, "ingest_run_id")
+    ingest_run = database.get_pipeline_run(str(command["ingest_run_id"]))
+    ingest_manifest = (ingest_run or {}).get("manifest") or {}
+    post_ingest_payload = (
+        ingest_manifest.get("post_ingest")
+        if ingest_run and ingest_run.get("status") == "succeeded"
+        else None
+    )
+    if not isinstance(post_ingest_payload, dict):
+        raise ValueError("post_ingest parent run payload is unavailable")
+    command = {**post_ingest_payload, **command}
+    _required(
+        command,
+        "run_id",
+        "ingest_run_id",
+        "document_id",
+        "workspace_id",
+        "user_id",
+        "provider",
+        "model",
+        "cluster_normalized",
+    )
+    if not isinstance(command.get("cluster_normalized"), dict):
+        raise ValueError("post_ingest cluster_normalized must be an object")
+    if not isinstance(command.get("page_ids", []), list):
+        raise ValueError("post_ingest page_ids must be a list")
+
+    run_id = str(command["run_id"])
+    existing = database.get_pipeline_run(run_id)
+    if existing:
+        for field in ("workspace_id", "user_id"):
+            if str(existing.get(field)) != str(command[field]):
+                raise ValueError(f"post_ingest command does not match registered {field}")
+        if existing.get("status") == "succeeded":
+            return dict((existing.get("manifest") or {}).get("task_result") or {})
+        if existing.get("status") == "failed":
+            raise ValueError(str(existing.get("error") or "post_ingest run failed"))
+        state = dict(existing.get("manifest") or {})
+    else:
+        database.create_pipeline_run(
+            run_id,
+            None,
+            str(command["user_id"]),
+            str(command["workspace_id"]),
+            f"kafka:post_ingest:{command['ingest_run_id']}",
+            f"runs/{run_id}",
+            "post_ingest",
+        )
+        state = {}
+
+    attempt = int(state.get("attempt") or 0) + 1
+    state["attempt"] = attempt
+    database.checkpoint_pipeline_run(run_id, state)
+    database.update_pipeline_run_post_ingest(
+        str(command["ingest_run_id"]),
+        {
+            "run_id": run_id,
+            "status": "running",
+            "attempt": attempt,
+            "error": None,
+        },
+    )
+    try:
+        if "cluster_artifact" not in state:
+            object_name = (
+                f"wiki/{command['user_id']}/{command['workspace_id']}"
+                "/clusters/active.md"
+            )
+            existing_active = read_optional_text_object(object_name)
+            state["cluster_artifact"] = build_post_ingest_cluster_artifact(
+                completion=_post_ingest_client(command),
+                normalized=dict(command["cluster_normalized"]),
+                existing_active_markdown=existing_active,
+                user_id=str(command["user_id"]),
+                workspace_id=str(command["workspace_id"]),
+                concept_update_decisions=list(
+                    command.get("concept_update_decisions") or []
+                ),
+                core_relation_decisions=list(
+                    command.get("core_relation_decisions") or []
+                ),
+            )
+            database.checkpoint_pipeline_run(run_id, state)
+
+        if not state.get("cluster_applied"):
+            changed_page_ids = database.persist_post_ingest_clusters(
+                str(command["document_id"]),
+                str(command["user_id"]),
+                str(command["workspace_id"]),
+                dict(state["cluster_artifact"]),
+            )
+            database.update_pipeline_run_cluster_contribution(
+                str(command["ingest_run_id"]),
+                dict(state["cluster_artifact"]),
+            )
+            state["page_ids"] = list(
+                dict.fromkeys(
+                    [
+                        *(str(page_id) for page_id in command.get("page_ids", [])),
+                        *changed_page_ids,
+                    ]
+                )
+            )
+            state["cluster_applied"] = True
+            database.checkpoint_pipeline_run(run_id, state)
+
+        if "embedding" not in state:
+            page_ids = list(dict.fromkeys(state["page_ids"]))
+            if os.environ.get("QUERY_EMBEDDING_MODE", "bge-m3").strip().lower() in {
+                "text-only",
+                "bm25",
+                "lexical",
+            }:
+                embedding = embedding_result(
+                    target_count=len(page_ids),
+                    skipped_count=len(page_ids),
+                )
+            else:
+                embedding = build_wiki_embeddings(page_ids)
+            if embedding["failed_count"]:
+                raise RuntimeError(
+                    f"post_ingest embedding failed: {embedding['failed_count']}"
+                )
+            state["embedding"] = embedding
+            database.checkpoint_pipeline_run(run_id, state)
+
+        evaluations = _run_post_ingest_wiki_quality_evaluation(command, state)
+        quality_required = bool(command.get("quality_required", True))
+        generation_ready = (
+            not quality_required
+            or command.get("generation_evaluation_status") == "passed"
+        )
+        wiki_ready = (
+            not quality_required
+            or (
+                len(evaluations) == POST_INGEST_AUDIT_LIMIT
+                and all(item["passed"] for item in evaluations)
+            )
+        )
+        quality_status = (
+            "ready" if generation_ready and wiki_ready else "needs_review"
+        )
+        result = {
+            "quality_status": quality_status,
+            "maintenance_summary": state["cluster_artifact"].get(
+                "maintenance_summary",
+                {},
+            ),
+            "embedding": state["embedding"],
+            "generation_evaluation_status": command.get(
+                "generation_evaluation_status"
+            ),
+            "wiki_quality_evaluations": evaluations,
+        }
+        database.update_pipeline_run_post_ingest(
+            str(command["ingest_run_id"]),
+            {
+                "run_id": run_id,
+                "status": quality_status,
+                "result": result,
+                "error": None,
+            },
+        )
+        database.finish_pipeline_run(run_id, {**state, "task_result": result})
+        return result
+    except Exception as exc:
+        final_attempt = attempt >= POST_INGEST_MAX_ATTEMPTS
+        database.update_pipeline_run_post_ingest(
+            str(command["ingest_run_id"]),
+            {
+                "run_id": run_id,
+                "status": "needs_review" if final_attempt else "retrying",
+                "attempt": attempt,
+                "error": str(exc)[:1000],
+            },
+        )
+        if final_attempt:
+            database.fail_pipeline_run(run_id, str(exc))
+        raise
+
+
 def _handle(
     command: dict[str, Any],
     event_publisher: QueryEventPublisherPort | None = None,
@@ -393,6 +736,16 @@ def _handle(
         return _handle_agent(command, event_publisher)
     if kind == "lint":
         return _handle_lint(command)
+    if kind == "post_ingest":
+        for attempt in range(POST_INGEST_MAX_ATTEMPTS):
+            try:
+                return _handle_post_ingest(command)
+            except Exception:
+                if (
+                    attempt + 1 == POST_INGEST_MAX_ATTEMPTS
+                    or _failure_is_durable(command)
+                ):
+                    raise
     if kind in {"restore_ingest", "restore_lint"}:
         return _handle_restore(command)
     raise ValueError(f"unsupported AI command kind: {kind}")
@@ -494,7 +847,13 @@ class KafkaQueryEventPublisher(QueryEventPublisherPort):
 def _failure_is_durable(command: dict[str, Any]) -> bool:
     kind = str(command.get("kind") or "")
     run_id = str(command.get("run_id") or "")
-    if kind == "query" or kind not in {"agent", "lint", "restore_ingest", "restore_lint"}:
+    if kind == "query" or kind not in {
+        "agent",
+        "lint",
+        "post_ingest",
+        "restore_ingest",
+        "restore_lint",
+    }:
         return True
     try:
         if kind == "agent":
@@ -551,12 +910,22 @@ async def consume() -> None:
                             result = await asyncio.to_thread(_handle, command, event_publisher)
                         else:
                             result = await asyncio.to_thread(_handle, command)
-                        event = _event(command, "succeeded", payload=result)
+                        event = _event(
+                            command,
+                            "succeeded",
+                            payload=result,
+                            with_request=command.get("kind") != "post_ingest",
+                        )
                     except Exception as exc:
                         logger.exception("[AI command 실패] kind=%s run_id=%s", command.get("kind"), command.get("run_id"))
                         if not _failure_is_durable(command):
                             raise
-                        event = _event(command, "failed", error=str(exc)[:1000])
+                        event = _event(
+                            command,
+                            "failed",
+                            error=str(exc)[:1000],
+                            with_request=command.get("kind") != "post_ingest",
+                        )
                     await producer.send_and_wait(RESULT_TOPIC, event, key=event["run_id"].encode("utf-8"))
                     await consumer.commit()
     finally:

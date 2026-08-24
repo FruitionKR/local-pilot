@@ -28,6 +28,7 @@ class FakeFallbackSearch:
 class FakeConnection:
     def __init__(self, rows: list[dict]) -> None:
         self.rows = rows
+        self.calls: list[tuple[str, tuple]] = []
 
     def __enter__(self) -> "FakeConnection":
         return self
@@ -36,6 +37,7 @@ class FakeConnection:
         return None
 
     def execute(self, sql: str, params: tuple) -> "FakeCursor":
+        self.calls.append((sql, params))
         return FakeCursor(self.rows)
 
 
@@ -49,15 +51,19 @@ class FakeCursor:
 
 class StoredWikiPageEmbeddingSearchTest(unittest.TestCase):
     def test_exposes_query_embedding_for_global_candidate_search(self) -> None:
+        model = FakeEmbeddingModel()
         search = StoredWikiPageEmbeddingSearch(
-            embedding_model=FakeEmbeddingModel(),
+            embedding_model=model,
             fallback_search=FakeFallbackSearch(),
         )
 
         query_embedding = search.embed_query("query")
+        repeated = search.embed_query("query")
 
         self.assertEqual(query_embedding.model_name, "test-model")
         self.assertEqual(query_embedding.vector, [1.0, 0.0])
+        self.assertIs(repeated, query_embedding)
+        self.assertEqual(model.embedded_texts, ["query"])
 
     def test_scores_with_stored_vectors_without_fallback(self) -> None:
         document = "Stored document"
@@ -83,6 +89,25 @@ class StoredWikiPageEmbeddingSearchTest(unittest.TestCase):
 
         self.assertEqual(scores, [1.0])
         self.assertEqual(fallback.calls, [])
+
+    def test_loads_page_and_unit_vectors_with_the_same_model(self) -> None:
+        connection = FakeConnection([])
+        search = StoredWikiPageEmbeddingSearch(
+            embedding_model=FakeEmbeddingModel(),
+            fallback_search=FakeFallbackSearch(),
+        )
+
+        with patch(
+            "app.modules.query.infrastructure.stored_wiki_page_embedding_search.database.connect",
+            return_value=connection,
+        ):
+            search.score("query", ["document"])
+
+        sql, params = connection.calls[0]
+        self.assertIn("FROM wiki_page_embeddings", sql)
+        self.assertIn("FROM wiki_embedding_vectors", sql)
+        self.assertEqual(params[0], "test-model")
+        self.assertEqual(params[2], "test-model")
 
     def test_falls_back_for_missing_vectors(self) -> None:
         fallback = FakeFallbackSearch()

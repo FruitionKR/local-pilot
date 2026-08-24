@@ -16,6 +16,7 @@ import retryIcon from "../../../../svg/log/retry.svg";
 import { publishNotice } from "@/features/document-notifications";
 import { cx } from "@/shared/lib/classNames";
 import { getErrorMessage } from "@/shared/lib/errors";
+import { AlertModal } from "@/shared/ui/AlertModal";
 import { SvgIcon } from "@/shared/ui/SvgIcon";
 import styles from "./LogView.module.css";
 
@@ -97,6 +98,12 @@ export function LogView({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  // 롤백 확인 모달. preview 결과와 함께 열리고, 확인 시 preview_token으로 실행한다.
+  const [pendingRestore, setPendingRestore] = useState<{
+    operationId: string;
+    previewToken: string;
+    message: string;
+  } | null>(null);
   const [locallyRestoredOperationIds, setLocallyRestoredOperationIds] = useState<ReadonlySet<string>>(new Set());
   // 선택이 바뀌면 이전 작업의 응답을 버린다. 늦게 온 응답이 다른 작업을 덮어쓰지 않게 한다.
   const requestIdRef = useRef(0);
@@ -105,6 +112,9 @@ export function LogView({
     const requestId = ++requestIdRef.current;
     setDetail(null);
     setErrorMessage(null);
+    // 다른 작업으로 이동하면 열려 있던 롤백 확인 모달을 닫는다.
+    setPendingRestore(null);
+    setIsRestoring(false);
     if (!operationId) {
       setIsLoading(false);
       return;
@@ -139,24 +149,50 @@ export function LogView({
 
   async function handleRestore() {
     if (!detail || !canRestore || isRestoring) return;
+    // 작업 전환 후 늦게 도착한 응답이 새 작업의 상태를 덮어쓰지 않게 세대 값을 잡아둔다.
+    const requestId = requestIdRef.current;
     setIsRestoring(true);
     try {
       const preview = await fetchRestorePreview(detail.operation_id);
+      if (requestIdRef.current !== requestId) return;
       const affectedCount = preview.delete_count + preview.restore_count + preview.rebuild_count;
-      const confirmed = window.confirm(
-        preview.document
-          ? `${description} 문서를 ${preview.document.from_version}에서 ${preview.document.to_version} 버전으로 롤백할까요?`
-          : `${description} 작업을 롤백할까요? ${affectedCount}개 Wiki 페이지에 영향을 줍니다.`
-      );
-      if (!confirmed) return;
-      const result = await restoreOperation(detail.operation_id, preview.preview_token);
-      setLocallyRestoredOperationIds((current) => new Set(current).add(detail.operation_id));
+      setPendingRestore({
+        operationId: detail.operation_id,
+        previewToken: preview.preview_token,
+        message: preview.document
+          ? `${description} 문서를 ${preview.document.from_version}에서 ${preview.document.to_version} 버전으로 되돌립니다.`
+          : `${description} 작업을 롤백하면 ${affectedCount}개 Wiki 페이지에 영향을 줍니다.`
+      });
+    } catch (error: unknown) {
+      if (requestIdRef.current !== requestId) return;
+      publishNotice({
+        kind: "failed",
+        title: "롤백 실패",
+        message: getErrorMessage(error, "롤백 요청에 실패했습니다.")
+      });
+      setIsRestoring(false);
+    }
+  }
+
+  function cancelRestore() {
+    setPendingRestore(null);
+    setIsRestoring(false);
+  }
+
+  async function executeRestore() {
+    if (!pendingRestore) return;
+    const requestId = requestIdRef.current;
+    const { operationId: restoreOperationId, previewToken } = pendingRestore;
+    setPendingRestore(null);
+    try {
+      const result = await restoreOperation(restoreOperationId, previewToken);
+      setLocallyRestoredOperationIds((current) => new Set(current).add(restoreOperationId));
       publishNotice({
         kind: "completed",
         title: "롤백 요청 완료",
         message: result.status === "succeeded" ? "작업을 롤백했습니다." : "롤백 작업을 시작했습니다."
       });
-      await onRestoreComplete(detail.operation_id);
+      await onRestoreComplete(restoreOperationId);
     } catch (error: unknown) {
       publishNotice({
         kind: "failed",
@@ -164,7 +200,8 @@ export function LogView({
         message: getErrorMessage(error, "롤백 요청에 실패했습니다.")
       });
     } finally {
-      setIsRestoring(false);
+      // 실행 중 다른 작업으로 이동해 새 요청이 시작됐다면, 늦은 해제가 새 작업의 "처리 중" 표시를 풀지 않게 한다.
+      if (requestIdRef.current === requestId) setIsRestoring(false);
     }
   }
 
@@ -233,6 +270,19 @@ export function LogView({
           </article>
         )}
       </div>
+      {pendingRestore && (
+        <AlertModal
+          titleId="restore-confirm-title"
+          title="작업을 롤백하시겠습니까?"
+          description={pendingRestore.message}
+          onClose={cancelRestore}
+        >
+          <div className="modal-actions">
+            <button type="button" className="modal-cancel-button" onClick={cancelRestore}>취소</button>
+            <button type="button" className="modal-confirm-button" onClick={() => void executeRestore()}>롤백</button>
+          </div>
+        </AlertModal>
+      )}
     </section>
   );
 }

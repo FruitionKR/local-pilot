@@ -1,5 +1,6 @@
 import hashlib
 import math
+from functools import lru_cache
 
 from app.modules.query.application.ports import EmbeddingSearchPort
 from app.modules.query.domain.entities import SemanticQueryEmbedding
@@ -15,8 +16,12 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
     ) -> None:
         self._embedding_model = embedding_model or BgeM3EmbeddingModel()
         self._fallback_search = fallback_search
+        self._cached_embed_query = lru_cache(maxsize=128)(self._embed_query)
 
     def embed_query(self, query: str) -> SemanticQueryEmbedding:
+        return self._cached_embed_query(query)
+
+    def _embed_query(self, query: str) -> SemanticQueryEmbedding:
         return SemanticQueryEmbedding(
             model_name=self._embedding_model.model_name,
             vector=self._embedding_model.embed([query])[0],
@@ -50,7 +55,11 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
                     for vector in self._embedding_model.embed(missing_documents)
                 ]
             )
-            for index, fallback_score in zip(missing_indexes, fallback_scores):
+            for index, fallback_score in zip(
+                missing_indexes,
+                fallback_scores,
+                strict=True,
+            ):
                 scores[index] = fallback_score
 
         return [float(score or 0.0) for score in scores]
@@ -65,13 +74,27 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
                 SELECT DISTINCT ON (representation_hash)
                     representation_hash,
                     embedding_vector
-                FROM wiki_page_embeddings
-                WHERE embedding_model = %s
-                  AND status = 'completed'
-                  AND representation_hash = ANY(%s)
+                FROM (
+                    SELECT representation_hash, embedding_vector, updated_at
+                    FROM wiki_page_embeddings
+                    WHERE embedding_model = %s
+                      AND status = 'completed'
+                      AND representation_hash = ANY(%s)
+                    UNION ALL
+                    SELECT representation_hash, embedding_vector, updated_at
+                    FROM wiki_embedding_vectors
+                    WHERE embedding_model = %s
+                      AND status = 'completed'
+                      AND representation_hash = ANY(%s)
+                ) stored_embeddings
                 ORDER BY representation_hash, updated_at DESC
                 """,
-                (self._embedding_model.model_name, unique_hashes),
+                (
+                    self._embedding_model.model_name,
+                    unique_hashes,
+                    self._embedding_model.model_name,
+                    unique_hashes,
+                ),
             ).fetchall()
         vectors = {}
         for row in rows:
@@ -104,5 +127,5 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
     def _dot(self, left: list[float], right: list[float]) -> float:
-        value = float(sum(a * b for a, b in zip(left, right)))
+        value = float(sum(a * b for a, b in zip(left, right, strict=True)))
         return max(0.0, min(1.0, value))

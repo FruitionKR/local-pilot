@@ -560,13 +560,14 @@ class HandleAgentTurnUseCase:
         if route.retrieval_source == "none":
             return reference_context
         grounded_answer = self._answer_query(request, route.retrieval_source)
+        # 근거 id(source_document_id·source_block_ids)는 담지 않는다. 이 dict는 LLM payload와
+        # 질의 참조 라인으로만 쓰이는데, id를 보여주면 LLM이 [doc:B0001] 형태를 답변에 만들어낸다.
+        # citation 매핑은 별도 references 배열로 전달된다.
         reference_context["grounded_query"] = {
             "answer": grounded_answer.answer.content,
             "evidence_snippets": [
                 {
                     "rank": snippet.rank,
-                    "source_document_id": snippet.source_document_id,
-                    "source_block_ids": snippet.source_block_ids,
                     "text": snippet.text,
                 }
                 for snippet in grounded_answer.evidence_snippets

@@ -32,6 +32,8 @@ export function ContextMenu({
       className={styles["folder-context-menu"]}
       style={{ left: contextMenu.x, top: contextMenu.y }}
       onClick={(event) => event.stopPropagation()}
+      // 열린 메뉴 위 우클릭이 사이드바 빈 영역 핸들러로 버블돼 메뉴가 바뀌지 않도록 막는다.
+      onContextMenu={(event) => event.preventDefault()}
     >
       {canCreateProject && (
         <button type="button" onClick={onAddProject}>새 폴더</button>

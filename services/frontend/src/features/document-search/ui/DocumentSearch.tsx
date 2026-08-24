@@ -38,7 +38,7 @@ export function DocumentSearch({
       <div className={modalStyles["modal-header"]}>
         <input
           ref={inputRef}
-          type="search"
+          type="text"
           placeholder="채팅 및 프로젝트 검색"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -48,37 +48,35 @@ export function DocumentSearch({
         </button>
       </div>
       <div className={styles["search-body"]}>
-        {normalizedQuery ? (
-          <div className={styles["search-results"]} role="group" aria-label="문서 검색 결과">
-            {results.length > 0 ? (
-              <>
-                {results.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={styles["search-result"]}
-                    onClick={(event) => handleSelect(event, item)}
-                  >
-                    <span className={styles["search-result-title"]}>
-                      <SvgIcon src={fileIcon} className={styles["search-result-icon"]} />
-                      <span className={styles["search-result-label"]}>{item.label}</span>
-                    </span>
-                    <span className={styles["search-result-meta"]}>
-                      {item.updatedAt ? formatRelativeTime(item.updatedAt) : item.projectTitle}
-                    </span>
-                  </button>
-                ))}
-                {overflowCount > 0 ? (
-                  <p className={styles["search-more"]}>외 {overflowCount}개 더 있습니다. 검색어를 좁혀 주세요.</p>
-                ) : null}
-              </>
-            ) : (
-              <p className={styles["search-empty"]}>검색 결과가 없습니다.</p>
-            )}
-          </div>
-        ) : (
-          <p className={styles["search-empty"]}>문서명을 입력해 검색하세요.</p>
-        )}
+        <div className={styles["search-results"]} role="group" aria-label="문서 검색 결과">
+          {results.length > 0 ? (
+            <>
+              {results.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={styles["search-result"]}
+                  onClick={(event) => handleSelect(event, item)}
+                >
+                  <span className={styles["search-result-title"]}>
+                    <SvgIcon src={fileIcon} className={styles["search-result-icon"]} />
+                    <span className={styles["search-result-label"]}>{item.label}</span>
+                  </span>
+                  <span className={styles["search-result-meta"]}>
+                    {item.updatedAt ? formatRelativeTime(item.updatedAt) : item.projectTitle}
+                  </span>
+                </button>
+              ))}
+              {overflowCount > 0 ? (
+                <p className={styles["search-more"]}>외 {overflowCount}개 더 있습니다. 검색어를 좁혀 주세요.</p>
+              ) : null}
+            </>
+          ) : (
+            <p className={styles["search-empty"]}>
+              {normalizedQuery ? "검색 결과가 없습니다." : "표시할 문서가 없습니다."}
+            </p>
+          )}
+        </div>
       </div>
     </CenteredModal>
   );

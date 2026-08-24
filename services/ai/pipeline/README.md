@@ -20,6 +20,7 @@ docker compose --env-file infra/.env -f infra/compose.infra.yml -f infra/compose
 OPENAI_API_KEY=...
 GEMINI_API_KEY=...
 ANTHROPIC_API_KEY=...
+WIKI_SEMANTIC_MAX_WORKERS=4
 PIPELINE_API_PORT=8000
 AI_DATABASE_URL=postgresql://...@postgresql:5432/ai_db
 S3_ENDPOINT=http://minio:9000
@@ -27,6 +28,9 @@ S3_ENDPOINT=http://minio:9000
 
 Web 검색을 허용한 Query의 근거와 Web 전환은 기본적으로 LLM evaluator가 검사합니다. 모든
 Query를 검사하려면 `QUERY_EVALUATOR_MODE=llm`, evaluator를 끄려면 `disabled`를 사용합니다.
+내부 검색은 기본적으로 `QUERY_EMBEDDING_MODE=bge-m3`의 keyword+vector hybrid를 사용하고,
+일반 Query는 `QUERY_EVIDENCE_LIMIT=8`, post-ingest 단일 주장 평가는
+`POST_INGEST_EVIDENCE_LIMIT=3`에 따라 source ref 중복 제거 후 전역 상위 근거만 반환합니다.
 LangGraph evaluator loop를 LangSmith에서 확인하려면 아래 tracing 값도 `infra/.env`에 설정합니다.
 
 ```env
@@ -39,6 +43,8 @@ QUERY_EVALUATOR_MAX_ATTEMPTS=2
 ```
 
 LLM 호출은 `openai/gpt-5-nano`(기본, reasoning `medium`), `gemini/gemini-3.1-flash-lite`(reasoning `low`), `claude/claude-sonnet-5`(extended thinking 없음)만 지원합니다. provider/model은 API·DB·Kafka payload에서 선택하며 env override는 없습니다. base URL은 provider별로 고정하고 key는 `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` 중 선택 provider의 값만 사용합니다. live provider 호출에는 key가 필요하지만 mock 통합 테스트에는 필요하지 않습니다. 실제 비밀값은 `infra/.env`에만 두고 커밋하지 않습니다.
+
+Wiki ingest의 독립 semantic packet은 기본 4개까지 병렬 처리합니다. 직렬 비교나 provider rate limit 조정은 `WIKI_SEMANTIC_MAX_WORKERS`로 설정합니다.
 
 LangSmith Cloud region은 계정을 만든 URL과 맞아야 합니다.
 
@@ -303,9 +309,11 @@ Wiki ingest의 의미 추출·정규화·평가·보정·재시도를 LangGraph�
 
 section/mention evidence candidate의 application 판단 정책입니다.
 
-- 기존 concept 갱신 또는 relation candidate 판정
+- concept resolution 응답의 기존 concept 갱신 또는 relation candidate 판정 결과 검증
 - existing active cluster 병합·신규 생성·검토 필요 판정
 - LLM JSON 결과의 candidate/concept 식별자와 허용 enum 검증
+
+Kafka ingest는 concept 기여 이력에 필요한 갱신 판단까지만 동기 실행합니다. Meaning Cluster 묶음 판단은 ingest 저장 후 `ai.maintenance.command`의 `post_ingest` 작업에서 실행하고, 최대 3개 source-grounded 질의의 Source+Concept retrieval 평가를 이어서 수행합니다. semantic 검색 모드에서는 변경 page와 Source block·Concept evidence unit을 같은 BGE-M3 모델로 임베딩하고 keyword·unit vector 후보를 함께 검색합니다. evidence selector는 source ref 중복을 제거한 전역 상위 3개만 evaluator에 전달합니다. `text-only`·`bm25`·`lexical` 모드에서는 대상 수를 skip으로 checkpoint하고 모델을 로드하지 않습니다. 평가 질문과 기대 사실은 저장된 원문 `source_blocks`에서 한 번에 만들고 실제 인용 여부·중복·행정 메타데이터 여부를 코드로 검증합니다. 각 질문은 실제 Query와 같은 후보 검색·graph 탐색·evidence selector를 실행하지만 답변은 생성하지 않습니다. 검색 evidence는 한 번의 batch evaluator가 질문 정합성과 answerability·recall·precision·원문 provenance·모순 여부를 함께 판단하며 gold source ref hit/rank도 기록합니다. evaluator가 case를 누락하면 결과를 저장하지 않고 재시도합니다. 유효 문항이 0개일 때만 재시도하고 3개 미만이면 실행을 실패시키지 않고 `needs_review`로 기록합니다. source→normalized Wiki evaluator와 retrieval 3문항이 모두 통과하면 `ready`, 누락·잘못된 근거·평가 미통과는 `needs_review`로 기록합니다. 후속 run은 같은 worker 프로세스에서 `pipeline_runs.manifest` checkpoint를 재사용해 최대 3회 재개하며 프로세스 장애 때만 Kafka가 command를 재전달합니다. 현재 Wiki page는 버전 없이 제자리 갱신되므로 이 품질 상태는 진단 상태이며 Query 노출을 차단하지 않습니다.
 
 ### `app/modules/wiki_generation/infrastructure/generation_loop_adapters.py`
 
@@ -384,7 +392,7 @@ concept 후보의 의미적 병합/링킹을 정규화하고 적용합니다.
 - concept page skeleton 생성
 - optional concept section polish 반영
 - source key point ref를 concept key point로 내려보냄
-- 같은 evidence/source key point/LLM resolution 기반 related concept 생성
+- 같은 evidence와 source key point 기반 related concept 생성
 - `wiki/links.json`, `review_report.md` 생성
 
 ### `app/modules/wiki_ingestion/infrastructure/postgres_wiki_ingestion_repository.py`
@@ -464,11 +472,16 @@ backend가 loose LLM output을 정규화합니다.
 
 ### 6. Concept Resolution
 
-LLM이 concept 의미 관계를 판단합니다.
+Concept canonicalization과 section/mention 갱신 후보 판단을 서로 독립된 LLM 호출로 병렬 실행합니다. resolution 응답은 backend 기본값과 다른 예외만 반환하고, 갱신 후보 결과는 resolution 완료 후 canonical slug로 remap합니다.
 
-- current batch concept끼리 merge/link
-- existing wiki concept와 merge/link
+- current batch concept끼리 synonym merge
+- existing wiki concept와 synonym merge
 - missing related hint를 current/existing concept로 매핑
+- existing/current concept의 근거 갱신 또는 relation candidate 분류
+
+resolution 응답에서 빠진 concept는 신규 생성, hint는 unresolved로 처리합니다. 근거 없는 concept 관계는 생성하지 않습니다. 갱신 후보 중 `not_same_concept`는 후속 cluster 판단 대상으로 처리합니다.
+
+`pipeline.log`에는 resolution, update judge, 병렬 wall, 병렬 절감, 전체 pipeline 소요 시간을 기록합니다.
 
 기존 wiki를 비교하려면 `--existing-wiki-dir`를 넘깁니다.
 
@@ -492,7 +505,7 @@ wiki/sources/{title-slug}.md
 
 - definition/why/evidence는 normalized data에서 조립
 - key points는 source key point와 concept refs가 겹치는 항목을 가져옴
-- related concepts는 shared evidence, shared source key point, LLM resolution 기반으로 채움
+- related concepts는 shared evidence와 shared source key point 기반으로 채움
 
 `concept-page-mode=section-polish`를 명시하면 concept별 LLM polish 호출이 추가됩니다.
 
