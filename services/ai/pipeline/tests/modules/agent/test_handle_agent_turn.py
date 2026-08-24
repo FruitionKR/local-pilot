@@ -959,10 +959,11 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         ])
         grounded_query = editor.create_requests[0].reference_context["grounded_query"]  # type: ignore[index]
         self.assertEqual(grounded_query["answer"], "질문 답변입니다.")  # type: ignore[index]
-        self.assertEqual(
-            grounded_query["evidence_snippets"][0]["source_block_ids"],  # type: ignore[index]
-            ["B0001"],
-        )
+        snippet = grounded_query["evidence_snippets"][0]  # type: ignore[index]
+        self.assertEqual(snippet["rank"], 1)
+        # 근거 id는 LLM에 넘기지 않는다(답변에 [doc:B0001]로 새어 나오는 원인).
+        self.assertNotIn("source_block_ids", snippet)
+        self.assertNotIn("source_document_id", snippet)
         self.assertIsNotNone(starter.requests[0].content)
 
     def test_create_from_chat_keeps_generated_document_data_in_approval_plan(self) -> None:
@@ -1072,10 +1073,11 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         ])
         grounded_query = editor.requests[0].reference_context["grounded_query"]  # type: ignore[index]
         self.assertEqual(grounded_query["answer"], "질문 답변입니다.")  # type: ignore[index]
-        self.assertEqual(
-            grounded_query["evidence_snippets"][0]["source_block_ids"],  # type: ignore[index]
-            ["B0001"],
-        )
+        snippet = grounded_query["evidence_snippets"][0]  # type: ignore[index]
+        self.assertEqual(snippet["rank"], 1)
+        # 근거 id는 LLM에 넘기지 않는다(답변에 [doc:B0001]로 새어 나오는 원인).
+        self.assertNotIn("source_block_ids", snippet)
+        self.assertNotIn("source_document_id", snippet)
         content = getattr(starter.requests[0], "content")
         self.assertEqual(getattr(content, "purpose"), "apply_document_edit")
         self.assertEqual(getattr(content, "document_id"), "document-1")

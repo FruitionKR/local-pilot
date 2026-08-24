@@ -33,6 +33,76 @@ class QueryAnswerAssemblerTest(unittest.TestCase):
         self.assertNotRegex(answer.content, r"\[\d+(?:\s*,\s*\d+)*\]")
         self.assertEqual(evidence_snippets, [])
 
+    def test_block_refs_are_removed_from_answer_body(self) -> None:
+        """답변 본문 인용 계약은 숫자 rank다. 위키 인라인 앵커가 새어 나오면 지운다."""
+        evidence_snippets = [
+            EvidenceSnippet(rank=1, source_document_id="chatdoc_abc", source_block_ids=["B0003"], text="근거"),
+        ]
+        assembler = QueryAnswerAssembler(
+            FixedAnswerGenerator("역색인을 씁니다. [chatdoc_abc:B0003] 그리고 [1]")
+        )
+
+        answer, _ = assembler.generate_supported_answer(query_context(evidence_snippets))
+
+        self.assertNotIn("chatdoc_abc", answer.content)
+        self.assertNotIn("B0003", answer.content)
+        self.assertIn("[1]", answer.content)
+
+    def test_block_refs_are_removed_from_unsupported_answer(self) -> None:
+        """generate_supported_answer를 거치지 않는 경로(answer_query의 미지원 답변)도 통과 지점이다."""
+        assembler = QueryAnswerAssembler(FixedAnswerGenerator(""))
+
+        answer, _ = assembler.renumber_used_evidence(
+            GeneratedAnswer(content="근거가 없습니다. [doc_x:B0001]"), []
+        )
+
+        self.assertNotIn("doc_x", answer.content)
+        self.assertNotIn("B0001", answer.content)
+
+    def test_wikilinks_and_number_citations_survive(self) -> None:
+        evidence_snippets = [
+            EvidenceSnippet(rank=1, source_document_id="doc-a", source_block_ids=["B0001"], text="근거"),
+        ]
+        assembler = QueryAnswerAssembler(
+            FixedAnswerGenerator("[[검색 인덱싱]] 문서를 보세요. [1]")
+        )
+
+        answer, _ = assembler.generate_supported_answer(query_context(evidence_snippets))
+
+        self.assertIn("[[검색 인덱싱]]", answer.content)
+        self.assertIn("[1]", answer.content)
+
+    def test_removing_ref_does_not_leave_double_space(self) -> None:
+        assembler = QueryAnswerAssembler(FixedAnswerGenerator(""))
+
+        answer, _ = assembler.renumber_used_evidence(
+            GeneratedAnswer(content="앞 문장. [doc_x:B0001] 뒤 문장."), []
+        )
+
+        self.assertNotIn("  ", answer.content)
+        self.assertEqual("앞 문장. 뒤 문장.", answer.content)
+
+    def test_answer_without_block_refs_keeps_surrounding_whitespace(self) -> None:
+        """참조가 없는 답변은 손대지 않는다. 들여쓰기 코드블록이 앞에 오면 strip이 깨뜨린다."""
+        assembler = QueryAnswerAssembler(FixedAnswerGenerator(""))
+
+        answer, _ = assembler.renumber_used_evidence(
+            GeneratedAnswer(content="    def foo():\n        pass\n"), []
+        )
+
+        self.assertEqual("    def foo():\n        pass\n", answer.content)
+
+    def test_block_ref_at_line_start_keeps_paragraph_break(self) -> None:
+        """줄 맨 앞 참조를 지울 때 앞의 빈 줄까지 먹으면 제목·문단이 붙어버린다."""
+        assembler = QueryAnswerAssembler(FixedAnswerGenerator(""))
+
+        answer, _ = assembler.renumber_used_evidence(
+            GeneratedAnswer(content="## 소제목\n\n[doc_x:B0001] 설명입니다."), []
+        )
+
+        self.assertIn("## 소제목\n\n", answer.content)
+        self.assertNotIn("B0001", answer.content)
+
     def test_returned_evidence_ranks_match_citations(self) -> None:
         evidence_snippets = [
             EvidenceSnippet(rank=4, source_document_id="doc-a", source_block_ids=["B0004"], text="첫 근거"),
