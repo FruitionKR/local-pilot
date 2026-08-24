@@ -92,6 +92,17 @@ class QueryAnswerAssemblerTest(unittest.TestCase):
 
         self.assertEqual("    def foo():\n        pass\n", answer.content)
 
+    def test_block_ref_at_line_start_keeps_paragraph_break(self) -> None:
+        """줄 맨 앞 참조를 지울 때 앞의 빈 줄까지 먹으면 제목·문단이 붙어버린다."""
+        assembler = QueryAnswerAssembler(FixedAnswerGenerator(""))
+
+        answer, _ = assembler.renumber_used_evidence(
+            GeneratedAnswer(content="## 소제목\n\n[doc_x:B0001] 설명입니다."), []
+        )
+
+        self.assertIn("## 소제목\n\n", answer.content)
+        self.assertNotIn("B0001", answer.content)
+
     def test_returned_evidence_ranks_match_citations(self) -> None:
         evidence_snippets = [
             EvidenceSnippet(rank=4, source_document_id="doc-a", source_block_ids=["B0004"], text="첫 근거"),
