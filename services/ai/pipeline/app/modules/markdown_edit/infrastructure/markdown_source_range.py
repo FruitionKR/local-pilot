@@ -101,7 +101,7 @@ def validate_markdown_target_boundary(markdown: str, target: MarkdownEditTarget)
 
 
 def build_source_range_plan(request: MarkdownEditRequest) -> MarkdownSourceRangePlan | None:
-    if not _supports_source_range_edit(request):
+    if request.edit_operation != "replace" or not _supports_source_range_edit(request):
         return None
 
     parser = _markdown_parser()

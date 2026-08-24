@@ -17,7 +17,8 @@ class MarkdownOutputContractTest(unittest.TestCase):
             instruction="이 섹션 아래에 문제 해결 절을 추가해줘.",
             markdown="## 설치\n\n설치 방법입니다.",
             target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
-            edit_goal="insert_after",
+            edit_goal="other",
+            edit_operation="insert_after",
         )
 
         failures = validate_markdown_output(
@@ -32,7 +33,8 @@ class MarkdownOutputContractTest(unittest.TestCase):
             instruction="이 섹션 아래에 Markdown 예시를 추가해줘.",
             markdown="## 설치\n\n설치 방법입니다.",
             target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
-            edit_goal="insert_after",
+            edit_goal="other",
+            edit_operation="insert_after",
         )
 
         failures = validate_markdown_output(request, "```markdown\n## 설치\n```")
@@ -44,7 +46,8 @@ class MarkdownOutputContractTest(unittest.TestCase):
             instruction="이 섹션 아래에 Markdown 예시를 추가해줘.",
             markdown="## 설치\n\n설치 방법입니다.",
             target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
-            edit_goal="insert_after",
+            edit_goal="other",
+            edit_operation="insert_after",
         )
 
         failures = validate_markdown_output(request, "```text\n```python\n## 설치\n```")
@@ -56,12 +59,27 @@ class MarkdownOutputContractTest(unittest.TestCase):
             instruction="이 섹션 아래에 Markdown 예시를 추가해줘.",
             markdown="## 설치\n\n설치 방법입니다.",
             target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
-            edit_goal="insert_after",
+            edit_goal="other",
+            edit_operation="insert_after",
         )
 
         failures = validate_markdown_output(request, "~~~text\n~~~```\n## 설치\n~~~")
 
         self.assertNotIn("insert_after output must not repeat the current section heading", failures)
+
+    def test_rejects_insert_after_that_repeats_the_document_with_escaped_newlines(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="문서 아래에 추가해줘.",
+            markdown="# 제목\n기존 본문",
+            target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=2),
+            edit_goal="other",
+            edit_operation="insert_after",
+            edit_destination="document_end",
+        )
+
+        failures = validate_markdown_output(request, "# 제목\\n기존 본문")
+
+        self.assertIn("insert_after output must not repeat the existing target", failures)
 
     def test_protects_and_restores_structured_markdown_for_cleanup(self) -> None:
         source = (

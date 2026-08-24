@@ -21,6 +21,7 @@ from app.modules.agent.domain.entities import (
     RetrievalSource,
 )
 from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
+from app.modules.markdown_edit.domain.entities import EditDestination, EditOperationType
 from app.modules.skill.domain.entities import SkillCapability
 from app.modules.skill.domain.policy import CAPABILITY_TOOLS
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
@@ -71,6 +72,20 @@ ALLOWED_ACTIONS = {
 }
 ALLOWED_RETRIEVAL_SOURCES = {"none", "workspace", "web"}
 ALLOWED_DOCUMENT_OPERATIONS = {"none", "create", "edit"}
+ALLOWED_EDIT_GOALS = {
+    "shorten",
+    "style_change",
+    "convert_format",
+    "bullet_list",
+    "checklist",
+    "translate",
+    "cleanup",
+    "template_transform",
+    "create_from_chat",
+    "other",
+}
+ALLOWED_EDIT_OPERATIONS = {"replace", "insert_after"}
+ALLOWED_EDIT_DESTINATIONS = {"target", "document_end"}
 JSON_OBJECT_CONTRACT_FAILURE = "model output must be a JSON object"
 
 
@@ -104,6 +119,8 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                                 "document_operation": message.agent_route.document_operation,
                                 "persist": message.agent_route.persist,
                                 "edit_goal": message.agent_route.edit_goal,
+                                "edit_operation": message.agent_route.edit_operation,
+                                "edit_destination": message.agent_route.edit_destination,
                                 "selected_skill_id": message.agent_route.selected_skill_id,
                             }
                             if message.agent_route
@@ -169,17 +186,31 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             "contract_failures": failures,
             "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
         }
-        retried_route, retry_failures = self._complete_route(retry_payload)
+        retried_route, retry_failures = self._complete_route(
+            retry_payload,
+            trusted_contract_failures=failures,
+        )
         retry_failures.extend(_route_failures(retried_route, request))
         retry_failures.extend(_skill_authoring_failures(retried_route, request))
         if retry_failures:
             raise AgentTurnRouteContractError(retry_failures)
         return retried_route
 
-    def _complete_route(self, payload: dict[str, object]) -> tuple[AgentTurnRoute, list[str]]:
+    def _complete_route(
+        self,
+        payload: dict[str, object],
+        trusted_contract_failures: list[str] | None = None,
+    ) -> tuple[AgentTurnRoute, list[str]]:
+        system_prompt = self._system_prompt
+        if trusted_contract_failures:
+            system_prompt += (
+                "\n\nTrusted application contract failures from the previous route:\n- "
+                + "\n- ".join(trusted_contract_failures)
+                + "\nCorrect every listed failure in the next route."
+            )
         try:
             raw = self._client.complete_json(
-                self._system_prompt,
+                system_prompt,
                 json.dumps(payload, ensure_ascii=False, indent=2),
             )
         except JsonParseError:
@@ -269,6 +300,25 @@ def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[st
         failures.append("document_operation edit requires a non-create edit_goal")
     if route.document_operation == "none" and route.edit_goal is not None:
         failures.append("document_operation none requires edit_goal null")
+    if route.document_operation == "edit":
+        if route.edit_operation is None:
+            failures.append("document_operation edit requires edit_operation")
+        if route.edit_destination is None:
+            failures.append("document_operation edit requires edit_destination")
+    elif route.edit_operation is not None or route.edit_destination is not None:
+        failures.append("non-edit document_operation requires null edit operation and destination")
+    if route.edit_operation == "replace" and route.edit_destination != "target":
+        failures.append("replace edit_operation requires target edit_destination")
+    if (
+        route.edit_operation == "insert_after"
+        and route.edit_destination == "target"
+        and (
+            request.active_markdown_context is None
+            or request.active_markdown_context.target is None
+            or request.active_markdown_context.target.type != "current_section"
+        )
+    ):
+        failures.append("target insert_after requires a current_section target")
     if route.retrieval_source != "none" and route.action not in {
         "chat_answer",
         "markdown_create",
@@ -394,11 +444,37 @@ def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:
     if "edit_goal" not in value:
         failures.append("edit_goal is required")
     raw_edit_goal = value.get("edit_goal")
-    if raw_edit_goal is not None and not isinstance(raw_edit_goal, str):
-        failures.append("edit_goal must be a string or null")
+    if raw_edit_goal is not None and (
+        not isinstance(raw_edit_goal, str) or raw_edit_goal not in ALLOWED_EDIT_GOALS
+    ):
+        failures.append("edit_goal must be a supported value or null")
         edit_goal = None
     else:
         edit_goal = _optional_text(raw_edit_goal)
+
+    if "edit_operation" not in value:
+        failures.append("edit_operation is required")
+    raw_edit_operation = value.get("edit_operation")
+    if raw_edit_operation is not None and (
+        not isinstance(raw_edit_operation, str)
+        or raw_edit_operation not in ALLOWED_EDIT_OPERATIONS
+    ):
+        failures.append("edit_operation must be replace, insert_after, or null")
+        edit_operation = None
+    else:
+        edit_operation = cast(EditOperationType | None, raw_edit_operation)
+
+    if "edit_destination" not in value:
+        failures.append("edit_destination is required")
+    raw_edit_destination = value.get("edit_destination")
+    if raw_edit_destination is not None and (
+        not isinstance(raw_edit_destination, str)
+        or raw_edit_destination not in ALLOWED_EDIT_DESTINATIONS
+    ):
+        failures.append("edit_destination must be target, document_end, or null")
+        edit_destination = None
+    else:
+        edit_destination = cast(EditDestination | None, raw_edit_destination)
 
     raw_retrieval_source = value.get("retrieval_source")
     if not isinstance(raw_retrieval_source, str) or raw_retrieval_source not in ALLOWED_RETRIEVAL_SOURCES:
@@ -458,6 +534,8 @@ def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:
         confidence=confidence,
         reason=reason,
         edit_goal=edit_goal,
+        edit_operation=edit_operation,
+        edit_destination=edit_destination,
         selected_skill_id=selected_skill_id,
         skill_candidates=skill_candidates,
         retrieval_source=retrieval_source,

@@ -2,7 +2,6 @@ import json
 import unittest
 
 from app.modules.agent.domain.entities import (
-    ActiveMarkdownContext,
     AgentConversationContext,
     AgentTurnRequest,
     PendingSkillProposal,
@@ -14,7 +13,10 @@ from app.modules.agent.infrastructure.chat_completions_turn_router import (
     ChatCompletionsTurnRouter,
     _local_guard,
 )
-from app.modules.query.domain.entities import ConversationAgentRoute, ConversationMessage
+from app.modules.query.domain.entities import (
+    ConversationAgentRoute,
+    ConversationMessage,
+)
 from app.modules.skill.domain.entities import SkillDraftSourceRun
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
@@ -57,6 +59,8 @@ def route_response(action: str = "markdown_edit") -> dict[str, object]:
         "persist": persist,
         "required_capabilities": required_capabilities,
         "edit_goal": edit_goal,
+        "edit_operation": "replace" if document_operation == "edit" else None,
+        "edit_destination": "target" if document_operation == "edit" else None,
         "reason": "Markdown cleanup request",
     }
 
@@ -166,6 +170,8 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             document_operation="edit",
             required_capabilities=["folder-organize", "document-edit"],
             edit_goal="shorten",
+            edit_operation="replace",
+            edit_destination="target",
         )
         client = SequenceJsonClient([response])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
@@ -199,6 +205,10 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertIn(
             "persist must be true for action workspace_workflow",
             retry_payload["contract_failures"],
+        )
+        self.assertIn(
+            "Trusted application contract failures",
+            client.calls[1][0],
         )
 
     def test_rejects_repeated_structural_inconsistency(self) -> None:
@@ -593,7 +603,12 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
     def test_retries_unsupported_action_once(self) -> None:
         clarification = route_response("clarify")
-        clarification.update(document_operation="edit", edit_goal="other")
+        clarification.update(
+            document_operation="edit",
+            edit_goal="other",
+            edit_operation="replace",
+            edit_destination="target",
+        )
         client = SequenceJsonClient(
             [
                 route_response("unsupported_action"),
@@ -619,6 +634,8 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
                 "required_capabilities must be an array of unique supported capabilities"
             ),
             "edit_goal": "edit_goal is required",
+            "edit_operation": "edit_operation is required",
+            "edit_destination": "edit_destination is required",
             "reason": "reason must be a non-empty string",
         }
 
@@ -681,7 +698,9 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertIn("concrete personal data", prompt)
         self.assertIn("conversation_reply", prompt)
         self.assertIn("previous action is only a hint", prompt)
-        self.assertIn("four independent fields", prompt)
+        self.assertIn("independent fields", prompt)
+        self.assertIn("edit_destination", prompt)
+        self.assertIn("executors perform that action and do not reclassify", prompt)
         self.assertIn("covers every required capability", prompt)
         self.assertIn("never rewrites their meaning", prompt)
 

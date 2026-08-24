@@ -54,6 +54,8 @@ class ConversationAgentRouteRequest(BaseModel):
     document_operation: Literal["none", "create", "edit"]
     persist: StrictBool
     edit_goal: str | None = Field(default=None, max_length=64)
+    edit_operation: Literal["replace", "insert_after"] | None = None
+    edit_destination: Literal["target", "document_end"] | None = None
     selected_skill_id: str | None = Field(default=None, max_length=128)
 
     def to_domain(self) -> ConversationAgentRoute:
@@ -63,6 +65,8 @@ class ConversationAgentRouteRequest(BaseModel):
             document_operation=self.document_operation,
             persist=self.persist,
             edit_goal=self.edit_goal,
+            edit_operation=self.edit_operation,
+            edit_destination=self.edit_destination,
             selected_skill_id=self.selected_skill_id,
         )
 
@@ -195,6 +199,8 @@ class AgentTurnRouteResponse(BaseModel):
     confidence: float
     reason: str
     edit_goal: str | None = None
+    edit_operation: Literal["replace", "insert_after"] | None = None
+    edit_destination: Literal["target", "document_end"] | None = None
     selected_skill_id: str | None = None
     skill_candidates: list[str] = Field(default_factory=list)
     retrieval_source: Literal["none", "workspace", "web"]

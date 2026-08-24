@@ -2,8 +2,14 @@ import json
 import unittest
 from unittest.mock import patch
 
-from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
-from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, MarkdownEditRequest, MarkdownEditTarget
+from app.modules.markdown_edit.application.generate_markdown_edit import (
+    GenerateMarkdownEditUseCase,
+)
+from app.modules.markdown_edit.domain.entities import (
+    MarkdownCreateRequest,
+    MarkdownEditRequest,
+    MarkdownEditTarget,
+)
 from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownCreateOutputContractError,
     MarkdownOutputContractError,
@@ -16,7 +22,6 @@ from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor i
     build_markdown_editor,
 )
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
-
 
 TARGET = MarkdownEditTarget(type="whole_document", start_line=1, end_line=1)
 
@@ -40,6 +45,9 @@ def response(
     actual_target: dict[str, object] | None = None,
 ) -> dict[str, object]:
     result: dict[str, object] = {
+        "decision": "edit",
+        "reason": "Markdown 변경 요청입니다.",
+        "message": None,
         "operation": operation,
         "summary": "수정했습니다.",
         "replacement_markdown": replacement_markdown,
@@ -360,7 +368,8 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
             instruction="이 섹션 아래에 문제 해결 절을 추가해줘.",
             markdown="# 설치\n\n설치 방법입니다.",
             target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
-            edit_goal="insert_after",
+            edit_goal="other",
+            edit_operation="insert_after",
         )
 
         result = editor.generate_edit(request)
@@ -369,6 +378,39 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         self.assertEqual(payload["requested_operation"], "insert_after")
         self.assertEqual(result.edit.operation, "insert_after")
         self.assertEqual(result.edit.replacement_markdown, "## 문제 해결\n\n로그를 확인합니다.")
+
+    def test_inserts_styled_content_at_document_end_without_replacing_source(self) -> None:
+        markdown = "# 제목\n\n[기존 링크](https://example.com)"
+        client = SequenceJsonClient(
+            [
+                response(
+                    "## 대화 정리\n\n정리한 내용입니다.",
+                    operation="insert_after",
+                    actual_target={
+                        "type": "whole_document",
+                        "start_line": 1,
+                        "end_line": 3,
+                    },
+                )
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+        request = MarkdownEditRequest(
+            instruction="방금 다듬은 문장을 이 문서 아래에 추가해줘.",
+            markdown=markdown,
+            target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=3),
+            edit_goal="style_change",
+            edit_operation="insert_after",
+            edit_destination="document_end",
+        )
+
+        result = editor.generate_edit(request)
+
+        payload = json.loads(client.calls[0][1])
+        self.assertEqual(payload["markdown"], markdown)
+        self.assertEqual(payload["requested_operation"], "insert_after")
+        self.assertEqual(result.edit.operation, "insert_after")
+        self.assertEqual(result.edit.replacement_markdown, "## 대화 정리\n\n정리한 내용입니다.")
 
     def test_retries_markdown_create_with_contract_failures(self) -> None:
         client = SequenceJsonClient(
@@ -809,7 +851,7 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
             retry_payload["contract_failures"],
         )
 
-    def test_retries_insert_after_with_non_section_actual_target(self) -> None:
+    def test_uses_requested_target_for_insert_after(self) -> None:
         client = SequenceJsonClient(
             [
                 response(
@@ -820,16 +862,7 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
                         "start_line": 1,
                         "end_line": 2,
                     },
-                ),
-                response(
-                    "## 새 섹션",
-                    operation="insert_after",
-                    actual_target={
-                        "type": "current_section",
-                        "start_line": 1,
-                        "end_line": 2,
-                    },
-                ),
+                )
             ]
         )
         editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
@@ -837,18 +870,14 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
             instruction="현재 섹션 뒤에 새 섹션을 추가해줘.",
             markdown="# 현재 섹션\n본문",
             target=MarkdownEditTarget(type="current_section", start_line=1, end_line=2),
-            edit_goal="insert_after",
+            edit_goal="other",
+            edit_operation="insert_after",
         )
 
         result = editor.generate_edit(request)
 
         self.assertEqual(result.edit.actual_target.type, "current_section")
-        self.assertEqual(len(client.calls), 2)
-        retry_payload = json.loads(client.calls[1][1])
-        self.assertIn(
-            "insert_after operation requires a current_section actual_target",
-            retry_payload["contract_failures"],
-        )
+        self.assertEqual(len(client.calls), 1)
 
     def test_retries_actual_target_that_crosses_markdown_structure(self) -> None:
         client = SequenceJsonClient(
@@ -1119,6 +1148,7 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         self.assertEqual(client.calls[0][0], "system")
         retry_payload = json.loads(client.calls[1][1])
         self.assertIn("numbered list items must start directly", retry_payload["contract_failures"][0])
+        self.assertIn("previous output failed trusted application validation", client.calls[1][0])
         self.assertEqual(retry_payload["previous_replacement_markdown"], "- 1. 설치\n- 2. 테스트")
 
     def test_retries_edit_with_markdown_syntax_failures(self) -> None:

@@ -521,6 +521,10 @@ def main() -> None:
                 markdown=case.markdown,
                 target=target,
                 edit_goal=edit_goal,
+                edit_operation=route.edit_operation if route and route.edit_operation else "replace",
+                edit_destination=(
+                    route.edit_destination if route and route.edit_destination else "target"
+                ),
             )
             contract_failures: list[str] = []
             try:

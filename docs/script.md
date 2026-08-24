@@ -53,6 +53,34 @@ cd services/ai/pipeline
 이미 `services/ai/pipeline/.venv`가 있고 requirements가 바뀌지 않았다면 기존 interpreter를
 그대로 사용한다. 재검증마다 가상환경을 다시 만들거나 의존성을 다시 설치하지 않는다.
 
+Agent turn router의 의미 분류는 승인된 seed 사례로 실제 provider를 평가한다. 결과는
+`route_correct`, `agent_turn_failed`, 비편집 요청을 편집으로 분류한
+`mutation_false_positives`를 분리해 출력한다.
+`evals/agent_turn_router.jsonl`의 `expected`는 기본 route이고, 동일한
+`document_operation`·`persist` 경계 안에서만 `acceptable` 배열로 복수 route를 허용할 수 있다.
+
+```sh
+cd services/ai/pipeline
+OPENAI_API_KEY=... .venv/bin/python evaluate_agent_turn_router.py \
+  --provider openai \
+  --model gpt-5-nano
+```
+
+실제 Agent turn은 `ai_db.agent_runs` 행에 live로 적재된다. 성공 route는 `result->'route'`,
+실패 코드는 `error_code`, route 계약 실패의 안전한 교정 사유는
+`result->'contract_failures'`로 조회한다. core DB의 `agent_route_outcomes` view는 같은 run의
+적용 projection과 기존 채팅을 연결해 편집 적용을 `accepted`, 실행 실패를
+`technical_failure`, 그 밖의 결과를 `unlabeled`로 즉시 노출한다. 취소·재시도를 route 실패로
+추정하거나 새 원문 대화와 provider 예외 메시지를 별도로 복제하지 않는다.
+
+```sql
+SELECT outcome_label, route ->> 'action' AS action, count(*)
+FROM agent_route_outcomes
+WHERE observed_at >= date_trunc('month', now()) - interval '1 month'
+GROUP BY outcome_label, route ->> 'action'
+ORDER BY outcome_label, action;
+```
+
 `document_restoration` 테스트까지 실행하려면 추가로 `requirements-document-restoration.txt`를 설치합니다.
 
 ## 2. 실행 스크립트

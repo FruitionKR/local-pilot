@@ -723,11 +723,27 @@ components:
           - edit
           title: Document Operation
           type: string
+        edit_destination:
+          anyOf:
+          - enum:
+            - target
+            - document_end
+            type: string
+          - type: 'null'
+          title: Edit Destination
         edit_goal:
           anyOf:
           - type: string
           - type: 'null'
           title: Edit Goal
+        edit_operation:
+          anyOf:
+          - enum:
+            - replace
+            - insert_after
+            type: string
+          - type: 'null'
+          title: Edit Operation
         persist:
           title: Persist
           type: boolean
@@ -990,12 +1006,28 @@ components:
           - edit
           title: Document Operation
           type: string
+        edit_destination:
+          anyOf:
+          - enum:
+            - target
+            - document_end
+            type: string
+          - type: 'null'
+          title: Edit Destination
         edit_goal:
           anyOf:
           - maxLength: 64
             type: string
           - type: 'null'
           title: Edit Goal
+        edit_operation:
+          anyOf:
+          - enum:
+            - replace
+            - insert_after
+            type: string
+          - type: 'null'
+          title: Edit Operation
         persist:
           title: Persist
           type: boolean
