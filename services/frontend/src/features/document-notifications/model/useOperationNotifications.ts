@@ -8,6 +8,12 @@ import { publishNotice } from "./noticeBus";
 const POLL_INTERVAL_MS = 15_000;
 const TERMINAL_STATUSES = new Set(["succeeded", "partially_succeeded", "failed", "conflict"]);
 
+/**
+ * 백엔드는 status를 생략한 목록에서 실패를 걷어낸다(되돌릴 대상이 없어 목록에서 할 일이 없다).
+ * 알림은 실패를 놓치면 안 되므로 명시 조회로 따로 받아 합친다.
+ */
+const FAILURE_STATUSES = ["failed", "conflict"] as const;
+
 // ingest는 문서 처리 알림이 담당하고, document_edit은 채팅 화면에서 즉시 확인되므로 제외한다.
 const WATCHED_TYPES: Record<string, string> = {
   lint: "위키 다듬기",
@@ -32,6 +38,8 @@ function noticeFor(item: OperationLogItem) {
  * 오래 걸리는 AI 작업(lint·restore)의 종결을 감지해 알림을 발행한다.
  * ai-operation-logs 목록을 폴링하며, 진행 중 → 종결 전이와
  * 폴링 사이에 새로 나타난 종결 작업을 모두 잡는다. 유형별로 켜고 끌 수 있다.
+ *
+ * 성공·부분 성공은 기본 목록에, 실패는 status 명시 조회에 나온다. 셋을 합쳐야 종결을 빠짐없이 본다.
  */
 export function useOperationNotifications() {
   const { preferences } = useUserPreferences();
@@ -47,7 +55,11 @@ export function useOperationNotifications() {
     async function poll() {
       let logs: OperationLogItem[];
       try {
-        logs = (await fetchOperationLogs()).logs;
+        const responses = await Promise.all([
+          fetchOperationLogs(),
+          ...FAILURE_STATUSES.map((status) => fetchOperationLogs({ status }))
+        ]);
+        logs = responses.flatMap((response) => response.logs);
       } catch {
         // 워크스페이스 미선택·일시적 실패는 다음 폴링에서 재시도한다.
         return;

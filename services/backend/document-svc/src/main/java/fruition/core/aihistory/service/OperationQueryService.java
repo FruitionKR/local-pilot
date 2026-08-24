@@ -37,10 +37,17 @@ public class OperationQueryService {
     /** 커서 문자열의 두 키를 가르는 문자. Instant 표기와 operation_id(base64url) 어디에도 없다. */
     private static final String CURSOR_SEPARATOR = ",";
 
-    /** status를 생략한 조회에서만 감추는 상태. status=processing 명시 조회는 활성 작업 탐지에 쓴다. */
-    private static final Set<OperationStatus> IN_PROGRESS_STATUSES =
+    /**
+     * status를 생략한 조회에서만 감추는 상태. 진행 중인 작업은 아직 결과가 없고, 반영에 실패한
+     * 작업은 되돌릴 대상이 없어 사용자가 목록에서 할 수 있는 일이 없다.
+     *
+     * <p>명시 조회는 그대로 통과시킨다. {@code status=processing}은 활성 작업 탐지에,
+     * {@code status=failed}·{@code status=conflict}는 실패 알림 감지에 쓴다.
+     */
+    private static final Set<OperationStatus> HIDDEN_BY_DEFAULT_STATUSES =
             Set.of(OperationStatus.processing, OperationStatus.applying,
-                    OperationStatus.notify_pending, OperationStatus.rebuilding);
+                    OperationStatus.notify_pending, OperationStatus.rebuilding,
+                    OperationStatus.failed, OperationStatus.conflict);
 
     private final OperationLogRepository operationLogRepository;
     private final OperationChangeRepository operationChangeRepository;
@@ -69,7 +76,7 @@ public class OperationQueryService {
         Cursor parsed = parseCursor(cursor);
         List<OperationLog> found = operationLogRepository.findPage(
                 workspaceId, parseType(type), parseStatus(status), parsed.createdAt(), parsed.operationId(),
-                OperationStatus.succeeded, OperationType.document_edit, IN_PROGRESS_STATUSES,
+                OperationStatus.succeeded, OperationType.document_edit, HIDDEN_BY_DEFAULT_STATUSES,
                 PageRequest.of(0, limit + 1));
 
         // 한 건 더 읽어 다음 페이지가 있는지 본다.

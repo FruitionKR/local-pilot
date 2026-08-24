@@ -21,14 +21,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Import(TestcontainersConfiguration.class)
 class OperationLogRepositoryVisibilityIntegrationTest {
 
-    private static final Set<OperationStatus> IN_PROGRESS =
+    private static final Set<OperationStatus> HIDDEN_BY_DEFAULT =
             Set.of(OperationStatus.processing, OperationStatus.applying,
-                    OperationStatus.notify_pending, OperationStatus.rebuilding);
+                    OperationStatus.notify_pending, OperationStatus.rebuilding,
+                    OperationStatus.failed, OperationStatus.conflict);
 
     @Autowired OperationLogRepository operationLogRepository;
 
     @Test
-    void findPage_hidesUnchangedSuccessesButKeepsFailures() {
+    void findPage_hidesOperationsWithNothingToShow() {
         String workspaceId = "ws_" + UUID.randomUUID();
         Instant now = Instant.now();
         OperationLog editChanged = OperationLog.completed(
@@ -58,12 +59,9 @@ class OperationLogRepositoryVisibilityIntegrationTest {
 
         List<OperationLog> visible = findPage(workspaceId, null, now.plusSeconds(1), "", 20);
 
-        // 반영에 실패한 작업은 되돌릴 대상이 없어도 남긴다. 사용자가 실패 사실을 알아야 하고,
-        // 알림도 이 목록을 보고 띄운다. 문서 편집은 성공만 남기는 규칙이 따로 있어 conflict가 빠진다.
         assertThat(visible)
                 .extracting(OperationLog::getOperationId)
-                .containsExactly(ingestSucceeded.getOperationId(), ingestFailed.getOperationId(),
-                        editChanged.getOperationId());
+                .containsExactly(ingestSucceeded.getOperationId(), editChanged.getOperationId());
     }
 
     @Test
@@ -86,7 +84,7 @@ class OperationLogRepositoryVisibilityIntegrationTest {
     }
 
     @Test
-    void findPage_keepsFailedInDefaultAndExplicitStatusQuery() {
+    void findPage_hidesFailedByDefaultButOpensItToExplicitStatusQuery() {
         String workspaceId = "ws_" + UUID.randomUUID();
         Instant now = Instant.now();
         OperationLog failed = OperationLog.processing(
@@ -95,16 +93,16 @@ class OperationLogRepositoryVisibilityIntegrationTest {
         failed.complete(OperationStatus.failed, "Wiki ingest에 실패했습니다.", 0, null, now.minusSeconds(1));
         operationLogRepository.save(failed);
 
-        assertThat(findPage(workspaceId, null, now.plusSeconds(1), "", 20))
-                .extracting(OperationLog::getOperationId)
-                .containsExactly(failed.getOperationId());
+        assertThat(findPage(workspaceId, null, now.plusSeconds(1), "", 20)).isEmpty();
+
+        // 프론트 실패 알림이 이 명시 조회로 실패를 감지한다. 여기까지 막으면 알림이 죽는다.
         assertThat(findPage(workspaceId, OperationStatus.failed, now.plusSeconds(1), "", 20))
                 .extracting(OperationLog::getOperationId)
                 .containsExactly(failed.getOperationId());
     }
 
     @Test
-    void findPage_keepsRestoreConflict() {
+    void findPage_hidesRestoreConflictByDefaultButOpensItToExplicitStatusQuery() {
         String workspaceId = "ws_" + UUID.randomUUID();
         Instant now = Instant.now();
         // restored_from은 ai_operation_logs를 참조하는 FK라 되돌릴 대상이 실제로 있어야 한다.
@@ -121,7 +119,11 @@ class OperationLogRepositoryVisibilityIntegrationTest {
 
         assertThat(findPage(workspaceId, null, now.plusSeconds(1), "", 20))
                 .extracting(OperationLog::getOperationId)
-                .containsExactly(restore.getOperationId(), target.getOperationId());
+                .containsExactly(target.getOperationId());
+
+        assertThat(findPage(workspaceId, OperationStatus.conflict, now.plusSeconds(1), "", 20))
+                .extracting(OperationLog::getOperationId)
+                .containsExactly(restore.getOperationId());
     }
 
     @Test
@@ -153,7 +155,7 @@ class OperationLogRepositoryVisibilityIntegrationTest {
     private List<OperationLog> findPage(String workspaceId, OperationStatus status,
                                         Instant cursor, String cursorOperationId, int size) {
         return operationLogRepository.findPage(workspaceId, null, status, cursor, cursorOperationId,
-                OperationStatus.succeeded, OperationType.document_edit, IN_PROGRESS,
+                OperationStatus.succeeded, OperationType.document_edit, HIDDEN_BY_DEFAULT,
                 PageRequest.of(0, size));
     }
 }

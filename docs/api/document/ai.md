@@ -14,7 +14,7 @@
 | [`GET /api/ai-models`](#summary-get-api-ai-models) | 선택할 수 있는 provider/model 조합을 반환합니다. API key는 노출하지 않습니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-model-settings`](#summary-get-api-workspaces-workspace-id-ai-model-settings) | ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와 MEMBER 모두 조회할 수 있습니다. |
 | [`PUT /api/workspaces/{workspace_id}/ai-model-settings`](#summary-put-api-workspaces-workspace-id-ai-model-settings) | ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있고, 활성 model catalog에 있는 조합만 허용합니다. |
-| [`GET /api/workspaces/{workspace_id}/ai-operation-logs`](#summary-get-api-workspaces-workspace-id-ai-operation-logs) | 최신순으로 반환합니다. 바꾼 것이 없는 성공 작업은 제외하고, 문서 편집은 실제 변경에 성공한 작업만 포함하며, status를 생략하면 진행 중인 작업은 제외합니다. status=processing 명시 조회는 활성 작업 탐지에 사용할 수 있습니다. 로그 테이블만 읽고 diff를 계산하지 않습니다. |
+| [`GET /api/workspaces/{workspace_id}/ai-operation-logs`](#summary-get-api-workspaces-workspace-id-ai-operation-logs) | 최신순으로 반환합니다. 바꾼 것이 없는 성공 작업은 제외하고, 문서 편집은 실제 변경에 성공한 작업만 포함하며, status를 생략하면 진행 중인 작업과 반영에 실패한 작업은 제외합니다. status=processing 명시 조회는 활성 작업 탐지에, status=failed와 status=conflict 명시 조회는 실패 감지에 사용할 수 있습니다. 로그 테이블만 읽고 diff를 계산하지 않습니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}`](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id) | 그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다. |
 | [`POST /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore`](#summary-post-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore) | 복구 대상에 따라 처리 방식이 다릅니다. 문서 편집 복구는 즉시 완료되어 200을 반환하고, Wiki 복구는 queued 상태로 등록되어 202를 반환합니다. 미리보기와 같은 계산을 다시 하고 Wiki에 반영합니다. 받치는 기여가 남지 않은 페이지는 삭제하고, 되돌릴 버전이 그대로 있는 페이지는 그 내용으로 복원하며, 남은 조각을 합쳐야 하는 페이지는 llmPipeline에 재작성을 맡깁니다. 재작성이 있으면 status가 rebuilding으로 돌아오며 결과는 로그 상세로 확인합니다. ingest 되돌리기는 Wiki만 되돌리고 원문 문서는 건드리지 않습니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore-preview`](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore-preview) | 이 작업을 되돌리면 무엇이 삭제·복원·재작성되는지 계산합니다. 지목한 작업과 그 이후 같은 문서의 작업을 전부 걷어내며, 그 과정에서 만들어진 페이지는 삭제됩니다. 문서 편집 복구는 canonical 편집 revision을 확인하며, 응답의 preview_token은 복구 실행에 그대로 전달해야 합니다. |
@@ -369,7 +369,7 @@ curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-mod
 
 #### 2. 목적
 
-최신순으로 반환합니다. 바꾼 것이 없는 성공 작업은 제외하고, 문서 편집은 실제 변경에 성공한 작업만 포함합니다. 문서 편집을 제외한 유형에서는 반영에 실패한 작업(`failed`·`conflict`)도 되돌릴 대상이 없이 목록에 남습니다. 사용자가 실패 사실을 알아야 하기 때문입니다. `status`를 생략한 일반 로그 목록은 `processing`·`applying`·`notify_pending`·`rebuilding` 작업을 제외하며, `status=processing`을 명시하면 활성 Ingest·Lint 탐지에 사용할 수 있습니다. 필터는 페이지네이션 전에 DB query에서 적용하고, 로그 테이블만 읽으며 diff를 계산하지 않습니다.
+최신순으로 반환합니다. 바꾼 것이 없는 성공 작업은 제외하고, 문서 편집은 실제 변경에 성공한 작업만 포함합니다. 이 둘은 명시 조회에서도 제외합니다. `status`를 생략한 일반 로그 목록은 `processing`·`applying`·`notify_pending`·`rebuilding`과 `failed`·`conflict` 작업을 제외합니다. 되돌릴 대상이 없어 사용자가 목록에서 할 수 있는 일이 없기 때문이며, 감사 기록은 상세 조회로 그대로 열립니다. `status`를 명시하면 그대로 조회됩니다. `status=processing`은 활성 Ingest·Lint 탐지에, `status=failed`·`status=conflict`는 실패 알림 감지에 사용합니다. 필터는 페이지네이션 전에 DB query에서 적용하고, 로그 테이블만 읽으며 diff를 계산하지 않습니다.
 
 `target_display_name`은 작업 시작 시점 snapshot이다. Ingest 로그 제목과 원본 문서 표시는 현재 문서 이름을 다시 조회하지 않고 이 값을 사용한다.
 

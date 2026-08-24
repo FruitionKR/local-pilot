@@ -105,11 +105,11 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
      *
      * <p>변경이 0건인 성공은 사용자가 목록에서 할 수 있는 일이 없어 걷어낸다.
      * {@code successOnlyType}은 결과가 나기 전에 감사 행을 먼저 커밋하는 유형이라, 끝난 성공만
-     * 남긴다. 그 유형을 뺀 나머지는 반영에 실패했더라도 남긴다. 되돌릴 대상이 없어도 사용자가
-     * 실패 사실을 알아야 하고, 알림도 이 목록을 보고 띄운다.
+     * 남긴다. 이 둘은 명시 조회에서도 걷어낸다.
      *
-     * <p>{@code hiddenDefaultStatuses}(진행 중)는 {@code status}를 생략했을 때만 걷어낸다.
-     * {@code status=processing} 같은 명시 조회는 활성 작업 탐지에 쓰므로 그대로 통과시킨다.
+     * <p>{@code hiddenDefaultStatuses}(진행 중·반영 실패)는 {@code status}를 생략했을 때만
+     * 걷어낸다. 명시 조회는 그대로 통과시킨다. {@code status=processing}은 활성 작업 탐지에,
+     * {@code status=failed}·{@code status=conflict}는 실패 알림 감지에 쓴다.
      *
      * <p>{@code createdAt}만으로는 같은 시각에 만들어진 작업이 {@code <} 비교에서 통째로
      * 빠진다. {@code (createdAt, operationId)} 복합 커서로 동시각 작업까지 결정적으로 가른다.
