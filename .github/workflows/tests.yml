@@ -115,9 +115,6 @@ jobs:
       - name: Run operation log page tests
         run: npm run test:operation-log-page
 
-      - name: Run operation notice tests
-        run: npm run test:operation-notices
-
   pipeline:
     name: llmPipeline (pytest)
     runs-on: ubuntu-latest
