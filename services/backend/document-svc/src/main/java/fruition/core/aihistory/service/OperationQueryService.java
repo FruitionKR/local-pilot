@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * AI 작업 로그 조회. 목록과 상세 모두 저장된 값만 읽고 diff를 계산하지 않는다.
@@ -32,6 +33,21 @@ public class OperationQueryService {
 
     /** 첫 페이지용 기본 커서. null을 넘기면 Postgres가 파라미터 타입을 추론하지 못한다. */
     private static final Instant NO_CURSOR = Instant.parse("9999-12-31T23:59:59Z");
+
+    /** 커서 문자열의 두 키를 가르는 문자. Instant 표기와 operation_id(base64url) 어디에도 없다. */
+    private static final String CURSOR_SEPARATOR = ",";
+
+    /**
+     * status를 생략한 조회에서만 감추는 상태. 진행 중인 작업은 아직 결과가 없고, 반영에 실패한
+     * 작업은 되돌릴 대상이 없어 사용자가 목록에서 할 수 있는 일이 없다.
+     *
+     * <p>명시 조회는 그대로 통과시킨다. {@code status=processing}은 활성 작업 탐지에,
+     * {@code status=failed}·{@code status=conflict}는 실패 알림 감지에 쓴다.
+     */
+    private static final Set<OperationStatus> HIDDEN_BY_DEFAULT_STATUSES =
+            Set.of(OperationStatus.processing, OperationStatus.applying,
+                    OperationStatus.notify_pending, OperationStatus.rebuilding,
+                    OperationStatus.failed, OperationStatus.conflict);
 
     private final OperationLogRepository operationLogRepository;
     private final OperationChangeRepository operationChangeRepository;
@@ -57,17 +73,16 @@ public class OperationQueryService {
         verifyMember(workspaceId, userId);
 
         int limit = normalizeSize(size);
+        Cursor parsed = parseCursor(cursor);
         List<OperationLog> found = operationLogRepository.findPage(
-                workspaceId, parseType(type), parseStatus(status), parseCursor(cursor),
-                OperationType.document_edit, OperationStatus.succeeded,
-                List.of(OperationStatus.processing, OperationStatus.applying,
-                        OperationStatus.notify_pending, OperationStatus.rebuilding),
+                workspaceId, parseType(type), parseStatus(status), parsed.createdAt(), parsed.operationId(),
+                OperationStatus.succeeded, OperationType.document_edit, HIDDEN_BY_DEFAULT_STATUSES,
                 PageRequest.of(0, limit + 1));
 
         // 한 건 더 읽어 다음 페이지가 있는지 본다.
         boolean hasMore = found.size() > limit;
         List<OperationLog> page = hasMore ? found.subList(0, limit) : found;
-        String nextCursor = hasMore ? page.get(page.size() - 1).getCreatedAt().toString() : null;
+        String nextCursor = hasMore ? encodeCursor(page.get(page.size() - 1)) : null;
 
         return new OperationLogListResponse(
                 page.stream().map(OperationLogListResponse.Item::from).toList(), nextCursor);
@@ -123,13 +138,26 @@ public class OperationQueryService {
         }
     }
 
-    /** 커서는 마지막으로 받은 항목의 {@code created_at}이다. */
-    private Instant parseCursor(String cursor) {
+    /** 마지막으로 받은 항목을 가리키는 복합 커서. 같은 시각의 작업도 이 두 키로 갈린다. */
+    private record Cursor(Instant createdAt, String operationId) {}
+
+    private String encodeCursor(OperationLog last) {
+        return last.getCreatedAt() + CURSOR_SEPARATOR + last.getOperationId();
+    }
+
+    /** 커서는 마지막으로 받은 항목의 {@code created_at,operation_id}다. */
+    private Cursor parseCursor(String cursor) {
         if (cursor == null || cursor.isBlank()) {
-            return NO_CURSOR;
+            // 먼 미래 시각이 모든 행보다 크므로 operation_id는 비교에 쓰이지 않는다.
+            return new Cursor(NO_CURSOR, "");
+        }
+        int separator = cursor.indexOf(CURSOR_SEPARATOR);
+        if (separator < 0 || separator == cursor.length() - 1) {
+            throw new InvalidRestoreRequestException("커서 형식이 올바르지 않습니다: " + cursor);
         }
         try {
-            return Instant.parse(cursor);
+            return new Cursor(Instant.parse(cursor.substring(0, separator)),
+                    cursor.substring(separator + 1));
         } catch (DateTimeParseException e) {
             throw new InvalidRestoreRequestException("커서 형식이 올바르지 않습니다: " + cursor);
         }
