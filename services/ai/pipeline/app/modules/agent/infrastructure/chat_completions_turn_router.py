@@ -201,9 +201,12 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
 
         candidate_route = asdict(route)
         candidate_route.pop("reason")
-        audited_route, audit_failures = self._complete_route(
-            {**payload, "candidate_route": candidate_route}
-        )
+        try:
+            audited_route, audit_failures = self._complete_route(
+                {**payload, "candidate_route": candidate_route}
+            )
+        except RuntimeError:
+            return route
         audit_failures.extend(_route_failures(audited_route, request))
         audit_failures.extend(_skill_authoring_failures(audited_route, request))
         if audit_failures:

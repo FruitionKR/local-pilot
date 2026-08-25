@@ -224,6 +224,17 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertEqual(route.action, "workspace_workflow")
         self.assertEqual(route.required_capabilities, ("document-edit",))
 
+    def test_keeps_valid_workspace_route_when_audit_transport_fails(self) -> None:
+        response = route_response("workspace_workflow")
+        client = SequenceJsonClient([response, RuntimeError("provider timeout")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="문서를 저장해줘"))
+
+        self.assertEqual(route.action, "workspace_workflow")
+        self.assertEqual(route.required_capabilities, ("folder-organize",))
+        self.assertEqual(len(client.calls), 2)
+
     def test_retries_structurally_inconsistent_route_without_changing_its_meaning(self) -> None:
         inconsistent = route_response("workspace_workflow")
         inconsistent.update(
