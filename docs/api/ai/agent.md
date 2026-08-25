@@ -147,6 +147,10 @@ Skill을 선택하지 않으며, 선택된 Skill의 capability별 확정 Tool �
 따라서 `retrieval_source`, `edit_goal`, `edit_operation`, `edit_destination`은 실행기가 덮어쓸 수 없는
 실행 입력이다. 주제 없는 `검색해줘` 같은 요청은 라우터가 `conversation_reply`로 보내 검색 대상을 묻고,
 구조상 필요한 편집 위치를 확인할 수 없을 때만 애플리케이션이 `clarify`로 종료한다.
+최종 action이 `workspace_workflow`이면 라우터는 원문과 후보 route를 한 번 더 비교해 모든 요청 절의
+capability와 검색·문서·저장 효과가 포함됐는지 감사한다. 감사 출력이 구조 계약을 만족하면 그 route를
+최종 실행 입력으로 사용하고, 구조 계약을 깨면 새 실패를 만들지 않고 최초의 유효 route를 유지한다.
+다른 action에는 이 추가 LLM 호출을 적용하지 않는다.
 `insert_after + document_end`는 활성 선택 영역이 있더라도 전체 문서를 위치 기준으로 사용하므로
 선택 영역 교체로 바뀌지 않는다.
 서버는 검색·문서 작업 의미를 문장 패턴으로 덮어쓰지 않는다. action과 필드 조합이 모순되거나

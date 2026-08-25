@@ -148,7 +148,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             required_capabilities=["document-create"],
             edit_goal="create_from_chat",
         )
-        client = SequenceJsonClient([response])
+        client = SequenceJsonClient([response, response])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
 
         route = router.route(
@@ -162,18 +162,28 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertEqual(route.retrieval_source, "web")
         self.assertEqual(route.document_operation, "create")
         self.assertTrue(route.persist)
-        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(len(client.calls), 2)
 
     def test_routes_document_edit_and_folder_move_as_one_composite_workflow(self) -> None:
-        response = route_response("workspace_workflow")
-        response.update(
+        incomplete = route_response("workspace_workflow")
+        incomplete.update(
+            retrieval_source="workspace",
+            document_operation="edit",
+            required_capabilities=["document-edit"],
+            edit_goal="shorten",
+            edit_operation="replace",
+            edit_destination="target",
+        )
+        corrected = {**incomplete}
+        corrected.update(
+            retrieval_source="none",
             document_operation="edit",
             required_capabilities=["folder-organize", "document-edit"],
             edit_goal="shorten",
             edit_operation="replace",
             edit_destination="target",
         )
-        client = SequenceJsonClient([response])
+        client = SequenceJsonClient([incomplete, corrected])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
 
         route = router.route(
@@ -185,6 +195,34 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             route.required_capabilities,
             ("document-edit", "folder-organize"),
         )
+        audit_payload = json.loads(client.calls[1][1])
+        self.assertEqual(
+            audit_payload["candidate_route"]["required_capabilities"],
+            ["document-edit"],
+        )
+        self.assertEqual(
+            audit_payload["candidate_route"]["retrieval_source"],
+            "workspace",
+        )
+        self.assertNotIn("reason", audit_payload["candidate_route"])
+
+    def test_keeps_valid_workspace_route_when_audit_breaks_contract(self) -> None:
+        response = route_response("workspace_workflow")
+        response.update(
+            document_operation="edit",
+            required_capabilities=["document-edit"],
+            edit_goal="shorten",
+            edit_operation="replace",
+            edit_destination="target",
+        )
+        invalid_audit = route_response("clarify")
+        client = SequenceJsonClient([response, invalid_audit])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="현재 문서를 요약해서 저장해줘"))
+
+        self.assertEqual(route.action, "workspace_workflow")
+        self.assertEqual(route.required_capabilities, ("document-edit",))
 
     def test_retries_structurally_inconsistent_route_without_changing_its_meaning(self) -> None:
         inconsistent = route_response("workspace_workflow")
@@ -195,7 +233,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             edit_goal="create_from_chat",
         )
         corrected = {**inconsistent, "persist": True}
-        client = SequenceJsonClient([inconsistent, corrected])
+        client = SequenceJsonClient([inconsistent, corrected, corrected])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
 
         route = router.route(AgentTurnRequest(message="새 문서로 저장해줘"))

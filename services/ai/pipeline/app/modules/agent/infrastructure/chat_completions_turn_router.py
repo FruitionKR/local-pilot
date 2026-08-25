@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, cast
 
@@ -24,9 +25,11 @@ from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.markdown_edit.domain.entities import EditDestination, EditOperationType
 from app.modules.skill.domain.entities import SkillCapability
 from app.modules.skill.domain.policy import CAPABILITY_TOOLS
-from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
+from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
+    ChatClientConfig,
+    ChatCompletionsJsonClient,
+)
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
-
 
 DEFAULT_AGENT_TURN_ROUTER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "agent_turn_router.system.md"
 NEW_SKILL_REQUEST_PATTERN = re.compile(
@@ -178,23 +181,34 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
         route, failures = self._complete_route(payload)
         failures.extend(_route_failures(route, request))
         failures.extend(_skill_authoring_failures(route, request))
-        if not failures:
+        if failures:
+            retry_payload = {
+                **payload,
+                "contract_failures": failures,
+                "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
+            }
+            route, failures = self._complete_route(
+                retry_payload,
+                trusted_contract_failures=failures,
+            )
+            failures.extend(_route_failures(route, request))
+            failures.extend(_skill_authoring_failures(route, request))
+            if failures:
+                raise AgentTurnRouteContractError(failures)
+
+        if route.action != "workspace_workflow":
             return route
 
-        retry_payload = {
-            **payload,
-            "contract_failures": failures,
-            "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
-        }
-        retried_route, retry_failures = self._complete_route(
-            retry_payload,
-            trusted_contract_failures=failures,
+        candidate_route = asdict(route)
+        candidate_route.pop("reason")
+        audited_route, audit_failures = self._complete_route(
+            {**payload, "candidate_route": candidate_route}
         )
-        retry_failures.extend(_route_failures(retried_route, request))
-        retry_failures.extend(_skill_authoring_failures(retried_route, request))
-        if retry_failures:
-            raise AgentTurnRouteContractError(retry_failures)
-        return retried_route
+        audit_failures.extend(_route_failures(audited_route, request))
+        audit_failures.extend(_skill_authoring_failures(audited_route, request))
+        if audit_failures:
+            return route
+        return audited_route
 
     def _complete_route(
         self,

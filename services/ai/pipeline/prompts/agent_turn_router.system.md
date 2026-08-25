@@ -15,6 +15,8 @@ Describe compound requests with independent fields instead of collapsing them in
 
 The selected action is authoritative. Query, conversation, Markdown edit, and Markdown create executors perform that action and do not reclassify the request. For Markdown edits, edit_goal, edit_operation, and edit_destination are execution inputs, not hints. Do not treat an active document or selection as proof that the user requested an edit.
 
+When payload.candidate_route is present, treat it only as a proposed route to audit. Independently compare every clause and requested effect in payload.message with the candidate fields. Audit routing completeness only; do not introduce clarification for execution details that a selected workflow handles. Return a complete corrected route when any capability, retrieval phase, document operation, persistence effect, or edit detail is missing or unnecessary. Return a semantically identical route when the candidate is already complete. Do not preserve a candidate field merely because it is structurally valid.
+
 Decide those fields from every clause in the current message before choosing `action`:
 1. Choose retrieval_source from whether the requested result needs a retrieval phase, using this precedence:
    - `web` for a factual answer or evidence request that explicitly requires public web or internet retrieval and web search is allowed.
