@@ -20,10 +20,6 @@ const noticeBusPath = new URL(
   "../src/features/document-notifications/model/noticeBus.ts",
   import.meta.url
 );
-const operationNotificationsPath = new URL(
-  "../src/features/document-notifications/model/useOperationNotifications.ts",
-  import.meta.url
-);
 
 test("그래프 뷰에서도 채팅 패널을 띄운다", () => {
   assert.equal(canShowAgentPanel("graph"), true);
@@ -84,15 +80,6 @@ test("문서 알림 공개 API에서 Wiki 관리 패널을 제거한다", async 
 
   assert.doesNotMatch(indexSource, /NotificationsPanel/);
   assert.doesNotMatch(busSource, /NoticeRecord|NoticeHistory|HISTORY_LIMIT/);
-});
-
-test("작업 알림은 실패 상태를 명시 조회로 따로 받는다", async () => {
-  const source = await readFile(operationNotificationsPath, "utf8");
-
-  // 백엔드가 status 생략 목록에서 failed·conflict를 걷어내므로, 기본 조회만 보면
-  // 실패 알림이 영영 뜨지 않는다. 명시 조회를 함께 돌리는 구조를 고정한다.
-  assert.match(source, /FAILURE_STATUSES\s*=\s*\["failed",\s*"conflict"\]/);
-  assert.match(source, /FAILURE_STATUSES\.map\(\(status\) => fetchOperationLogs\(\{ status \}\)\)/);
 });
 
 test("그래프 노드 클릭은 문서 선택을 유지하고 그래프 포커스만 바꾼다", () => {

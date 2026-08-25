@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { fetchOperationLogs, type OperationLogItem } from "@/entities/operation-log";
+import { fetchOperationLogs } from "@/entities/operation-log";
 import { useUserPreferences } from "@/entities/user";
+import { collectTerminalNotices, nextKnownStatuses } from "./operationNotices";
 import { publishNotice } from "./noticeBus";
 
 const POLL_INTERVAL_MS = 15_000;
-const TERMINAL_STATUSES = new Set(["succeeded", "partially_succeeded", "failed", "conflict"]);
 
 /**
  * 백엔드는 status를 생략한 목록에서 실패를 걷어낸다(되돌릴 대상이 없어 목록에서 할 일이 없다).
@@ -14,32 +14,13 @@ const TERMINAL_STATUSES = new Set(["succeeded", "partially_succeeded", "failed",
  */
 const FAILURE_STATUSES = ["failed", "conflict"] as const;
 
-// ingest는 문서 처리 알림이 담당하고, document_edit은 채팅 화면에서 즉시 확인되므로 제외한다.
-const WATCHED_TYPES: Record<string, string> = {
-  lint: "Lint",
-  restore: "복구"
-};
-
-function isTerminal(status: string) {
-  return TERMINAL_STATUSES.has(status);
-}
-
-function noticeFor(item: OperationLogItem) {
-  const label = WATCHED_TYPES[item.operation_type];
-  const isFailed = item.status === "failed" || item.status === "conflict";
-  return {
-    kind: isFailed ? ("failed" as const) : ("completed" as const),
-    title: `${label} ${isFailed ? "실패" : "완료"}`,
-    message: item.summary || `${label} 작업이 ${isFailed ? "실패했습니다." : "완료되었습니다."}`
-  };
-}
-
 /**
  * 오래 걸리는 AI 작업(lint·restore)의 종결을 감지해 알림을 발행한다.
  * ai-operation-logs 목록을 폴링하며, 진행 중 → 종결 전이와
  * 폴링 사이에 새로 나타난 종결 작업을 모두 잡는다. 유형별로 켜고 끌 수 있다.
  *
  * 성공·부분 성공은 기본 목록에, 실패는 status 명시 조회에 나온다. 셋을 합쳐야 종결을 빠짐없이 본다.
+ * 조회를 나눠 하므로 하나가 실패해도 나머지로 알림을 발행한다. 전부 실패했을 때만 건너뛴다.
  */
 export function useOperationNotifications() {
   const { preferences } = useUserPreferences();
@@ -53,36 +34,28 @@ export function useOperationNotifications() {
     let cancelled = false;
 
     async function poll() {
-      let logs: OperationLogItem[];
-      try {
-        const responses = await Promise.all([
-          fetchOperationLogs(),
-          ...FAILURE_STATUSES.map((status) => fetchOperationLogs({ status }))
-        ]);
-        logs = responses.flatMap((response) => response.logs);
-      } catch {
-        // 워크스페이스 미선택·일시적 실패는 다음 폴링에서 재시도한다.
-        return;
-      }
+      const settled = await Promise.allSettled([
+        fetchOperationLogs(),
+        ...FAILURE_STATUSES.map((status) => fetchOperationLogs({ status }))
+      ]);
       if (cancelled) return;
 
-      const previous = knownStatusesRef.current;
-      const next = new Map(logs.map((log) => [log.operation_id, log.status]));
+      const received = settled.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : []);
+      // 워크스페이스 미선택·일시적 실패는 다음 폴링에서 재시도한다.
+      if (received.length === 0) return;
 
-      if (previous) {
-        for (const log of logs) {
-          const typeEnabled = log.operation_type === "lint" ? lintEnabled
-            : log.operation_type === "restore" ? restoreEnabled
-            : false;
-          if (!typeEnabled || !isTerminal(log.status)) continue;
-          const previousStatus = previous.get(log.operation_id);
-          // 진행 중이었다가 종결됐거나, 폴링 사이에 새로 나타나 이미 종결된 작업
-          if (!previousStatus || !isTerminal(previousStatus)) {
-            publishNotice(noticeFor(log));
-          }
-        }
+      const logs = received.flatMap((response) => response.logs);
+      const previous = knownStatusesRef.current;
+
+      for (const notice of collectTerminalNotices(previous, logs, {
+        lint: lintEnabled,
+        restore: restoreEnabled
+      })) {
+        publishNotice(notice);
       }
-      knownStatusesRef.current = next;
+      knownStatusesRef.current =
+        nextKnownStatuses(previous, logs, received.length === settled.length);
     }
 
     void poll();

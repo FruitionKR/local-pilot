@@ -66,12 +66,14 @@ public class LintOperationApplier {
             applyPage(operation, page, now);
         }
 
+        // 반영 건수로 실패와 부분 성공을 가르는 규칙은 OperationApplier와 같다. 0건이면
+        // 되돌릴 대상이 없어 "일부만 반영했습니다"가 사실과 다르고, 목록 필터도 통과해 버린다.
         OperationStatus status = request.isFailure()
-                ? OperationStatus.partially_succeeded
+                ? (ordered.isEmpty() ? OperationStatus.failed : OperationStatus.partially_succeeded)
                 : OperationStatus.succeeded;
         if (status != OperationStatus.succeeded) {
             // 오류 원문은 운영자용이라 로그로만 남기고, 저장하는 요약은 사용자용 문구로 쓴다.
-            log.warn("[lint 부분 실패] operationId={} reason={}", operationId, request.summary());
+            log.warn("[lint 실패] operationId={} status={} reason={}", operationId, status, request.summary());
         }
         String summary = status == OperationStatus.succeeded
                 ? request.summary()
