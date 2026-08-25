@@ -58,6 +58,8 @@ export type AgentTurnResult = {
     confidence: number;
     reason: string;
     edit_goal: string | null;
+    edit_operation: "replace" | "insert_after" | null;
+    edit_destination: "target" | "document_end" | null;
   };
   message: string | null;
   chat: { answer: string } | null;
@@ -224,8 +226,10 @@ export function prepareMarkdownEditPreview(
   if (!edit.replacement_markdown.trim()) {
     throw new Error("비어 있는 Markdown 편집 결과는 적용할 수 없습니다.");
   }
-  if (edit.operation === "insert_after" && actualTarget.type !== "current_section") {
-    throw new Error("이어 쓰기는 현재 section에서만 적용할 수 있습니다.");
+  if (edit.operation === "insert_after"
+    && actualTarget.type !== "current_section"
+    && actualTarget.type !== "whole_document") {
+    throw new Error("이어 쓰기 대상이 section 또는 전체 문서가 아닙니다.");
   }
 
   const sourceLines = request.editorSnapshot.markdown.split("\n");

@@ -81,7 +81,9 @@ function markdownEditResponse(overrides = {}) {
         action: "markdown_edit",
         confidence: 0.95,
         reason: "편집 요청",
-        edit_goal: "cleanup"
+        edit_goal: "cleanup",
+        edit_operation: "replace",
+        edit_destination: "target"
       },
       message: null,
       chat: null,
@@ -155,6 +157,43 @@ test("insert_after는 현재 section 뒤에 새 Markdown을 추가한다", () =>
     { type: "insert", text: "" },
     { type: "insert", text: "추가 본문" }
   ]);
+});
+
+test("document_end insert_after는 기존 문서를 지우지 않고 맨 아래에 추가한다", () => {
+  const request = buildAgentTurnRequest("문서 아래에 추가해줘", markdownEditContext, agentRequestContext);
+  const response = markdownEditResponse({
+    result: {
+      ...markdownEditResponse().result,
+      route: {
+        ...markdownEditResponse().result.route,
+        edit_goal: "other",
+        edit_operation: "insert_after",
+        edit_destination: "document_end"
+      },
+      edit: {
+        operation: "insert_after",
+        requested_target: {
+          type: "current_section",
+          start_line: 1,
+          end_line: 3
+        },
+        actual_target: {
+          type: "whole_document",
+          start_line: 1,
+          end_line: 3
+        },
+        scope_expanded: true,
+        changed: true,
+        summary: "문서 끝에 추가했습니다.",
+        replacement_markdown: "\n## 추가\n\n새 본문"
+      }
+    }
+  });
+
+  const preview = prepareMarkdownEditPreview(request, response);
+
+  assert.equal(preview.nextMarkdown, "# 제목\n\n본문\n\n## 추가\n\n새 본문");
+  assert.match(preview.nextMarkdown, /^# 제목\n\n본문/);
 });
 
 test("응답 requested target이 요청 target과 다르면 preview를 만들지 않는다", () => {

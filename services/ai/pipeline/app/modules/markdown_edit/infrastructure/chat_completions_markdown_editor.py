@@ -26,7 +26,6 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditRequest,
     MarkdownEditResult,
     MarkdownEditTarget,
-    operation_for_edit_goal,
 )
 from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownCreateOutputContractError,
@@ -50,11 +49,17 @@ from app.modules.markdown_edit.infrastructure.markdown_source_range import (
     source_range_payload,
     validate_markdown_target_boundary,
 )
-from app.modules.markdown_edit.infrastructure.markdown_syntax_validation import validate_markdown_syntax
-from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
+from app.modules.markdown_edit.infrastructure.markdown_syntax_validation import (
+    validate_markdown_syntax,
+)
+from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
+    ChatClientConfig,
+    ChatCompletionsJsonClient,
+)
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
-from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
-
+from app.modules.wiki_schema.infrastructure.active_schema_prompt import (
+    get_active_schema_prompt,
+)
 
 DEFAULT_MARKDOWN_EDIT_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "markdown_edit.system.md"
 DEFAULT_MARKDOWN_CREATE_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "markdown_create.system.md"
@@ -87,7 +92,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         validate_markdown_target_boundary(request.markdown, request.target)
         scope = build_markdown_target_scope(request.markdown, request.target, self._context_lines)
         scoped_request = replace(request, markdown=scope.markdown)
-        requested_operation = operation_for_edit_goal(request.edit_goal)
+        requested_operation = request.edit_operation
         source_range_plan = build_source_range_plan(scoped_request)
         if source_range_plan is not None:
             return self._generate_source_range_edit(scoped_request, source_range_plan, scope)
@@ -96,7 +101,6 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         payload = {
             "instruction": scoped_request.instruction,
             "edit_goal": scoped_request.edit_goal,
-            "requested_operation": requested_operation,
             "conversation_summary": scoped_request.conversation_summary,
             "reference_context": scoped_request.reference_context or {},
             "requested_target": {
@@ -107,6 +111,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "markdown": protected.markdown,
             "editable_context": _editable_context_payload(scope, protected.markdown),
         }
+        payload["requested_operation"] = requested_operation
         system_prompt = with_response_preferences(
             with_schema_and_skill_prompt(
                 self._system_prompt,
@@ -135,7 +140,14 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         if result is not None:
             retry_payload["previous_replacement_markdown"] = result[2]
         try:
-            retried = self._complete_edit(system_prompt, retry_payload, request, protected, scope)
+            retried = self._complete_edit(
+                system_prompt,
+                retry_payload,
+                request,
+                protected,
+                scope,
+                is_retry=True,
+            )
         except JsonParseError as exc:
             raise MarkdownOutputContractError([JSON_OBJECT_CONTRACT_FAILURE], "") from exc
         if retried[1]:
@@ -231,7 +243,13 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         request: MarkdownEditRequest,
         protected: ProtectedMarkdown,
         scope: MarkdownTargetScope,
+        is_retry: bool = False,
     ) -> tuple[MarkdownEditResult, list[str], str]:
+        if is_retry:
+            system_prompt += (
+                "\n\nThe previous output failed trusted application validation. "
+                "Return a different result that satisfies every system contract."
+            )
         raw = self._client.complete_json(
             system_prompt,
             json.dumps(payload, ensure_ascii=False, indent=2),
@@ -239,12 +257,22 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         result, failures = _normalize_edit_result(
             raw,
             request.target,
-            operation_for_edit_goal(request.edit_goal),
+            request.edit_operation,
         )
+        if request.edit_operation == "insert_after":
+            result = replace(
+                result,
+                edit=replace(result.edit, target=request.target),
+            )
         protected_replacement = result.edit.replacement_markdown
         restored, protected_failures = protected.restore(protected_replacement)
         failures.extend(protected_failures)
-        actual_request = _actual_target_request(request, result.edit.actual_target, scope, failures)
+        actual_request = _actual_target_request(
+            request,
+            result.edit.actual_target,
+            scope,
+            failures,
+        )
         restored = repair_markdown_output(actual_request, restored)
         failures.extend(validate_markdown_output(actual_request, restored))
         failures.extend(validate_markdown_syntax(restored))
@@ -280,7 +308,11 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             document_creation=True,
         )
         try:
-            result, failures, raw = self._complete_markdown_create(system_prompt, payload)
+            result, failures, raw = self._complete_markdown_create(
+                system_prompt,
+                payload,
+                request,
+            )
         except JsonParseError:
             result = None
             failures = [JSON_OBJECT_CONTRACT_FAILURE]
@@ -296,7 +328,11 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         if raw is not None:
             retry_payload["previous_generated_markdown"] = raw
         try:
-            retried, retry_failures, retried_raw = self._complete_markdown_create(system_prompt, retry_payload)
+            retried, retry_failures, retried_raw = self._complete_markdown_create(
+                system_prompt,
+                retry_payload,
+                request,
+            )
         except JsonParseError as exc:
             raise MarkdownCreateOutputContractError([JSON_OBJECT_CONTRACT_FAILURE], {}) from exc
         if retry_failures:
@@ -307,6 +343,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         self,
         system_prompt: str,
         payload: dict[str, object],
+        request: MarkdownCreateRequest,
     ) -> tuple[MarkdownCreateResult, list[str], dict[str, Any]]:
         raw = self._client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
         failures: list[str] = []
@@ -380,7 +417,9 @@ def _normalize_edit_result(
     requested_operation: EditOperationType,
 ) -> tuple[MarkdownEditResult, list[str]]:
     failures: list[str] = []
-    if value.get("operation") != requested_operation:
+    raw_operation = value.get("operation")
+    operation = requested_operation
+    if raw_operation != requested_operation:
         failures.append(f"operation must be {requested_operation}")
     actual_target = _normalize_actual_target(
         value.get("actual_target"),
@@ -395,7 +434,7 @@ def _normalize_edit_result(
     )
     result = MarkdownEditResult(
         edit=MarkdownEditOperation(
-            operation=requested_operation,
+            operation=operation,
             target=actual_target,
             requested_target=requested_target,
             summary=summary,
@@ -407,8 +446,6 @@ def _normalize_edit_result(
     if not result.edit.replacement_markdown.strip():
         failures.append("replacement_markdown must not be empty")
     return result, failures
-
-
 def _normalize_actual_target(
     value: object,
     requested_target: MarkdownEditTarget,
@@ -445,7 +482,15 @@ def _actual_target_request(
     failures: list[str],
 ) -> MarkdownEditRequest:
     lines = re.split(r"\r\n|\r|\n", request.markdown)
-    if actual_target.start_line < scope.start_line or actual_target.end_line > scope.end_line:
+    appends_to_document = (
+        request.edit_operation == "insert_after"
+        and request.edit_destination == "document_end"
+        and actual_target.type == "whole_document"
+    )
+    if (
+        not appends_to_document
+        and (actual_target.start_line < scope.start_line or actual_target.end_line > scope.end_line)
+    ):
         failures.append("actual_target must stay within editable_context")
     if actual_target.start_line < 1:
         failures.append("actual_target.start_line must be greater than 0")
@@ -454,19 +499,27 @@ def _actual_target_request(
     if actual_target.end_line > len(lines):
         failures.append("actual_target.end_line must not exceed the Markdown line count")
     if (
-        actual_target.start_line > request.target.start_line
-        or actual_target.end_line < request.target.end_line
+        not appends_to_document
+        and (
+            actual_target.start_line > request.target.start_line
+            or actual_target.end_line < request.target.end_line
+        )
     ):
         failures.append("actual_target must contain requested_target")
     if actual_target.type == "whole_document" and (
         actual_target.start_line != 1 or actual_target.end_line != len(lines)
     ):
         failures.append("whole_document actual_target must cover the entire Markdown document")
-    if (
-        operation_for_edit_goal(request.edit_goal) == "insert_after"
-        and actual_target.type != "current_section"
-    ):
-        failures.append("insert_after operation requires a current_section actual_target")
+    if request.edit_operation == "insert_after":
+        expected_target_type = (
+            "whole_document"
+            if request.edit_destination == "document_end"
+            else "current_section"
+        )
+        if actual_target.type != expected_target_type:
+            failures.append(
+                f"insert_after operation requires a {expected_target_type} actual_target"
+            )
 
     target_range_valid = (
         actual_target.start_line >= 1

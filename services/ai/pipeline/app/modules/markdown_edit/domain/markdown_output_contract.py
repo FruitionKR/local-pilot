@@ -84,6 +84,9 @@ def validate_markdown_create_output(document: GeneratedMarkdownDocument) -> list
 
 
 def protect_markdown(request: MarkdownEditRequest) -> ProtectedMarkdown:
+    if request.edit_operation != "replace":
+        return ProtectedMarkdown(markdown=request.markdown, fragments=())
+
     preserves_structured_markdown = request.edit_goal in PROTECTED_EDIT_GOALS
     preserves_task_markers = request.edit_goal in TASK_LIST_EDIT_GOALS
     if (not preserves_structured_markdown and not preserves_task_markers) or _explicit_structure_change(
@@ -132,13 +135,15 @@ def validate_markdown_output(request: MarkdownEditRequest, replacement: str) -> 
         if re.match(r"^\s*(?:[-*+]\s+|\d+\.\s+)", replacement):
             failures.append("plain-text edit must not add a list marker")
 
-    if request.edit_goal in PROTECTED_EDIT_GOALS:
+    if request.edit_operation == "replace" and request.edit_goal in PROTECTED_EDIT_GOALS:
         failures.extend(_protected_content_failures(request.markdown, replacement))
         failures.extend(_protected_fragment_failures(request, replacement))
 
     if request.edit_goal == "shorten":
         failures.extend(_shortening_failures(request.markdown, instruction, replacement))
-    if _asks_for_addition_only(request):
+    if request.edit_operation == "insert_after":
+        failures.extend(_insert_after_repeat_failures(request.markdown, replacement))
+    if request.edit_operation == "replace" and _asks_for_addition_only(request):
         failures.extend(_additive_preservation_failures(request.markdown, replacement))
 
     return failures
@@ -153,7 +158,7 @@ def _edit_goal_shape_failures(
     if request.edit_goal == "checklist":
         if not nonempty_lines or not all(re.match(r"^- \[ \] ", line) for line in nonempty_lines):
             failures.append("checklist items must all start with `- [ ] `")
-    if request.edit_goal == "insert_after":
+    if request.edit_operation == "insert_after":
         source_heading = next(iter(_atx_heading_lines(request.markdown)), "")
         if source_heading and source_heading in _atx_heading_lines(replacement):
             failures.append("insert_after output must not repeat the current section heading")
@@ -246,6 +251,16 @@ def _additive_preservation_failures(source: str, replacement: str) -> list[str]:
     for source_line in (line for line in source.splitlines() if line.strip()):
         if not any(line == source_line for line in replacement_lines):
             return ["additive edit must preserve every existing non-empty line in order"]
+    return []
+
+
+def _insert_after_repeat_failures(source: str, replacement: str) -> list[str]:
+    normalized_replacement = replacement.replace("\\r\\n", "\n").replace("\\n", "\n")
+    if source.strip() and not _additive_preservation_failures(
+        source,
+        normalized_replacement,
+    ):
+        return ["insert_after output must not repeat the existing target"]
     return []
 
 

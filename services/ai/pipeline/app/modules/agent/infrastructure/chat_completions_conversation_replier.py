@@ -14,15 +14,17 @@ from app.core.llm_env import (
 from app.core.response_preferences import with_response_preferences
 from app.modules.agent.application.ports import ConversationReplierPort
 from app.modules.agent.domain.entities import AgentTurnRequest
+from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
 )
-
+from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
 DEFAULT_CONVERSATION_REPLY_PROMPT = (
     Path(__file__).resolve().parents[4] / "prompts" / "conversation_reply.system.md"
 )
+JSON_OBJECT_CONTRACT_FAILURE = "conversation reply output must be a JSON object"
 PRODUCT_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
@@ -58,14 +60,32 @@ class ChatCompletionsConversationReplier(ConversationReplierPort):
             request.output_language,
             request.response_length,
         )
-        reply = self._client.complete_text(
-            system_prompt,
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            trusted_identifiers=(current_date,),
-        ).strip()
-        if not reply:
-            raise RuntimeError("Conversation reply must not be empty.")
-        return reply
+        try:
+            raw = self._client.complete_json(
+                system_prompt,
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                trusted_identifiers=(current_date,),
+            )
+        except JsonParseError:
+            retry_payload = {
+                **payload,
+                "contract_failures": [JSON_OBJECT_CONTRACT_FAILURE],
+                "retry_instruction": "Return the required JSON object again.",
+            }
+            try:
+                raw = self._client.complete_json(
+                    system_prompt,
+                    json.dumps(retry_payload, ensure_ascii=False, indent=2),
+                    trusted_identifiers=(current_date,),
+                )
+            except JsonParseError as exc:
+                raise AgentTurnRouteContractError(
+                    [JSON_OBJECT_CONTRACT_FAILURE]
+                ) from exc
+        message = raw.get("message")
+        if not isinstance(message, str) or not message.strip():
+            raise AgentTurnRouteContractError(["message must be a non-empty string"])
+        return message.strip()
 
 
 def build_conversation_replier(
@@ -91,7 +111,7 @@ def build_conversation_replier(
                 temperature=None,
                 timeout_seconds=int_env("CONVERSATION_REPLY_LLM_TIMEOUT_SECONDS", 180),
                 max_tokens=optional_int_env("CONVERSATION_REPLY_LLM_MAX_TOKENS"),
-                json_mode=False,
+                json_mode=True,
                 provider=resolved_provider,
             )
         ),

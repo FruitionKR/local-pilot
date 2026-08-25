@@ -67,6 +67,8 @@ class ConversationAgentRoute:
     document_operation: Literal["none", "create", "edit"]
     persist: bool
     edit_goal: str | None = None
+    edit_operation: Literal["replace", "insert_after"] | None = None
+    edit_destination: Literal["target", "document_end"] | None = None
     selected_skill_id: str | None = None
 
 

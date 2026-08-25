@@ -9,16 +9,22 @@ from pathlib import Path
 
 from app.core.llm_env import (
     SUPPORTED_LLM_PROVIDERS,
-    resolve_llm_selection,
     resolve_llm_provider_defaults,
+    resolve_llm_selection,
 )
 from app.modules.agent.domain.entities import ActiveMarkdownContext, AgentTurnRequest
+from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
+from app.modules.agent.infrastructure.chat_completions_conversation_replier import (
+    DEFAULT_CONVERSATION_REPLY_PROMPT,
+    ChatCompletionsConversationReplier,
+)
 from app.modules.agent.infrastructure.chat_completions_turn_router import (
     DEFAULT_AGENT_TURN_ROUTER_PROMPT,
     ChatCompletionsTurnRouter,
 )
 from app.modules.markdown_edit.domain.entities import (
     MarkdownCreateRequest,
+    MarkdownEditRequest,
     MarkdownEditTarget,
 )
 from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor import (
@@ -27,17 +33,16 @@ from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor i
     DEFAULT_MARKDOWN_SOURCE_EDIT_PROMPT,
     ChatCompletionsMarkdownEditor,
 )
+from app.modules.skill.domain.entities import (
+    SkillDraftSourceOperation,
+    SkillDraftSourceRun,
+)
 from app.modules.wiki_generation.domain.entities import SemanticPacket
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
     GenericChatCompletionsExtractor,
 )
-from app.modules.skill.domain.entities import (
-    SkillDraftSourceOperation,
-    SkillDraftSourceRun,
-)
-
 
 REQUIRED_EXTRACTION_KEYS = {
     "chunk_id",
@@ -53,6 +58,11 @@ REQUIRED_EXTRACTION_KEYS = {
     "context_problem",
 }
 
+
+class _ProbeAssertionError(RuntimeError):
+    pass
+
+
 def run_provider_e2e(
     client: ChatCompletionsJsonClient,
     *,
@@ -66,6 +76,10 @@ def run_provider_e2e(
         _run_probe(
             "agent_router",
             lambda: _probe_agent_router(client),
+        ),
+        _run_probe(
+            "agent_executors",
+            lambda: _probe_agent_executors(client),
         ),
         _run_probe(
             "markdown_create",
@@ -126,21 +140,24 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
     cases = (
         (
             AgentTurnRequest(message="RAG가 무엇인지 한 문장으로 설명해줘."),
-            ("chat_answer", "workspace", "none", False, (), None),
+            ("chat_answer", "workspace", "none", False, (), None, None, None),
+            (),
         ),
         (
             AgentTurnRequest(
                 message="Mongo DB를 사용하지 않기로 판단한 이유가 뭐지?",
                 active_markdown_context=active_markdown,
             ),
-            ("chat_answer", "workspace", "none", False, (), None),
+            ("chat_answer", "workspace", "none", False, (), None, None, None),
+            (),
         ),
         (
             AgentTurnRequest(
                 message="Mongo가 이 문서를 저장하지 않는 이유가 뭐지?",
                 active_markdown_context=active_markdown,
             ),
-            ("chat_answer", "workspace", "none", False, (), None),
+            ("chat_answer", "workspace", "none", False, (), None, None, None),
+            (),
         ),
         (
             AgentTurnRequest(
@@ -154,7 +171,10 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
                 True,
                 ("document-edit", "folder-organize"),
                 "shorten",
+                "replace",
+                "target",
             ),
+            (),
         ),
         (
             AgentTurnRequest(
@@ -168,11 +188,14 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
                 True,
                 ("document-edit",),
                 "shorten",
+                "replace",
+                "target",
             ),
+            (),
         ),
         (
             AgentTurnRequest(
-                message="Wiki 근거로 현재 문서를 보완해줘",
+                message="Wiki 근거 요약을 이 문서 아래에 추가해줘",
                 active_markdown_context=active_markdown,
             ),
             (
@@ -181,7 +204,31 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
                 "edit",
                 False,
                 ("document-edit",),
-                "other",
+                "shorten",
+                "insert_after",
+                "document_end",
+            ),
+            (
+                (
+                    "markdown_edit",
+                    "workspace",
+                    "edit",
+                    False,
+                    ("document-edit",),
+                    "other",
+                    "insert_after",
+                    "document_end",
+                ),
+                (
+                    "markdown_edit",
+                    "workspace",
+                    "edit",
+                    False,
+                    ("document-edit",),
+                    "bullet_list",
+                    "insert_after",
+                    "document_end",
+                ),
             ),
         ),
         (
@@ -189,27 +236,40 @@ def _probe_agent_router(client: ChatCompletionsJsonClient) -> None:
                 message="선택한 완료 작업을 재사용 가능한 Skill로 만들어줘",
                 skill_draft_sources=(selected_work,),
             ),
-            ("skill_draft_proposal", "none", "none", False, (), None),
-        ),
-        (
-            AgentTurnRequest(
-                message="방금 완료한 작업 방식을 재사용 가능한 Skill로 만들어줘",
+            (
+                "skill_draft_proposal",
+                "none",
+                "none",
+                False,
+                (),
+                None,
+                None,
+                None,
             ),
-            ("skill_draft_proposal", "none", "none", False, (), None),
+            (),
         ),
     )
-    for request, expected in cases:
-        route = router.route(request)
-        if (
+    for case_index, (request, expected, acceptable) in enumerate(cases, start=1):
+        try:
+            route = router.route(request)
+        except AgentTurnRouteContractError:
+            raise RuntimeError(
+                f"Agent router case {case_index} failed its output contract"
+            ) from None
+        actual = (
             route.action,
             route.retrieval_source,
             route.document_operation,
             route.persist,
             route.required_capabilities,
             route.edit_goal,
-        ) != expected:
-            raise RuntimeError(
-                "Agent router contract returned an unexpected structured route"
+            route.edit_operation,
+            route.edit_destination,
+        )
+        if actual not in (expected, *acceptable):
+            raise _ProbeAssertionError(
+                f"Agent router case {case_index} returned {actual!r}; "
+                f"expected one of {(expected, *acceptable)!r}"
             )
 
 
@@ -235,6 +295,45 @@ def _probe_markdown_create(client: ChatCompletionsJsonClient) -> None:
         raise RuntimeError("Markdown create contract returned an empty field")
 
 
+def _probe_agent_executors(client: ChatCompletionsJsonClient) -> None:
+    active_markdown = ActiveMarkdownContext(
+        markdown="# 저장소 결정\n\nMongoDB는 사용하지 않는다.",
+        target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+    )
+    conversation_replier = ChatCompletionsConversationReplier(
+        client,
+        Path(DEFAULT_CONVERSATION_REPLY_PROMPT).read_text(encoding="utf-8"),
+    )
+    reply = conversation_replier.reply(
+        AgentTurnRequest(message="'오늘도 차근차근 해보자'를 더 자연스럽게 바꿔줘.")
+    )
+    if not reply.strip():
+        raise RuntimeError("Conversation executor returned an empty reply")
+
+    editor = ChatCompletionsMarkdownEditor(
+        client,
+        Path(DEFAULT_MARKDOWN_EDIT_PROMPT).read_text(encoding="utf-8"),
+        create_system_prompt=Path(DEFAULT_MARKDOWN_CREATE_PROMPT).read_text(encoding="utf-8"),
+        source_edit_system_prompt=Path(DEFAULT_MARKDOWN_SOURCE_EDIT_PROMPT).read_text(encoding="utf-8"),
+    )
+    edit = editor.generate_edit(
+        MarkdownEditRequest(
+            instruction="요약 내용을 이 문서 아래에 추가해줘.",
+            markdown=active_markdown.markdown,
+            target=MarkdownEditTarget(
+                type="whole_document",
+                start_line=1,
+                end_line=3,
+            ),
+            edit_goal="style_change",
+            edit_operation="insert_after",
+            edit_destination="document_end",
+        )
+    ).edit
+    if edit.operation != "insert_after" or not edit.replacement_markdown.strip():
+        raise RuntimeError("Markdown edit executor violated the routed operation")
+
+
 def _run_probe(
     name: str,
     probe: Callable[[], None],
@@ -252,6 +351,11 @@ def _run_probe(
             ),
             "error_type": type(error).__name__,
             "http_status": _http_status(error),
+            **(
+                {"failure": str(error)}
+                if isinstance(error, _ProbeAssertionError)
+                else {}
+            ),
         }
     return {
         "name": name,

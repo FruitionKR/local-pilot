@@ -3,32 +3,58 @@ import re
 from collections.abc import Callable
 from dataclasses import replace
 
-from app.modules.agent.application.ports import AgentTurnRouterPort, ConversationReplierPort
-from app.modules.agent.domain.exceptions import AgentConfigurationError
+from app.modules.agent.application.ports import (
+    AgentTurnRouterPort,
+    ConversationReplierPort,
+)
 from app.modules.agent.domain.entities import (
+    AgentAction,
+    AgentConversationContext,
     AgentTurnRequest,
     AgentTurnResult,
     AgentTurnRoute,
     PendingSkillProposal,
+    RetrievalSource,
 )
-from app.modules.agent_run.application.ports import AgentRunManagementRepositoryPort, AgentRunStarterPort
-from app.modules.agent_run.domain.entities import StartAgentRunContent, StartAgentRunRequest
-from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
-from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
+from app.modules.agent.domain.exceptions import AgentConfigurationError
+from app.modules.agent_run.application.ports import (
+    AgentRunManagementRepositoryPort,
+    AgentRunStarterPort,
+)
+from app.modules.agent_run.domain.entities import (
+    StartAgentRunContent,
+    StartAgentRunRequest,
+)
+from app.modules.markdown_edit.application.generate_markdown_document import (
+    GenerateMarkdownDocumentUseCase,
+)
+from app.modules.markdown_edit.application.generate_markdown_edit import (
+    GenerateMarkdownEditUseCase,
+)
 from app.modules.markdown_edit.domain.entities import (
     MarkdownCreateRequest,
     MarkdownEditOperation,
     MarkdownEditRequest,
     MarkdownEditTarget,
 )
-from app.modules.markdown_edit.domain.markdown_target_scope import apply_markdown_edit, markdown_line_count
+from app.modules.markdown_edit.domain.markdown_target_scope import (
+    apply_markdown_edit,
+    markdown_line_count,
+    markdown_line_range,
+)
 from app.modules.query.application.answer_query import AnswerQueryUseCase
-from app.modules.query.application.conversation_context_resolver import conversation_messages_text, update_conversation_summary
+from app.modules.query.application.conversation_context_resolver import (
+    conversation_messages_text,
+    update_conversation_summary,
+)
 from app.modules.query.application.ports import ConversationSummarizerPort
 from app.modules.query.domain.entities import ConversationContext, QueryAnswer
 from app.modules.skill.application.author_skill import AuthorSkillUseCase
-from app.modules.skill.application.select_skill import PreparedSkillSelection, SelectSkillUseCase
 from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
+from app.modules.skill.application.select_skill import (
+    PreparedSkillSelection,
+    SelectSkillUseCase,
+)
 from app.modules.skill.domain.entities import (
     Skill,
     SkillAuthoringProposal,
@@ -37,7 +63,6 @@ from app.modules.skill.domain.entities import (
 )
 from app.modules.skill.domain.policy import validate_skill_name
 from app.modules.skill.domain.safety import inspect_skill_instructions
-
 
 CLARIFY_MARKDOWN_TARGET_MESSAGE = "수정할 Markdown 범위를 선택한 뒤 다시 요청해 주세요."
 CLARIFY_MARKDOWN_DOCUMENT_MESSAGE = "수정할 Markdown 문서를 연 뒤 다시 요청해 주세요."
@@ -123,6 +148,8 @@ class HandleAgentTurnUseCase:
                     confidence=0.0,
                     reason="The selected Skill does not cover every required capability.",
                     edit_goal=None,
+                    edit_operation=None,
+                    edit_destination=None,
                     selected_skill_id=None,
                     skill_candidates=(),
                     retrieval_source="none",
@@ -145,19 +172,7 @@ class HandleAgentTurnUseCase:
                 skill_candidates=candidates,
             )
         if route.action == "markdown_create":
-            reference_context = self._resolve_reference_context(request, route)
-            result = self._markdown_create_use_case.execute(
-                MarkdownCreateRequest(
-                    instruction=request.message,
-                    workspace_id=request.workspace_id,
-                    user_id=request.user_id,
-                    conversation_summary=_conversation_context_text(request),
-                    reference_context=reference_context,
-                    skill_instructions=_skill_instructions(selected_skill),
-                    output_language=request.output_language,
-                )
-            )
-            return AgentTurnResult(action="markdown_create", route=route, generated_markdown=result.document)
+            return self._execute_markdown_create(request, route, selected_skill)
 
         if route.action == "skill_draft_proposal":
             if not request.skill_draft_sources:
@@ -288,6 +303,8 @@ class HandleAgentTurnUseCase:
                         confidence=0.0,
                         reason="Direct mutation intent was not confirmed.",
                         edit_goal=None,
+                        edit_operation=None,
+                        edit_destination=None,
                         selected_skill_id=None,
                         skill_candidates=(),
                         retrieval_source="none",
@@ -342,12 +359,12 @@ class HandleAgentTurnUseCase:
                         ),
                         message=CLARIFY_MARKDOWN_DOCUMENT_MESSAGE,
                     )
-                if route.edit_goal == "insert_after" and (
-                    markdown_context.target is None
-                    or markdown_context.target.type != "current_section"
-                ):
-                    return _clarify_document_change(route, CLARIFY_INSERT_AFTER_TARGET_MESSAGE)
                 target = markdown_context.target or _whole_document_target(markdown_context.markdown)
+                if _missing_current_section(route, target):
+                    return _clarify_document_change(
+                        route,
+                        CLARIFY_INSERT_AFTER_TARGET_MESSAGE,
+                    )
                 edit = (
                     self._confirmed_preview_edit(request, preview_run_id)
                     if reuses_edit_preview
@@ -367,10 +384,13 @@ class HandleAgentTurnUseCase:
                             conversation_summary=_conversation_context_text(request),
                             reference_context=reference_context,
                             edit_goal=route.edit_goal,
+                            edit_operation=route.edit_operation or "replace",
+                            edit_destination=route.edit_destination or "target",
                             skill_instructions=_skill_instructions(selected_skill),
                             output_language=request.output_language,
                         )
                     ).edit
+                route = _resolved_edit_route(route, edit)
                 edited_markdown = apply_markdown_edit(markdown_context.markdown, edit)
                 if not edit.changed or edited_markdown == markdown_context.markdown:
                     return _clarify_document_change(route, NO_CHANGES_MESSAGE)
@@ -406,48 +426,12 @@ class HandleAgentTurnUseCase:
             )
 
         if route.action == "markdown_edit":
-            markdown_context = request.active_markdown_context
-            if markdown_context is None or not markdown_context.markdown.strip():
-                return AgentTurnResult(
-                    action="clarify",
-                    route=route,
-                    message=CLARIFY_MARKDOWN_DOCUMENT_MESSAGE,
-                )
-            if route.edit_goal == "insert_after" and (
-                markdown_context.target is None or markdown_context.target.type != "current_section"
-            ):
-                return AgentTurnResult(
-                    action="clarify",
-                    route=route,
-                    message=CLARIFY_INSERT_AFTER_TARGET_MESSAGE,
-                )
-            target = markdown_context.target or _whole_document_target(markdown_context.markdown)
-            reference_context = self._resolve_reference_context(request, route)
-            result = self._markdown_edit_use_case.execute(
-                MarkdownEditRequest(
-                    instruction=request.message,
-                    markdown=markdown_context.markdown,
-                    target=target,
-                    workspace_id=request.workspace_id,
-                    user_id=request.user_id,
-                    conversation_summary=_conversation_context_text(request),
-                    reference_context=reference_context,
-                    edit_goal=route.edit_goal,
-                    skill_instructions=_skill_instructions(selected_skill),
-                    output_language=request.output_language,
-                )
-            )
-            return AgentTurnResult(
-                action="markdown_edit",
-                route=route,
-                edit=result.edit,
-                source_markdown_sha256=_markdown_sha256(markdown_context.markdown),
-            )
+            return self._execute_markdown_edit(request, route, selected_skill)
 
         if route.action == "clarify":
             if route.edit_goal == "template_transform":
                 message = DEFERRED_TEMPLATE_MESSAGE
-            elif route.edit_goal == "insert_after":
+            elif route.edit_operation == "insert_after":
                 message = CLARIFY_INSERT_AFTER_TARGET_MESSAGE
             else:
                 message = CLARIFY_MARKDOWN_TARGET_MESSAGE
@@ -461,16 +445,9 @@ class HandleAgentTurnUseCase:
             )
 
         if route.action == "conversation_reply":
-            if self._conversation_replier is None:
-                raise AgentConfigurationError("Conversation reply is not configured.")
-            return AgentTurnResult(
-                action="conversation_reply",
-                route=route,
-                message=self._conversation_replier.reply(request),
-            )
+            return self._execute_conversation_reply(request, route)
 
-        answer = self._answer_query(request, route.retrieval_source)
-        return AgentTurnResult(action="chat_answer", route=route, query_answer=answer)
+        return self._execute_chat_answer(request, route)
 
     def _confirmed_preview_edit(
         self,
@@ -546,6 +523,102 @@ class HandleAgentTurnUseCase:
             else self._query_use_case
         )
         return query_use_case.execute(request.message, **query_kwargs)
+
+    def _execute_chat_answer(
+        self,
+        request: AgentTurnRequest,
+        route: AgentTurnRoute,
+    ) -> AgentTurnResult:
+        return AgentTurnResult(
+            action="chat_answer",
+            route=route,
+            query_answer=self._answer_query(
+                _with_active_markdown_reference(request),
+                route.retrieval_source,
+            ),
+        )
+
+    def _execute_conversation_reply(
+        self,
+        request: AgentTurnRequest,
+        route: AgentTurnRoute,
+    ) -> AgentTurnResult:
+        if self._conversation_replier is None:
+            raise AgentConfigurationError("Conversation reply is not configured.")
+        message = self._conversation_replier.reply(request)
+        return AgentTurnResult(
+            action="conversation_reply",
+            route=_non_mutating_route(
+                route,
+                action="conversation_reply",
+                reason=route.reason,
+            ),
+            message=message,
+        )
+
+    def _execute_markdown_edit(
+        self,
+        request: AgentTurnRequest,
+        route: AgentTurnRoute,
+        selected_skill: Skill | None,
+    ) -> AgentTurnResult:
+        markdown_context = request.active_markdown_context
+        if markdown_context is None or not markdown_context.markdown.strip():
+            return _clarify_document_change(route, CLARIFY_MARKDOWN_DOCUMENT_MESSAGE)
+        target = markdown_context.target or _whole_document_target(markdown_context.markdown)
+        if _missing_current_section(route, target):
+            return _clarify_document_change(
+                route,
+                CLARIFY_INSERT_AFTER_TARGET_MESSAGE,
+            )
+        reference_context = self._resolve_reference_context(request, route)
+        result = self._markdown_edit_use_case.execute(
+            MarkdownEditRequest(
+                instruction=request.message,
+                markdown=markdown_context.markdown,
+                target=target,
+                workspace_id=request.workspace_id,
+                user_id=request.user_id,
+                conversation_summary=_conversation_context_text(request),
+                reference_context=reference_context,
+                edit_goal=route.edit_goal,
+                edit_operation=route.edit_operation or "replace",
+                edit_destination=route.edit_destination or "target",
+                skill_instructions=_skill_instructions(selected_skill),
+                output_language=request.output_language,
+            )
+        )
+        resolved_route = _resolved_edit_route(route, result.edit)
+        return AgentTurnResult(
+            action="markdown_edit",
+            route=resolved_route,
+            edit=result.edit,
+            source_markdown_sha256=_markdown_sha256(markdown_context.markdown),
+        )
+
+    def _execute_markdown_create(
+        self,
+        request: AgentTurnRequest,
+        route: AgentTurnRoute,
+        selected_skill: Skill | None,
+    ) -> AgentTurnResult:
+        reference_context = self._resolve_reference_context(request, route)
+        result = self._markdown_create_use_case.execute(
+            MarkdownCreateRequest(
+                instruction=request.message,
+                workspace_id=request.workspace_id,
+                user_id=request.user_id,
+                conversation_summary=_conversation_context_text(request),
+                reference_context=reference_context,
+                skill_instructions=_skill_instructions(selected_skill),
+                output_language=request.output_language,
+            )
+        )
+        return AgentTurnResult(
+            action="markdown_create",
+            route=route,
+            generated_markdown=result.document,
+        )
 
     def _resolve_reference_context(
         self,
@@ -667,7 +740,45 @@ def _direct_mutation_confirmed(
     return (
         direct_route.document_operation in {"none", route.document_operation}
         and direct_route.retrieval_source in {"none", route.retrieval_source}
-        and direct_route.edit_goal in {None, route.edit_goal}
+    )
+
+
+def _resolved_edit_route(
+    route: AgentTurnRoute,
+    edit: MarkdownEditOperation,
+) -> AgentTurnRoute:
+    return replace(
+        route,
+        edit_operation=edit.operation,
+        edit_destination=(
+            "document_end"
+            if edit.operation == "insert_after" and edit.actual_target.type == "whole_document"
+            else "target"
+        ),
+    )
+
+
+def _non_mutating_route(
+    route: AgentTurnRoute,
+    *,
+    action: AgentAction,
+    reason: str,
+    retrieval_source: RetrievalSource = "none",
+) -> AgentTurnRoute:
+    return replace(
+        route,
+        action=action,
+        confidence=1.0,
+        reason=reason,
+        edit_goal=None,
+        edit_operation=None,
+        edit_destination=None,
+        selected_skill_id=None,
+        skill_candidates=(),
+        retrieval_source=retrieval_source,
+        document_operation="none",
+        persist=False,
+        required_capabilities=(),
     )
 
 
@@ -753,6 +864,8 @@ def _clarify_document_change(route: AgentTurnRoute, message: str) -> AgentTurnRe
             retrieval_source="none",
             document_operation="edit" if keeps_edit_context else "none",
             edit_goal=route.edit_goal if keeps_edit_context else None,
+            edit_operation=route.edit_operation if keeps_edit_context else None,
+            edit_destination=route.edit_destination if keeps_edit_context else None,
             persist=False,
         ),
         message=message,
@@ -780,6 +893,41 @@ def _whole_document_target(markdown: str) -> MarkdownEditTarget:
         type="whole_document",
         start_line=1,
         end_line=max(1, markdown_line_count(markdown)),
+    )
+
+
+def _missing_current_section(
+    route: AgentTurnRoute,
+    target: MarkdownEditTarget,
+) -> bool:
+    return (
+        route.edit_operation == "insert_after"
+        and route.edit_destination == "target"
+        and target.type != "current_section"
+    )
+
+
+def _with_active_markdown_reference(request: AgentTurnRequest) -> AgentTurnRequest:
+    markdown_context = request.active_markdown_context
+    if markdown_context is None:
+        return request
+    target = markdown_context.target or _whole_document_target(markdown_context.markdown)
+    conversation_context = request.conversation_context or AgentConversationContext()
+    reference_context = dict(conversation_context.reference_context)
+    reference_context["active_markdown"] = {
+        "target_type": target.type,
+        "markdown": markdown_line_range(
+            markdown_context.markdown,
+            target.start_line,
+            target.end_line,
+        ),
+    }
+    return replace(
+        request,
+        conversation_context=replace(
+            conversation_context,
+            reference_context=reference_context,
+        ),
     )
 
 
@@ -818,6 +966,8 @@ def _reject_unsafe_workspace_mutation(route: AgentTurnRoute) -> AgentTurnResult:
             confidence=1.0,
             reason="unsafe mutation request",
             edit_goal=None,
+            edit_operation=None,
+            edit_destination=None,
             selected_skill_id=None,
             skill_candidates=(),
             retrieval_source="none",

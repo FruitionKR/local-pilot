@@ -620,6 +620,53 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
+    void agentRouteOutcomesLabelsOnlyTrustedSignals() {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        String sessionId = "session_" + suffix;
+        String acceptedRunId = "agent_accepted_" + suffix;
+        String failedRunId = "agent_failed_" + suffix;
+        String unlabeledRunId = "agent_unlabeled_" + suffix;
+        jdbcTemplate.update("""
+                INSERT INTO chat_sessions(id, created_at, user_id, workspace_id)
+                VALUES (?, now(), 'user-1', 'ws-1')
+                """, sessionId);
+        for (String runId : List.of(acceptedRunId, failedRunId, unlabeledRunId)) {
+            String pairId = "pair_" + runId;
+            jdbcTemplate.update("""
+                    INSERT INTO chat_messages(id, content, created_at, pair_id, role, status, session_id)
+                    VALUES (?, '라우팅 질문', now(), ?, 'user', 'completed', ?),
+                           (?, '응답', now(), ?, 'assistant', 'completed', ?)
+                    """, "user_" + runId, pairId, sessionId,
+                    "assistant_" + runId, pairId, sessionId);
+            jdbcTemplate.update(
+                    "UPDATE chat_messages SET run_id = ? WHERE id = ?",
+                    runId, "assistant_" + runId);
+        }
+        jdbcTemplate.update("""
+                INSERT INTO agent_apply_projections(
+                    run_id, workspace_id, user_id, status, result, updated_at, apply_consumed_at
+                ) VALUES
+                    (?, 'ws-1', 'user-1', 'consumed', '{"route":{"action":"markdown_edit"}}', now(), now()),
+                    (?, 'ws-1', 'user-1', 'failed', NULL, now(), NULL),
+                    (?, 'ws-1', 'user-1', 'ready', '{"route":{"action":"chat_answer"}}', now(), NULL)
+                """, acceptedRunId, failedRunId, unlabeledRunId);
+
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT run_id, request_text, COALESCE(route ->> 'action', '') AS action, outcome_label
+                FROM agent_route_outcomes
+                WHERE run_id IN (?, ?, ?)
+                ORDER BY run_id
+                """, acceptedRunId, failedRunId, unlabeledRunId)).containsExactly(
+                Map.of("run_id", acceptedRunId, "request_text", "라우팅 질문",
+                        "action", "markdown_edit", "outcome_label", "accepted"),
+                Map.of("run_id", failedRunId, "request_text", "라우팅 질문",
+                        "action", "", "outcome_label", "technical_failure"),
+                Map.of("run_id", unlabeledRunId, "request_text", "라우팅 질문",
+                        "action", "chat_answer", "outcome_label", "unlabeled")
+        );
+    }
+
+    @Test
     void migration_createsDocumentEditingFoundation() {
         List<String> columns = jdbcTemplate.queryForList(
                 """
