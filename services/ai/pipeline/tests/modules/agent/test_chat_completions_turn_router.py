@@ -274,11 +274,27 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
         self.assertEqual(route.action, "skill_authoring")
 
+    def test_keeps_mutation_unverified_when_direct_verifier_rejects_mutation(self) -> None:
+        response = route_response("workspace_workflow")
+        main_client = SequenceJsonClient([response])
+        direct_client = SequenceJsonClient([route_response("clarify")])
+        router = ParallelAgentTurnRouter(
+            ChatCompletionsTurnRouter(main_client, "system"),  # type: ignore[arg-type]
+            ChatCompletionsDirectMutationIntentVerifier(
+                direct_client,  # type: ignore[arg-type]
+                "direct",
+            ),
+        )
+
+        route = router.route(AgentTurnRequest(message="문서를 저장해줘"))
+
+        self.assertEqual(route.action, "workspace_workflow")
+        self.assertFalse(route.direct_mutation_verified)
+
     def test_keeps_mutation_unverified_when_direct_verifier_breaks_contract(self) -> None:
         response = route_response("workspace_workflow")
         main_client = SequenceJsonClient([response])
-        invalid_direct = route_response("clarify")
-        direct_client = SequenceJsonClient([invalid_direct])
+        direct_client = SequenceJsonClient([{"action": "workspace_workflow"}])
         router = ParallelAgentTurnRouter(
             ChatCompletionsTurnRouter(main_client, "system"),  # type: ignore[arg-type]
             ChatCompletionsDirectMutationIntentVerifier(
@@ -318,7 +334,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             edit_goal="create_from_chat",
         )
         corrected = {**inconsistent, "persist": True}
-        client = SequenceJsonClient([inconsistent, corrected, corrected])
+        client = SequenceJsonClient([inconsistent, corrected])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
 
         with self.assertLogs(
