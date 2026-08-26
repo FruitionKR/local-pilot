@@ -1,16 +1,20 @@
 import json
 import unittest
+from threading import Barrier
 
 from app.modules.agent.domain.entities import (
     AgentConversationContext,
     AgentTurnRequest,
+    AgentTurnRoute,
     PendingSkillProposal,
     SkillCandidate,
 )
 from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.agent.infrastructure.chat_completions_turn_router import (
     DEFAULT_AGENT_TURN_ROUTER_PROMPT,
+    ChatCompletionsDirectMutationIntentVerifier,
     ChatCompletionsTurnRouter,
+    ParallelAgentTurnRouter,
     _local_guard,
 )
 from app.modules.query.domain.entities import (
@@ -164,20 +168,43 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertTrue(route.persist)
         self.assertEqual(len(client.calls), 1)
 
-    def test_routes_document_edit_and_folder_move_as_one_composite_workflow(self) -> None:
-        response = route_response("workspace_workflow")
-        response.update(
+    def test_direct_verifier_corrects_compound_mutation_route(self) -> None:
+        incomplete = route_response("workspace_workflow")
+        incomplete.update(
+            retrieval_source="workspace",
+            document_operation="edit",
+            required_capabilities=["document-edit"],
+            edit_goal="shorten",
+            edit_operation="replace",
+            edit_destination="target",
+        )
+        corrected = {**incomplete}
+        corrected.update(
+            retrieval_source="none",
             document_operation="edit",
             required_capabilities=["folder-organize", "document-edit"],
             edit_goal="shorten",
             edit_operation="replace",
             edit_destination="target",
         )
-        client = SequenceJsonClient([response])
-        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+        main_client = SequenceJsonClient([incomplete])
+        direct_client = SequenceJsonClient([corrected])
+        router = ParallelAgentTurnRouter(
+            ChatCompletionsTurnRouter(main_client, "system"),  # type: ignore[arg-type]
+            ChatCompletionsDirectMutationIntentVerifier(
+                direct_client,  # type: ignore[arg-type]
+                "direct",
+            ),
+        )
 
         route = router.route(
-            AgentTurnRequest(message="현재 문서를 요약한 뒤 보관 폴더로 옮겨 저장해줘")
+            AgentTurnRequest(
+                message="현재 문서를 요약한 뒤 보관 폴더로 옮겨 저장해줘",
+                document_id="document-1",
+                conversation_context=AgentConversationContext(
+                    reference_context={"document": "trusted only by main router"}
+                ),
+            )
         )
 
         self.assertEqual(route.action, "workspace_workflow")
@@ -185,6 +212,118 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             route.required_capabilities,
             ("document-edit", "folder-organize"),
         )
+        self.assertTrue(route.direct_mutation_verified)
+        audit_payload = json.loads(direct_client.calls[0][1])
+        self.assertEqual(
+            audit_payload,
+            {
+                "message": "현재 문서를 요약한 뒤 보관 폴더로 옮겨 저장해줘",
+                "has_active_document": True,
+                "allow_web_search": None,
+            },
+        )
+
+    def test_parallel_router_starts_both_routes_concurrently(self) -> None:
+        barrier = Barrier(2)
+        main_route = AgentTurnRoute(
+            action="conversation_reply",
+            confidence=0.9,
+            reason="reply",
+        )
+
+        class BarrierRouter:
+            def route(self, request: AgentTurnRequest) -> AgentTurnRoute:
+                barrier.wait(timeout=1)
+                return main_route
+
+        class BarrierVerifier:
+            def verify(self, request: AgentTurnRequest) -> AgentTurnRoute:
+                barrier.wait(timeout=1)
+                return main_route
+
+        route = ParallelAgentTurnRouter(BarrierRouter(), BarrierVerifier()).route(
+            AgentTurnRequest(message="안녕")
+        )
+
+        self.assertEqual(route, main_route)
+
+    def test_parallel_router_keeps_local_guard_without_llm_calls(self) -> None:
+        class UnexpectedRouter:
+            def route(self, request: AgentTurnRequest) -> AgentTurnRoute:
+                raise AssertionError("LLM router must not be called")
+
+        class UnexpectedVerifier:
+            def verify(self, request: AgentTurnRequest) -> AgentTurnRoute:
+                raise AssertionError("direct verifier must not be called")
+
+        route = ParallelAgentTurnRouter(UnexpectedRouter(), UnexpectedVerifier()).route(
+            AgentTurnRequest(
+                message="게시해줘",
+                conversation_context=AgentConversationContext(
+                    pending_skill_proposal=PendingSkillProposal(
+                        scope_type="personal",
+                        name="meeting-note",
+                        description="회의록을 정리합니다.",
+                        instructions_markdown="회의록을 요약합니다.",
+                        capabilities=(),
+                        allowed_tools=(),
+                    )
+                ),
+            )
+        )
+
+        self.assertEqual(route.action, "skill_authoring")
+
+    def test_keeps_mutation_unverified_when_direct_verifier_rejects_mutation(self) -> None:
+        response = route_response("workspace_workflow")
+        main_client = SequenceJsonClient([response])
+        direct_client = SequenceJsonClient([route_response("clarify")])
+        router = ParallelAgentTurnRouter(
+            ChatCompletionsTurnRouter(main_client, "system"),  # type: ignore[arg-type]
+            ChatCompletionsDirectMutationIntentVerifier(
+                direct_client,  # type: ignore[arg-type]
+                "direct",
+            ),
+        )
+
+        route = router.route(AgentTurnRequest(message="문서를 저장해줘"))
+
+        self.assertEqual(route.action, "workspace_workflow")
+        self.assertFalse(route.direct_mutation_verified)
+
+    def test_keeps_mutation_unverified_when_direct_verifier_breaks_contract(self) -> None:
+        response = route_response("workspace_workflow")
+        main_client = SequenceJsonClient([response])
+        direct_client = SequenceJsonClient([{"action": "workspace_workflow"}])
+        router = ParallelAgentTurnRouter(
+            ChatCompletionsTurnRouter(main_client, "system"),  # type: ignore[arg-type]
+            ChatCompletionsDirectMutationIntentVerifier(
+                direct_client,  # type: ignore[arg-type]
+                "direct",
+            ),
+        )
+
+        route = router.route(AgentTurnRequest(message="문서를 저장해줘"))
+
+        self.assertEqual(route.action, "workspace_workflow")
+        self.assertFalse(route.direct_mutation_verified)
+
+    def test_keeps_mutation_unverified_when_direct_verifier_transport_fails(self) -> None:
+        response = route_response("workspace_workflow")
+        main_client = SequenceJsonClient([response])
+        direct_client = SequenceJsonClient([RuntimeError("provider timeout")])
+        router = ParallelAgentTurnRouter(
+            ChatCompletionsTurnRouter(main_client, "system"),  # type: ignore[arg-type]
+            ChatCompletionsDirectMutationIntentVerifier(
+                direct_client,  # type: ignore[arg-type]
+                "direct",
+            ),
+        )
+
+        route = router.route(AgentTurnRequest(message="문서를 저장해줘"))
+
+        self.assertEqual(route.action, "workspace_workflow")
+        self.assertFalse(route.direct_mutation_verified)
 
     def test_retries_structurally_inconsistent_route_without_changing_its_meaning(self) -> None:
         inconsistent = route_response("workspace_workflow")
@@ -198,9 +337,17 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         client = SequenceJsonClient([inconsistent, corrected])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
 
-        route = router.route(AgentTurnRequest(message="새 문서로 저장해줘"))
+        with self.assertLogs(
+            "app.modules.agent.infrastructure.chat_completions_turn_router",
+            level="WARNING",
+        ) as logs:
+            route = router.route(AgentTurnRequest(message="새 문서로 저장해줘"))
 
         self.assertTrue(route.persist)
+        self.assertIn(
+            "persist must be true for action workspace_workflow",
+            logs.output[0],
+        )
         retry_payload = json.loads(client.calls[1][1])
         self.assertIn(
             "persist must be true for action workspace_workflow",

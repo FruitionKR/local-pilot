@@ -1,6 +1,9 @@
 import json
+import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -24,11 +27,16 @@ from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.markdown_edit.domain.entities import EditDestination, EditOperationType
 from app.modules.skill.domain.entities import SkillCapability
 from app.modules.skill.domain.policy import CAPABILITY_TOOLS
-from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
+from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
+    ChatClientConfig,
+    ChatCompletionsJsonClient,
+)
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
-
 DEFAULT_AGENT_TURN_ROUTER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "agent_turn_router.system.md"
+DEFAULT_DIRECT_MUTATION_VERIFIER_PROMPT = (
+    Path(__file__).resolve().parents[4] / "prompts" / "agent_direct_mutation_verifier.system.md"
+)
 NEW_SKILL_REQUEST_PATTERN = re.compile(
     r"(?:스킬|skill)(?:을|를|로)?\s*(?:(?:하나|새로|새로운|신규로|직접)\s*){0,2}"
     r"(?:만들어|생성해|정의해|작성해)|"
@@ -87,6 +95,7 @@ ALLOWED_EDIT_GOALS = {
 ALLOWED_EDIT_OPERATIONS = {"replace", "insert_after"}
 ALLOWED_EDIT_DESTINATIONS = {"target", "document_end"}
 JSON_OBJECT_CONTRACT_FAILURE = "model output must be a JSON object"
+logger = logging.getLogger(__name__)
 
 
 class ChatCompletionsTurnRouter(AgentTurnRouterPort):
@@ -178,23 +187,23 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
         route, failures = self._complete_route(payload)
         failures.extend(_route_failures(route, request))
         failures.extend(_skill_authoring_failures(route, request))
-        if not failures:
-            return route
+        if failures:
+            logger.warning("[Agent route 재시도] contractFailures=%s", failures)
+            retry_payload = {
+                **payload,
+                "contract_failures": failures,
+                "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
+            }
+            route, failures = self._complete_route(
+                retry_payload,
+                trusted_contract_failures=failures,
+            )
+            failures.extend(_route_failures(route, request))
+            failures.extend(_skill_authoring_failures(route, request))
+            if failures:
+                raise AgentTurnRouteContractError(failures)
 
-        retry_payload = {
-            **payload,
-            "contract_failures": failures,
-            "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
-        }
-        retried_route, retry_failures = self._complete_route(
-            retry_payload,
-            trusted_contract_failures=failures,
-        )
-        retry_failures.extend(_route_failures(retried_route, request))
-        retry_failures.extend(_skill_authoring_failures(retried_route, request))
-        if retry_failures:
-            raise AgentTurnRouteContractError(retry_failures)
-        return retried_route
+        return route
 
     def _complete_route(
         self,
@@ -218,6 +227,86 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
         return _normalize_route(raw)
 
 
+class ChatCompletionsDirectMutationIntentVerifier:
+    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+        self._client = client
+        self._system_prompt = system_prompt
+
+    def verify(self, request: AgentTurnRequest) -> AgentTurnRoute:
+        payload = {
+            "message": request.message,
+            "has_active_document": request.document_id is not None,
+            "allow_web_search": request.allow_web_search,
+        }
+        try:
+            raw = self._client.complete_json(
+                self._system_prompt,
+                json.dumps(payload, ensure_ascii=False, indent=2),
+            )
+        except JsonParseError as exc:
+            raise AgentTurnRouteContractError([JSON_OBJECT_CONTRACT_FAILURE]) from exc
+        route, failures = _normalize_route(raw)
+        if failures:
+            raise AgentTurnRouteContractError(failures)
+        return route
+
+
+class ParallelAgentTurnRouter(AgentTurnRouterPort):
+    def __init__(
+        self,
+        router: AgentTurnRouterPort,
+        direct_mutation_verifier: ChatCompletionsDirectMutationIntentVerifier,
+    ) -> None:
+        self._router = router
+        self._direct_mutation_verifier = direct_mutation_verifier
+
+    def route(self, request: AgentTurnRequest) -> AgentTurnRoute:
+        guarded = _local_guard(request)
+        if guarded is not None:
+            return guarded
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            route_future = executor.submit(self._router.route, request)
+            direct_future = executor.submit(self._direct_mutation_verifier.verify, request)
+            route = route_future.result()
+            try:
+                direct_route = direct_future.result()
+            except (AgentTurnRouteContractError, RuntimeError):
+                direct_route = None
+
+        if route.action not in {"folder_organize", "workspace_workflow"}:
+            return route
+        return _verified_mutation_route(route, direct_route, request)
+
+
+def _verified_mutation_route(
+    route: AgentTurnRoute,
+    direct_route: AgentTurnRoute | None,
+    request: AgentTurnRequest,
+) -> AgentTurnRoute:
+    unverified = replace(route, direct_mutation_verified=False)
+    if (
+        direct_route is None
+        or direct_route.action not in {"folder_organize", "workspace_workflow"}
+        or not direct_route.persist
+    ):
+        return unverified
+    if direct_route.document_operation == "none":
+        if direct_route.action != route.action:
+            return unverified
+        verified = replace(route, direct_mutation_verified=True)
+    else:
+        verified = replace(
+            direct_route,
+            selected_skill_id=route.selected_skill_id,
+            skill_candidates=route.skill_candidates,
+            direct_mutation_verified=True,
+        )
+    if _route_failures(verified, request):
+        return unverified
+    return verified
+
+
 def build_agent_turn_router(
     *,
     provider: str | None = None,
@@ -228,19 +317,26 @@ def build_agent_turn_router(
     if not api_key:
         raise RuntimeError(f"Set {provider_api_key_env(resolved_provider)}.")
     prompt_path = Path(os.environ.get("AGENT_TURN_ROUTER_SYSTEM_PROMPT", str(DEFAULT_AGENT_TURN_ROUTER_PROMPT)))
-    return ChatCompletionsTurnRouter(
-        ChatCompletionsJsonClient(
-            ChatClientConfig(
-                api_key=api_key,
-                model=resolved_model,
-                temperature=None,
-                timeout_seconds=_int_env("AGENT_ROUTER_LLM_TIMEOUT_SECONDS", 180),
-                max_tokens=_optional_int_env("AGENT_ROUTER_LLM_MAX_TOKENS"),
-                json_mode=True,
-                provider=resolved_provider,
-            )
+    client = ChatCompletionsJsonClient(
+        ChatClientConfig(
+            api_key=api_key,
+            model=resolved_model,
+            temperature=None,
+            timeout_seconds=_int_env("AGENT_ROUTER_LLM_TIMEOUT_SECONDS", 180),
+            max_tokens=_optional_int_env("AGENT_ROUTER_LLM_MAX_TOKENS"),
+            json_mode=True,
+            provider=resolved_provider,
+        )
+    )
+    return ParallelAgentTurnRouter(
+        ChatCompletionsTurnRouter(
+            client,
+            system_prompt=prompt_path.read_text(encoding="utf-8"),
         ),
-        system_prompt=prompt_path.read_text(encoding="utf-8"),
+        ChatCompletionsDirectMutationIntentVerifier(
+            client,
+            system_prompt=DEFAULT_DIRECT_MUTATION_VERIFIER_PROMPT.read_text(encoding="utf-8"),
+        ),
     )
 
 
