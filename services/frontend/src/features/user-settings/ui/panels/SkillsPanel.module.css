@@ -1,4 +1,4 @@
-/* 스킬 패널 (Figma 981:10091). 백엔드 미지원 정적 UI라 컨트롤은 전부 disabled 상태다. */
+/* 스킬 패널 (Figma 981:10091). 작성·수정·필터·검색이 배선된 상태다. */
 
 /* --- 툴바 --- */
 .toolbar {
@@ -99,9 +99,15 @@
 }
 
 .command {
+  padding: 0;
   color: var(--ink);
+  background: transparent;
+  border: none;
+  font-size: 14px;
   font-weight: 600;
+  text-align: left;
   text-decoration: underline;
+  cursor: pointer;
 }
 
 .description {
@@ -129,6 +135,94 @@
 .cell-state {
   display: flex;
   justify-content: flex-end;
+}
+
+/* --- 검색 입력 --- */
+.search-input {
+  width: 180px;
+  padding: 6px 8px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+/* --- 작성·수정 인라인 폼 --- */
+.create-form,
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.edit-form {
+  margin: 8px 0;
+}
+
+.draft-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.draft-question {
+  color: var(--subdued);
+  font-size: 13px;
+}
+
+.form-label {
+  color: var(--subdued);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  padding: 8px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-primary {
+  padding: 6px 12px;
+  color: var(--bg);
+  background: var(--yellow);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.form-primary:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.form-secondary {
+  padding: 6px 12px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
 }
 
 /* 로딩·빈 목록 안내 */

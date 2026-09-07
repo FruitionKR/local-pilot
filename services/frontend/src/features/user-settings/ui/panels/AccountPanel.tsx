@@ -1,3 +1,5 @@
+"use client";
+
 import styles from "../SettingsModal.module.css";
 import panelStyles from "./AccountPanel.module.css";
 
@@ -41,10 +43,17 @@ export function AccountPanel({ name, email }: { name: string; email: string }) {
         <div className={styles.row}>
           <div className={styles["row-title"]}>
             <strong>비밀번호</strong>
-            <small>로그인에 사용하는 비밀번호를 변경하세요.</small>
+            <small>이메일 인증으로 비밀번호를 재설정합니다.</small>
           </div>
-          {/* 비밀번호 변경은 백엔드 미지원이라 비활성 버튼으로만 노출한다. */}
-          <button type="button" className={styles.btn} disabled>
+          {/* 비밀번호 재설정 흐름(/forgot-password)을 새 탭으로 연다. 이메일은 쿼리로 프리필한다. */}
+          <button
+            type="button"
+            className={styles.btn}
+            onClick={() => {
+              const query = email ? `?email=${encodeURIComponent(email)}` : "";
+              window.open(`/forgot-password${query}`, "_blank", "noopener,noreferrer");
+            }}
+          >
             비밀번호 변경
           </button>
         </div>

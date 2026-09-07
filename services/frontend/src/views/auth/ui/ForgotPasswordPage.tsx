@@ -1,21 +1,33 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { confirmEmailVerification, requestEmailVerification } from "@/entities/user";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useAuthFlow } from "@/views/auth/model/AuthFlowContext";
 import { AuthError, AuthField, AuthSubmitButton } from "@/shared/ui/AuthControls";
-import { AuthScreen } from "@/shared/ui/AuthScreen";
+import { AuthScreen, AuthScreenBlank } from "@/shared/ui/AuthScreen";
 import { useDevelopmentVerificationCode } from "@/views/auth/lib/useDevelopmentVerificationCode";
 import { useExpiryCountdown } from "@/views/auth/lib/useExpiryCountdown";
 import { useVerificationResend } from "@/views/auth/lib/useVerificationResend";
 import { ResendCodePrompt } from "@/views/auth/ui/ResendCodePrompt";
 
 export default function ForgotPasswordPage() {
+  return (
+    <Suspense fallback={<AuthScreenBlank />}>
+      <ForgotPasswordPageContent />
+    </Suspense>
+  );
+}
+
+function ForgotPasswordPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { passwordResetDraft, setPasswordResetDraft } = useAuthFlow();
-  const [email, setEmail] = useState(passwordResetDraft?.email ?? "");
+  // 설정 모달 등에서 ?email= 로 진입하면 이메일을 프리필한다.
+  const [email, setEmail] = useState(
+    passwordResetDraft?.email ?? searchParams.get("email") ?? ""
+  );
   const [verificationCode, setVerificationCode] = useState("");
   const [isCodeStep, setIsCodeStep] = useState(Boolean(passwordResetDraft?.verificationId));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

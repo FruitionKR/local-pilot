@@ -43,6 +43,8 @@ export function NotificationsPanel({ notifications, updatePreferences }: Notific
           <h2>알림</h2>
         </div>
         <p>워크스페이스의 알림 권한을 관리합니다.</p>
+        {/* Discord와 동일하게 알림 출력 설정은 기기(브라우저)별로 저장된다. 계정 동기화는 서버 저장 API가 필요하다. */}
+        <p className={styles["title-note"]}>알림 설정은 이 기기에만 저장됩니다.</p>
       </div>
 
       <div className={styles.section}>

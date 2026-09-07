@@ -39,7 +39,6 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const [activeSection, setActiveSection] = useState<SettingsSection>("account");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
-  const [isAutoSaveOn, setIsAutoSaveOn] = useState(true);
   const [aiModels, setAiModels] = useState<AiModel[]>([]);
   const [aiModelSelection, setAiModelSelection] = useState<AiModelSelection | null>(null);
   const [aiModelError, setAiModelError] = useState<string | null>(null);
@@ -176,8 +175,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           {activeSection === "general" && (
             <WorkspacePanel
               wsName={wsName}
-              isAutoSaveOn={isAutoSaveOn}
-              onToggleAutoSave={() => setIsAutoSaveOn((on) => !on)}
+              isAutoSaveOn={preferences.autoSave}
+              onToggleAutoSave={() =>
+                updatePreferences((current) => ({ ...current, autoSave: !current.autoSave }))
+              }
               aiModels={aiModels}
               aiModelSelection={aiModelSelection}
               aiModelError={aiModelError}

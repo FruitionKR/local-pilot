@@ -125,6 +125,12 @@ button.nav-row:disabled {
   gap: 6px;
 }
 
+/* .title > p보다 우선하도록 클래스 2개 지정자로 둔다. */
+.title > .title-note {
+  color: var(--subdued);
+  font-size: 12px;
+}
+
 .title-row {
   display: flex;
   align-items: center;
