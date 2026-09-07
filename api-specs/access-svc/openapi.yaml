@@ -151,6 +151,44 @@ paths:
       summary: 로그인
       tags:
       - Auth
+  /api/auth/login/mfa:
+    post:
+      description: 일반 또는 OAuth 로그인이 mfa_required를 돌려줬을 때 코드로 로그인을 마칩니다. code에는 인증 앱의 6자리 코드 또는 복구 코드를 넣습니다.
+      operationId: loginMfa
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaLoginRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+          description: 로그인 성공
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: mfa_token이 만료되었거나 이미 사용됨
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 코드가 올바르지 않음
+        "429":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 사용자별 MFA 검증 횟수 초과
+      summary: 로그인 2단계(다단계 인증)
+      tags:
+      - Auth
   /api/auth/logout:
     post:
       description: HttpOnly refresh 쿠키를 폐기하고 제거합니다.
@@ -260,6 +298,123 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
           description: 같은 provider에 이미 그 이메일 계정이 있음
       summary: 이메일 변경
+      tags:
+      - Auth
+  /api/auth/me/mfa:
+    delete:
+      description: 인증 앱의 코드 또는 복구 코드로 본인을 확인한 뒤 해제합니다.
+      operationId: disableMfa
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaCodeRequest"
+        required: true
+      responses:
+        "204":
+          description: 해제 성공
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 인증되지 않았거나 코드가 올바르지 않음
+        "404":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 켜져 있지 않음
+        "429":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 사용자별 MFA 검증 횟수 초과
+      summary: 다단계 인증 해제
+      tags:
+      - Auth
+    get:
+      operationId: mfaStatus
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MfaStatusResponse"
+          description: 조회 성공
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 인증되지 않음
+      summary: 다단계 인증 상태 조회
+      tags:
+      - Auth
+    post:
+      description: secret과 복구 코드를 발급합니다. 아직 켜지지 않으며 로그인을 막지 않습니다. 복구 코드는 이 응답에서만 볼 수 있습니다.
+      operationId: registerMfa
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MfaRegistrationResponse"
+          description: 발급 성공
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 인증되지 않음
+        "409":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 이미 켜져 있음
+      summary: 다단계 인증 등록(1단계)
+      tags:
+      - Auth
+  /api/auth/me/mfa/activate:
+    post:
+      description: 인증 앱의 코드를 확인하고 실제로 켭니다. 이 단계를 통과해야 로그인에 코드가 요구됩니다.
+      operationId: activateMfa
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaCodeRequest"
+        required: true
+      responses:
+        "204":
+          description: 활성화 성공
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 인증되지 않았거나 코드가 올바르지 않음
+        "404":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 등록된 다단계 인증이 없음
+        "409":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 이미 켜져 있음
+        "429":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 사용자별 MFA 검증 횟수 초과
+      summary: 다단계 인증 활성화(2단계)
       tags:
       - Auth
   /api/auth/me/password:
@@ -1431,8 +1586,15 @@ components:
         expires_in:
           type: integer
           format: int64
-          description: access_token 유효 시간(초)
+          description: access_token 유효 시간(초). MFA 단계가 남았으면 빠진다.
           example: 900
+        mfa_required:
+          type: boolean
+          description: true면 다단계 인증 코드가 더 필요하다. 아니면 이 필드가 빠진다.
+          example: true
+        mfa_token:
+          type: string
+          description: 코드 검증에 쓸 1회용 토큰. mfa_required일 때만 나온다.
         token_type:
           type: string
           description: 인증 스킴. 항상 Bearer다.
@@ -1457,6 +1619,65 @@ components:
           type: string
           description: 사용자 ID
           example: user_3f1c8a6b52d7411e9c04ab5d2e7f6081
+    MfaCodeRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 인증 앱의 6자리 코드 또는 복구 코드
+          example: 482917
+          maxLength: 64
+          minLength: 0
+      required:
+      - code
+    MfaLoginRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 인증 앱의 6자리 코드 또는 복구 코드
+          example: 482917
+          maxLength: 64
+          minLength: 0
+        mfa_token:
+          type: string
+          description: POST /api/auth/login이 돌려준 1회용 토큰
+          minLength: 1
+      required:
+      - code
+      - mfa_token
+    MfaRegistrationResponse:
+      type: object
+      properties:
+        otpauth_uri:
+          type: string
+          description: QR 코드로 만들 otpauth URI
+          example: otpauth://totp/Fruition:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Fruition
+        recovery_codes:
+          type: array
+          description: 1회용 복구 코드. 이 응답에서만 볼 수 있고 서버에는 해시만 남는다.
+          items:
+            type: string
+        secret:
+          type: string
+          description: 인증 앱에 수동 입력할 base32 secret
+          example: JBSWY3DPEHPK3PXP
+    MfaStatusResponse:
+      type: object
+      properties:
+        activated_at:
+          type: string
+          format: date-time
+          description: 켠 시각(ISO-8601 UTC). 꺼져 있으면 null이다.
+        enabled:
+          type: boolean
+          description: 다단계 인증이 켜져 있는지 여부
+          example: true
+        remaining_recovery_codes:
+          type: integer
+          format: int32
+          description: 아직 쓰지 않은 복구 코드 수
+          example: 10
     OAuthExchangeRequest:
       type: object
       properties:
