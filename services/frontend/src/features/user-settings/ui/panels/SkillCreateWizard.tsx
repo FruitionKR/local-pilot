@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { fetchDocuments, type DocumentItemResponse } from "@/entities/document";
 import { authorSkill, publishSkill, type SkillAuthoringResult } from "@/entities/skill";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useEscapeKey } from "@/shared/lib/useEscapeKey";
@@ -10,6 +11,20 @@ import { menuSearchIcon, questionMarkIcon, settingScrollIcon, SvgIcon } from "@/
 import styles from "./SkillCreateWizard.module.css";
 
 const NAME_MAX = 63;
+
+const REFERENCE_DOC_MAX = 3;
+
+/** 파일 크기를 kB/MB 문자열로 표시한다. */
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  return `${(bytes / 1024).toFixed(1)}kB`;
+}
+
+/** 확장자 뱃지 텍스트 (예: MD, PDF) */
+function fileExtension(filename: string): string {
+  const ext = filename.split(".").pop();
+  return ext && ext !== filename ? ext.toUpperCase() : "DOC";
+}
 
 /** 지침 텍스트에서 커맨드명 추천값을 만든다(영문·숫자 단어를 하이픈으로 연결). */
 function suggestCommand(instruction: string): string {
@@ -58,6 +73,15 @@ export function SkillCreateWizard({
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
   const [command, setCommand] = useState("");
   const [instruction, setInstruction] = useState("");
+  // 참고 문서 선택 (최대 3개)
+  const [selectedDocs, setSelectedDocs] = useState<DocumentItemResponse[]>([]);
+  const [docPickerOpen, setDocPickerOpen] = useState(false);
+
+  const { data: documents } = useQuery({
+    queryKey: ["documents", workspaceId],
+    queryFn: fetchDocuments,
+    enabled: docPickerOpen
+  });
 
   // STEP 2~3 초안 (author 결과, 로컬 편집 허용)
   const [draft, setDraft] = useState<SkillAuthoringResult | null>(null);
@@ -66,7 +90,12 @@ export function SkillCreateWizard({
 
   const authorMutation = useMutation({
     mutationFn: (body: { instruction: string }) =>
-      authorSkill(workspaceId, { instruction: body.instruction, name: command, scope_type: scopeType }),
+      authorSkill(workspaceId, {
+        instruction: body.instruction,
+        name: command,
+        scope_type: scopeType,
+        reference_document_ids: selectedDocs.map((doc) => doc.id)
+      }),
     onSuccess: (result) => {
       setDraft(result);
       setStep(2);
@@ -204,15 +233,43 @@ export function SkillCreateWizard({
             />
           </div>
 
-          {/* 참고 문서 — 문서 선택 UI는 아직 배선되지 않아 비활성 상태로 둔다 */}
-          <div className={styles["field-row"]}>
-            <div className={styles["field-text"]}>
-              <span className={styles["field-label"]}>참고 문서</span>
-              <span className={styles["field-desc"]}>최대 3개까지 가능합니다.</span>
+          {/* 참고 문서 (최대 3개) — 검색 아이콘으로 워크스페이스 문서를 선택한다 */}
+          <div className={styles.field}>
+            <div className={styles["field-row"]}>
+              <div className={styles["field-text"]}>
+                <span className={styles["field-label"]}>참고 문서</span>
+                <span className={styles["field-desc"]}>최대 3개까지 가능합니다.</span>
+              </div>
+              <button
+                type="button"
+                className={styles["doc-search-btn"]}
+                aria-label="참고 문서 검색"
+                onClick={() => setDocPickerOpen(true)}
+              >
+                <SvgIcon src={menuSearchIcon} className={styles["doc-search-icon"]} />
+              </button>
             </div>
-            <button type="button" className={styles["doc-search-btn"]} disabled aria-label="참고 문서 검색">
-              <SvgIcon src={menuSearchIcon} className={styles["doc-search-icon"]} />
-            </button>
+            {selectedDocs.length > 0 && (
+              <div className={styles["doc-cards"]}>
+                {selectedDocs.map((doc) => (
+                  <div key={doc.id} className={styles["doc-card"]}>
+                    <div className={styles["doc-card-text"]}>
+                      <span className={styles["doc-card-name"]}>{doc.filename}</span>
+                      <span className={styles["doc-card-size"]}>{formatBytes(doc.byte_size)}</span>
+                    </div>
+                    <span className={styles["doc-card-ext"]}>{fileExtension(doc.filename)}</span>
+                    <button
+                      type="button"
+                      className={styles["doc-card-remove"]}
+                      aria-label={`${doc.filename} 선택 해제`}
+                      onClick={() => setSelectedDocs(selectedDocs.filter((item) => item.id !== doc.id))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -438,6 +495,46 @@ export function SkillCreateWizard({
         {step === 1 && renderStep1()}
         {step === 2 && renderStep2()}
         {step === 3 && renderStep3()}
+
+        {/* 참고 문서 선택 목록 */}
+        {docPickerOpen && (
+          <div className={styles["doc-picker"]} role="listbox" aria-label="참고 문서 선택">
+            <div className={styles["doc-picker-head"]}>
+              <span>참고 문서 선택 ({selectedDocs.length}/{REFERENCE_DOC_MAX})</span>
+              <button type="button" aria-label="문서 선택 닫기" onClick={() => setDocPickerOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <div className={styles["doc-picker-list"]}>
+              {(documents ?? []).map((doc) => {
+                const isSelected = selectedDocs.some((item) => item.id === doc.id);
+                return (
+                  <button
+                    key={doc.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    className={`${styles["doc-picker-item"]} ${isSelected ? styles["is-selected"] : ""}`}
+                    disabled={!isSelected && selectedDocs.length >= REFERENCE_DOC_MAX}
+                    onClick={() =>
+                      setSelectedDocs(
+                        isSelected
+                          ? selectedDocs.filter((item) => item.id !== doc.id)
+                          : [...selectedDocs, doc]
+                      )
+                    }
+                  >
+                    <span className={styles["doc-picker-name"]}>{doc.filename}</span>
+                    <span className={styles["doc-picker-meta"]}>{formatBytes(doc.byte_size)}</span>
+                  </button>
+                );
+              })}
+              {(documents ?? []).length === 0 && (
+                <p className={styles["doc-picker-empty"]}>선택할 문서가 없습니다.</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>,
     document.body

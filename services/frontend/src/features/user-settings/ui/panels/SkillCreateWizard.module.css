@@ -455,3 +455,154 @@
   color: #f04452;
   font-size: 13px;
 }
+
+/* --- 참고 문서 --- */
+.doc-cards {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+/* Figma 1011:9407 파일 카드: 140px, 파일명·크기 + 확장자 뱃지 + 해제 버튼 */
+.doc-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 140px;
+  padding: 10px 12px;
+  background: var(--panel, #1e1e1e);
+  border: 1px solid var(--line, #4f4f4f);
+  border-radius: 8px;
+}
+
+.doc-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.doc-card-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+  font-size: 14px;
+}
+
+.doc-card-size {
+  color: var(--subdued, #8a8a8a);
+  font-size: 12px;
+}
+
+.doc-card-ext {
+  align-self: flex-start;
+  padding: 0 4px;
+  color: var(--muted, #a7a7a7);
+  border: 1px solid #6d6d6d;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.doc-card-remove {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--muted, #a7a7a7);
+  background: var(--panel, #1e1e1e);
+  border: 1px solid #6d6d6d;
+  border-radius: 100px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* 문서 선택 드롭 목록 */
+.doc-picker {
+  position: absolute;
+  right: 40px;
+  bottom: 96px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-height: 320px;
+  background: var(--panel, #1e1e1e);
+  border: 1px solid var(--line, #4f4f4f);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
+.doc-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  color: var(--ink, #f0f0f0);
+  border-bottom: 1px solid var(--soft, #323232);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.doc-picker-head button {
+  color: var(--muted, #a7a7a7);
+  background: transparent;
+  font-size: 12px;
+}
+
+.doc-picker-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.doc-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px;
+  color: var(--ink, #f0f0f0);
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.doc-picker-item:hover,
+.doc-picker-item:focus-visible {
+  background: var(--soft, #323232);
+}
+
+.doc-picker-item.is-selected {
+  color: var(--yellow, #ffc117);
+}
+
+.doc-picker-item:disabled {
+  opacity: 0.4;
+}
+
+.doc-picker-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-picker-meta {
+  flex: 0 0 auto;
+  color: var(--subdued, #8a8a8a);
+  font-size: 12px;
+}
+
+.doc-picker-empty {
+  padding: 12px;
+  color: var(--subdued, #8a8a8a);
+  font-size: 13px;
+}
