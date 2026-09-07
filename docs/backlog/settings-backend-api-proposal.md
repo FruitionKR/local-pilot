@@ -57,6 +57,21 @@
 |---|---|---|
 | `PUT /api/workspaces/{id}/icon` | 이미지 업로드(multipart) 또는 이모지 설정 | 저장은 기존 MinIO 재사용. `GET /api/workspaces` 응답에 `icon_url` 필드 추가 필요 |
 
+## 7. 기존 API 결함 수정 (신설 아님)
+
+### Skill publish의 코드펜스 거부 — author↔publish 검증 비대칭
+
+- 증상: `POST /skills/author`가 생성한 초안의 `instructions_markdown`에 마크다운 코드펜스(```)가
+  포함된 경우, 그 초안을 **수정 없이 그대로** `POST /skills/author/publish`로 보내면
+  `400 SKILL_REQUEST_REJECTED`로 거부된다.
+- 재현(2026-09-07, curl 확정): 같은 본문에서 코드펜스 블록만 제거하면 publish 200 성공.
+  참고 문서를 포함한 author가 "고정 출력 템플릿"을 코드펜스로 감싼 초안을 자주 만들기 때문에
+  실사용에서 게시 실패가 재발한다.
+- 기대 동작: author가 통과시킨 초안은 publish의 안전 검증도 통과해야 한다.
+  (코드펜스가 실제로 위험하다면 author 단계에서 issues로 걸러야 한다.)
+- 위치 추정: `services/backend/document-svc` skill 게시 검증 로직 (skill_markdown 재조립 시
+  frontmatter/중첩 코드펜스 파싱 관련으로 추정).
+
 ## 우선순위 추천
 
 **5(멤버) > 1(닉네임) > 3(비밀번호) > 6(아이콘) > 2(이메일) > 4(보안)**
