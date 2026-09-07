@@ -80,6 +80,7 @@ def request_from_case(case: dict[str, Any]) -> AgentTurnRequest:
     )
     return AgentTurnRequest(
         message=case["message"],
+        document_id="evaluation-document" if active_markdown else None,
         active_markdown_context=(
             ActiveMarkdownContext(
                 markdown=active_markdown["markdown"],

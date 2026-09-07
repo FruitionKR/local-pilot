@@ -263,38 +263,7 @@ class HandleAgentTurnUseCase:
                 raise AgentConfigurationError("Workspace workflow requires workspace_id and user_id.")
             if inspect_skill_instructions(request.message):
                 return _reject_unsafe_workspace_mutation(route)
-            direct_route = self._router.route(
-                replace(
-                    request,
-                    conversation_context=None,
-                    active_markdown_context=None,
-                    skill_mode="off",
-                    skill_id=None,
-                    available_skills=(),
-                    skill_draft_sources=(),
-                    skill_draft_user_directives=(),
-                    skill_draft_excluded_literals=(),
-                )
-            )
-            preview = _latest_markdown_preview(request)
-            preview_action, preview_run_id = preview or (None, None)
-            reuses_edit_preview = (
-                route.action == "workspace_workflow"
-                and route.document_operation == "edit"
-                and direct_route.action == "workspace_workflow"
-                and direct_route.persist
-                and preview_action == "markdown_edit"
-                and preview_run_id is not None
-            )
-            reuses_create_preview = (
-                route.action == "workspace_workflow"
-                and route.document_operation == "create"
-                and direct_route.action == "workspace_workflow"
-                and direct_route.persist
-                and preview_action == "markdown_create"
-                and preview_run_id is not None
-            )
-            if not _direct_mutation_confirmed(route, direct_route):
+            if not route.direct_mutation_verified:
                 return AgentTurnResult(
                     action="clarify",
                     route=replace(
@@ -310,9 +279,24 @@ class HandleAgentTurnUseCase:
                         retrieval_source="none",
                         document_operation="none",
                         persist=False,
+                        required_capabilities=(),
                     ),
                     message=CLARIFY_MUTATION_INTENT_MESSAGE,
                 )
+            preview = _latest_markdown_preview(request)
+            preview_action, preview_run_id = preview or (None, None)
+            reuses_edit_preview = (
+                route.action == "workspace_workflow"
+                and route.document_operation == "edit"
+                and preview_action == "markdown_edit"
+                and preview_run_id is not None
+            )
+            reuses_create_preview = (
+                route.action == "workspace_workflow"
+                and route.document_operation == "create"
+                and preview_action == "markdown_create"
+                and preview_run_id is not None
+            )
             skill_version_id = (
                 selected_skill.enabled_version.id
                 if selected_skill is not None and selected_skill.enabled_version is not None
@@ -729,18 +713,6 @@ class HandleAgentTurnUseCase:
         if self._skill_selector is not None:
             return self._skill_selector.prepare(request)
         return PreparedSkillSelection(request=request, skills=())
-
-
-def _direct_mutation_confirmed(
-    route: AgentTurnRoute,
-    direct_route: AgentTurnRoute,
-) -> bool:
-    if not direct_route.persist or direct_route.action != route.action:
-        return False
-    return (
-        direct_route.document_operation in {"none", route.document_operation}
-        and direct_route.retrieval_source in {"none", route.retrieval_source}
-    )
 
 
 def _resolved_edit_route(

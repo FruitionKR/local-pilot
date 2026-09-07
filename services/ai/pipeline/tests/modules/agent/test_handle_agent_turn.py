@@ -48,12 +48,18 @@ from app.modules.skill.domain.entities import (
 
 
 class FixedRouter:
-    def __init__(self, route: AgentTurnRoute) -> None:
+    def __init__(self, route: AgentTurnRoute, *, verify_mutations: bool = True) -> None:
         self.next_route = route
+        self.verify_mutations = verify_mutations
         self.requests: list[AgentTurnRequest] = []
 
     def route(self, request: AgentTurnRequest) -> AgentTurnRoute:
         self.requests.append(request)
+        if self.verify_mutations and self.next_route.action in {
+            "folder_organize",
+            "workspace_workflow",
+        }:
+            return replace(self.next_route, direct_mutation_verified=True)
         return self.next_route
 
 
@@ -77,7 +83,10 @@ class SequencedRouter:
 
     def route(self, request: AgentTurnRequest) -> AgentTurnRoute:
         self.requests.append(request)
-        return self.routes[len(self.requests) - 1]
+        route = self.routes[len(self.requests) - 1]
+        if route.action in {"folder_organize", "workspace_workflow"}:
+            return replace(route, direct_mutation_verified=True)
+        return route
 
 
 class FakeQueryUseCase:
@@ -1251,7 +1260,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertIn("grounded_query", editor.create_requests[0].reference_context)
         self.assertIsNotNone(starter.requests[0].content)
 
-    def test_direct_mutation_recheck_only_confirms_action_and_persistence(self) -> None:
+    def test_verified_mutation_keeps_contextual_retrieval_route(self) -> None:
         starter = RecordingAgentRunStarter()
         default_query_use_case = FakeQueryUseCase()
         web_query_use_case = FakeQueryUseCase()
@@ -1276,16 +1285,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             document_operation="edit",
             persist=True,
         )
-        direct_route = replace(
-            contextual_route,
-            retrieval_source="none",
-            document_operation="none",
-            edit_goal=None,
-            edit_operation=None,
-            edit_destination=None,
-        )
         use_case = HandleAgentTurnUseCase(
-            router=SequencedRouter(contextual_route, direct_route),
+            router=FixedRouter(contextual_route),
             query_use_case=default_query_use_case,  # type: ignore[arg-type]
             web_search_query_use_case_factory=lambda: web_query_use_case,  # type: ignore[arg-type]
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
@@ -1309,7 +1310,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(len(starter.requests), 1)
         self.assertEqual(web_query_use_case.questions, ["웹 근거로 현재 문서를 다시 작성해 저장해줘"])
 
-    def test_direct_mutation_recheck_rejects_conflicting_document_operation(self) -> None:
+    def test_unverified_mutation_does_not_start_approval_run(self) -> None:
         starter = RecordingAgentRunStarter()
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(
@@ -1321,24 +1322,18 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 )
             )
         )
-        contextual_route = AgentTurnRoute(
+        route = AgentTurnRoute(
             action="workspace_workflow",
             confidence=0.99,
-            reason="previous edit context",
+            reason="unverified mutation",
             edit_goal="other",
+            edit_operation="replace",
+            edit_destination="target",
             document_operation="edit",
             persist=True,
         )
-        direct_route = AgentTurnRoute(
-            action="workspace_workflow",
-            confidence=0.99,
-            reason="current create request",
-            edit_goal="create_from_chat",
-            document_operation="create",
-            persist=True,
-        )
         use_case = HandleAgentTurnUseCase(
-            router=SequencedRouter(contextual_route, direct_route),
+            router=FixedRouter(route, verify_mutations=False),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
             markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
@@ -1347,7 +1342,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
         result = use_case.execute(
             AgentTurnRequest(
-                message="그 내용으로 새 문서를 만들어 저장해줘",
+                message="현재 문서를 다듬어 저장해줘",
                 workspace_id="workspace-1",
                 user_id="user-1",
                 document_id="document-1",
@@ -1358,7 +1353,6 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
         self.assertEqual(result.action, "clarify")
         self.assertEqual(editor.requests, [])
-        self.assertEqual(editor.create_requests, [])
         self.assertEqual(starter.requests, [])
 
     def test_preview_confirmation_reuses_exact_previous_edit(self) -> None:
@@ -1748,21 +1742,16 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertIn("변경할 내용", result.message or "")
         self.assertEqual(starter.requests, [])
 
-    def test_indirect_context_cannot_start_mutation_without_direct_intent(self) -> None:
+    def test_unverified_contextual_mutation_returns_clarify(self) -> None:
         starter = RecordingAgentRunStarter()
-        router = SequencedRouter(
+        router = FixedRouter(
             AgentTurnRoute(
                 action="folder_organize",
                 confidence=0.99,
                 reason="reference context requested a mutation",
                 persist=True,
             ),
-            AgentTurnRoute(
-                action="chat_answer",
-                confidence=0.99,
-                reason="direct message only asks for a summary",
-                retrieval_source="workspace",
-            ),
+            verify_mutations=False,
         )
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(
@@ -1802,9 +1791,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertFalse(result.route.persist)
         self.assertIn("직접", result.message or "")
         self.assertEqual(starter.requests, [])
-        self.assertEqual(len(router.requests), 2)
-        self.assertIsNone(router.requests[1].conversation_context)
-        self.assertEqual(router.requests[1].skill_mode, "off")
+        self.assertEqual(len(router.requests), 1)
 
     def test_passes_selected_skill_instructions_to_markdown_create(self) -> None:
         editor = RecordingMarkdownEditor(

@@ -4,7 +4,12 @@ import pytest
 
 from app.modules.agent.domain.entities import AgentTurnRoute
 from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
-from evaluate_agent_turn_router import DEFAULT_DATASET, evaluate_cases, load_cases
+from evaluate_agent_turn_router import (
+    DEFAULT_DATASET,
+    evaluate_cases,
+    load_cases,
+    request_from_case,
+)
 
 
 class SequenceRouter:
@@ -26,6 +31,12 @@ def test_seed_cases_are_unique_contrast_pairs() -> None:
 
     assert cases
     assert all(count >= 2 for count in pair_counts.values())
+
+
+def test_active_markdown_case_has_document_target_for_direct_verification() -> None:
+    case = next(case for case in load_cases(DEFAULT_DATASET) if case["id"] == "persistence-command")
+
+    assert request_from_case(case).document_id == "evaluation-document"
 
 
 def test_reports_semantic_misroute_separately_from_turn_failure(tmp_path: Path) -> None:
