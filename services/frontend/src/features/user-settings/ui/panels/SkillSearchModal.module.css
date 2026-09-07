@@ -1,0 +1,83 @@
+/* 중앙 검색 모달 본문. 셸(overlay·박스·헤더·닫기)은 shared/ui/CenteredModal.module.css를 쓴다. */
+.search-body {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+}
+
+.search-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 6px;
+  background: transparent;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.search-result:hover,
+.search-result:focus-visible {
+  background: var(--soft);
+}
+
+.search-result-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-result-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.search-result-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.28px;
+}
+
+.search-result-meta {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+  color: var(--subdued);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.24px;
+}
+
+.search-empty {
+  margin: 0;
+  padding: 8px 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.search-more {
+  margin: 4px 0 0;
+  padding: 8px 6px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}

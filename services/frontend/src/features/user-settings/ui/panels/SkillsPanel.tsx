@@ -16,6 +16,7 @@ import { getSelectedWorkspaceId } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { menuSearchIcon, settingScrollIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import modalStyles from "../SettingsModal.module.css";
+import { SkillSearchModal } from "./SkillSearchModal";
 import styles from "./SkillsPanel.module.css";
 
 const SKILLS_QUERY_KEY = ["skills"] as const;
@@ -271,24 +272,22 @@ export function SkillsPanel() {
           </div>
         </div>
         <div className={styles["toolbar-group"]}>
-          {searchOpen && (
-            <input
-              type="text"
-              className={styles["search-input"]}
-              placeholder="커맨드·설명 검색"
-              value={searchText}
-              autoFocus
-              onChange={(event) => setSearchText(event.target.value)}
-            />
+          {searchText && (
+            <button
+              type="button"
+              className={styles["filter-btn"]}
+              aria-label="스킬 검색 해제"
+              onClick={() => setSearchText("")}
+            >
+              <span className={styles["filter-accent"]}>검색 : {searchText}</span>
+              <span aria-hidden>✕</span>
+            </button>
           )}
           <button
             type="button"
             className={styles["search-btn"]}
             aria-label="스킬 검색"
-            onClick={() => {
-              if (searchOpen) setSearchText("");
-              setSearchOpen(!searchOpen);
-            }}
+            onClick={() => setSearchOpen(true)}
           >
             <SvgIcon src={menuSearchIcon} className={styles["search-icon"]} />
           </button>
@@ -487,6 +486,17 @@ export function SkillsPanel() {
           );
         })}
       </div>
+
+      {searchOpen && (
+        <SkillSearchModal
+          skills={skills ?? []}
+          onSelect={(skill) => {
+            // 선택한 스킬만 보이도록 검색 필터를 적용한다.
+            setSearchText(skill.slug);
+          }}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
     </div>
   );
 }
