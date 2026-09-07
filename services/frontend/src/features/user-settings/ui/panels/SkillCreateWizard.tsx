@@ -6,10 +6,19 @@ import { useMutation } from "@tanstack/react-query";
 import { authorSkill, publishSkill, type SkillAuthoringResult } from "@/entities/skill";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useEscapeKey } from "@/shared/lib/useEscapeKey";
-import { menuSearchIcon, settingScrollIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { menuSearchIcon, questionMarkIcon, settingScrollIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import styles from "./SkillCreateWizard.module.css";
 
 const NAME_MAX = 63;
+
+/** 지침 텍스트에서 커맨드명 추천값을 만든다(영문·숫자 단어를 하이픈으로 연결). */
+function suggestCommand(instruction: string): string {
+  const words = instruction
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)
+    ?.slice(0, 3);
+  return words?.length ? words.join("-").slice(0, NAME_MAX) : "meeting-summary";
+}
 const PASS_ADVANCE_MS = 2000;
 
 // 저장 범위 선택지
@@ -104,7 +113,10 @@ export function SkillCreateWizard({
           {/* 저장 범위 */}
           <div className={styles["field-row"]}>
             <div className={styles["field-text"]}>
-              <span className={styles["field-label"]}>저장 범위</span>
+              <span className={styles["field-label-row"]}>
+                <span className={styles["field-label"]}>저장 범위</span>
+                <SvgIcon src={questionMarkIcon} className={styles["help-icon"]} />
+              </span>
               <span className={styles["field-desc"]}>스킬을 적용할 범위를 지정합니다.</span>
             </div>
             <div className={styles["scope-wrap"]}>
@@ -148,8 +160,13 @@ export function SkillCreateWizard({
                 type="text"
                 className={styles.input}
                 maxLength={NAME_MAX}
+                placeholder={suggestCommand(instruction)}
                 value={command}
                 onChange={(event) => setCommand(event.target.value)}
+                onFocus={() => {
+                  // 추천 커맨드명이 placeholder로 보이다가, 비어 있는 필드를 선택하면 자동으로 채운다.
+                  if (command === "") setCommand(suggestCommand(instruction));
+                }}
               />
               <span className={styles.counter}>{command.length}/{NAME_MAX}</span>
             </div>
@@ -161,7 +178,7 @@ export function SkillCreateWizard({
             <span className={styles["field-desc"]}>스킬이 수행할 반복 작업을 자연어로 설명해주세요.</span>
             <textarea
               className={styles.textarea}
-              rows={8}
+              rows={6}
               placeholder="예: 회의록을 요약해서 액션 아이템 문서를 만들어 줘"
               value={instruction}
               onChange={(event) => setInstruction(event.target.value)}
