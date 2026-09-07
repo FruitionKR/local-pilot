@@ -148,8 +148,7 @@
   font-size: 13px;
 }
 
-/* --- 작성·수정 인라인 폼 --- */
-.create-form,
+/* --- 수정 인라인 폼 --- */
 .edit-form {
   display: flex;
   flex-direction: column;
@@ -164,26 +163,12 @@
   margin: 8px 0;
 }
 
-.draft-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-
-.draft-question {
-  color: var(--subdued);
-  font-size: 13px;
-}
-
 .form-label {
   color: var(--subdued);
   font-size: 12px;
   font-weight: 500;
 }
 
-.form-input,
 .form-textarea {
   width: 100%;
   padding: 8px;

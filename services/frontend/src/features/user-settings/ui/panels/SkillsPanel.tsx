@@ -3,19 +3,17 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  authorSkill,
   disableSkill,
   enableSkill,
   fetchSkills,
-  publishSkill,
   updateSkill,
-  type SkillAuthoringResult,
   type SkillResponse
 } from "@/entities/skill";
 import { getSelectedWorkspaceId } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { menuSearchIcon, settingScrollIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import modalStyles from "../SettingsModal.module.css";
+import { SkillCreateWizard } from "./SkillCreateWizard";
 import { SkillSearchModal } from "./SkillSearchModal";
 import styles from "./SkillsPanel.module.css";
 
@@ -63,10 +61,8 @@ export function SkillsPanel() {
   const [openMenu, setOpenMenu] = useState<"scope" | "state" | null>(null);
   const [searchText, setSearchText] = useState("");
 
-  // 새 스킬 작성 폼 상태
+  // 새 스킬 만들기 위저드 열림 상태
   const [createOpen, setCreateOpen] = useState(false);
-  const [instruction, setInstruction] = useState("");
-  const [draft, setDraft] = useState<SkillAuthoringResult | null>(null);
 
   // 행 인라인 편집 상태
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -112,30 +108,6 @@ export function SkillsPanel() {
     }
   });
 
-  const authorMutation = useMutation({
-    mutationFn: () => authorSkill(workspaceId ?? "", { instruction }),
-    onSuccess: (result) => setDraft(result)
-  });
-
-  const publishMutation = useMutation({
-    mutationFn: () => {
-      if (draft == null) throw new Error("게시할 초안이 없습니다.");
-      return publishSkill(workspaceId ?? "", {
-        name: draft.name,
-        description: draft.description,
-        instructions_markdown: draft.instructions_markdown,
-        scope_type: draft.scope_type,
-        allowed_tools: draft.allowed_tools,
-        capabilities: draft.capabilities
-      });
-    },
-    onSuccess: () => {
-      // 게시 후 목록을 재조회하고 작성 폼을 초기화한다.
-      queryClient.invalidateQueries({ queryKey: SKILLS_QUERY_KEY });
-      closeCreateForm();
-    }
-  });
-
   const updateMutation = useMutation({
     mutationFn: ({ skill }: { skill: SkillResponse }) =>
       updateSkill(skill.workspace_id, skill.id, {
@@ -170,15 +142,6 @@ export function SkillsPanel() {
       setEditError(getErrorMessage(mutationError, "스킬 정의를 수정하지 못했습니다."));
     }
   });
-
-  function closeCreateForm() {
-    setCreateOpen(false);
-    setInstruction("");
-    setDraft(null);
-    authorMutation.reset();
-    publishMutation.reset();
-  }
-
 
   function openEditForm(skill: SkillResponse) {
     const version = skill.enabled_version ?? skill.latest_version;
@@ -294,92 +257,12 @@ export function SkillsPanel() {
           <button
             type="button"
             className={styles["create-btn"]}
-            onClick={() => (createOpen ? closeCreateForm() : setCreateOpen(true))}
+            onClick={() => setCreateOpen(true)}
           >
             새 스킬 만들기 <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
           </button>
         </div>
       </div>
-
-      {/* 새 스킬 작성 폼 (author → publish) */}
-      {createOpen && (
-        <div className={styles["create-form"]}>
-          <label className={styles["form-label"]} htmlFor="skill-instruction">
-            어떤 작업을 스킬로 만들까요?
-          </label>
-          <textarea
-            id="skill-instruction"
-            className={styles["form-textarea"]}
-            rows={3}
-            placeholder="예: 회의록을 요약해서 액션 아이템 문서를 만들어 줘"
-            value={instruction}
-            onChange={(event) => setInstruction(event.target.value)}
-          />
-          <div className={styles["form-actions"]}>
-            <button
-              type="button"
-              className={styles["form-primary"]}
-              disabled={instruction.trim().length === 0 || authorMutation.isPending}
-              onClick={() => authorMutation.mutate()}
-            >
-              {authorMutation.isPending ? "초안 생성 중…" : "초안 생성"}
-            </button>
-            <button type="button" className={styles["form-secondary"]} onClick={closeCreateForm}>
-              취소
-            </button>
-          </div>
-          {authorMutation.error != null && (
-            <small className={modalStyles["model-error"]} role="alert">
-              {getErrorMessage(authorMutation.error, "스킬 초안을 생성하지 못했습니다.")}
-            </small>
-          )}
-
-          {draft != null && (
-            <div className={styles["draft-preview"]}>
-              {draft.question && <p className={styles["draft-question"]}>{draft.question}</p>}
-              <label className={styles["form-label"]} htmlFor="draft-name">이름</label>
-              <input
-                id="draft-name"
-                type="text"
-                className={styles["form-input"]}
-                value={draft.name}
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              />
-              <label className={styles["form-label"]} htmlFor="draft-description">설명</label>
-              <textarea
-                id="draft-description"
-                className={styles["form-textarea"]}
-                rows={2}
-                value={draft.description}
-                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-              />
-              <label className={styles["form-label"]} htmlFor="draft-instructions">실행 지침</label>
-              <textarea
-                id="draft-instructions"
-                className={styles["form-textarea"]}
-                rows={6}
-                value={draft.instructions_markdown}
-                onChange={(event) => setDraft({ ...draft, instructions_markdown: event.target.value })}
-              />
-              <div className={styles["form-actions"]}>
-                <button
-                  type="button"
-                  className={styles["form-primary"]}
-                  disabled={publishMutation.isPending}
-                  onClick={() => publishMutation.mutate()}
-                >
-                  {publishMutation.isPending ? "게시 중…" : "게시"}
-                </button>
-              </div>
-              {publishMutation.error != null && (
-                <small className={modalStyles["model-error"]} role="alert">
-                  {getErrorMessage(publishMutation.error, "스킬을 게시하지 못했습니다.")}
-                </small>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {error != null && (
         <small className={modalStyles["model-error"]} role="alert">
@@ -486,6 +369,14 @@ export function SkillsPanel() {
           );
         })}
       </div>
+
+      {createOpen && workspaceId != null && (
+        <SkillCreateWizard
+          workspaceId={workspaceId}
+          onClose={() => setCreateOpen(false)}
+          onPublished={() => queryClient.invalidateQueries({ queryKey: SKILLS_QUERY_KEY })}
+        />
+      )}
 
       {searchOpen && (
         <SkillSearchModal
