@@ -60,3 +60,7 @@ export function getSelectedWorkspaceId(): string | null {
 export function setSelectedWorkspaceId(workspaceId: string) {
   window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId);
 }
+
+export function clearSelectedWorkspaceId() {
+  window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+}
