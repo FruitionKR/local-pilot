@@ -24,12 +24,13 @@ import {
   userCircleIcon
 } from "@/shared/ui/SvgIcon";
 import { AccountPanel } from "./panels/AccountPanel";
+import { MembersPanel } from "./panels/MembersPanel";
 import { NotificationsPanel } from "./panels/NotificationsPanel";
 import { SkillsPanel } from "./panels/SkillsPanel";
 import { WorkspacePanel } from "./panels/WorkspacePanel";
 import styles from "./SettingsModal.module.css";
 
-type SettingsSection = "account" | "notifications" | "general" | "skills";
+type SettingsSection = "account" | "notifications" | "general" | "members" | "skills";
 
 /** 설정 모달 (Figma 963:8660 / 963:8257 / 771:18800 / 981:10091). */
 export function SettingsModal({ onClose }: { onClose: () => void }) {
@@ -145,8 +146,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               <SvgIcon src={settingIcon} className={styles["nav-icon"]} />
               <span>기본 설정</span>
             </button>
-            {/* 멤버 관리는 백엔드 미지원이라 비활성 항목으로만 노출한다. */}
-            <button type="button" className={styles["nav-row"]} disabled>
+            <button
+              type="button"
+              className={`${styles["nav-row"]} ${activeSection === "members" ? styles["is-active"] : ""}`}
+              onClick={() => setActiveSection("members")}
+            >
               <SvgIcon src={userCircleIcon} className={styles["nav-icon"]} />
               <span>멤버 관리</span>
             </button>
@@ -182,6 +186,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               onSelectProvider={(provider) => void selectAiProvider(provider)}
             />
           )}
+          {activeSection === "members" && <MembersPanel name={name} email={email} />}
           {activeSection === "skills" && <SkillsPanel />}
           <button type="button" className={styles.close} aria-label="설정 닫기" onClick={onClose}>
             <SvgIcon src={plusIcon} className={styles["close-icon"]} />
