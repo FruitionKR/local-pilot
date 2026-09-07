@@ -151,17 +151,11 @@ export function SkillCreateWizard({
   const [justPassed, setJustPassed] = useState(false);
   const passed = step === 2 && justPassed && !authorMutation.isPending;
 
-  function advanceToStep3() {
-    setJustPassed(false);
-    setStep(3);
-  }
-
-  // 검토 통과 시 2초 뒤 STEP 3으로 자동 진행
+  // 통과해도 자동으로 STEP 3으로 넘어가지 않는다. 오버레이는 잠시 보여준 뒤 STEP 2에 머문다.
   useEffect(() => {
     if (!passed) return;
-    const timer = setTimeout(advanceToStep3, PASS_ADVANCE_MS);
+    const timer = setTimeout(() => setJustPassed(false), PASS_ADVANCE_MS);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [passed]);
 
   // STEP 3 진입 시 커맨드가 비어 있으면 AI가 지은 이름을 채워 수정 가능하게 한다.
@@ -401,6 +395,11 @@ export function SkillCreateWizard({
             >
               {authorMutation.isPending ? "검토 중…" : "다시 검토하기 ›"}
             </button>
+            {issues.length === 0 && draft.instructions_markdown != null && (
+              <button type="button" className={styles["btn-primary"]} onClick={() => setStep(3)}>
+                다음 ›
+              </button>
+            )}
           </div>
         </div>
 
@@ -533,7 +532,7 @@ export function SkillCreateWizard({
             type="button"
             className={styles["pass-overlay"]}
             disabled={authorMutation.isPending}
-            onClick={advanceToStep3}
+            onClick={() => setJustPassed(false)}
           >
             <SafetyReviewBadge variant={authorMutation.isPending ? "loading" : "complete"} />
           </button>
