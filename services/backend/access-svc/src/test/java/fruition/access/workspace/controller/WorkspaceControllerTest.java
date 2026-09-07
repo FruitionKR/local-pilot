@@ -270,6 +270,7 @@ class WorkspaceControllerTest {
                         .header("Authorization", bearerToken()))
                 .andExpect(status().isOk())
                 .andExpect(header().string("ETag", "\"hash-1\""))
+                .andExpect(header().string("Cache-Control", "no-cache, private"))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                 .andExpect(content().contentType(MediaType.IMAGE_PNG));
     }
@@ -282,7 +283,24 @@ class WorkspaceControllerTest {
         mockMvc.perform(get("/api/workspaces/ws_aaa11111/icon/image")
                         .header("Authorization", bearerToken())
                         .header("If-None-Match", "\"hash-1\""))
-                .andExpect(status().isNotModified());
+                .andExpect(status().isNotModified())
+                .andExpect(header().string("Cache-Control", "no-cache, private"));
+    }
+
+    @Test
+    void getIconImage_afterReplacement_returnsNewImageForOldEtag() throws Exception {
+        byte[] jpeg = new byte[]{(byte) 0xff, (byte) 0xd8, (byte) 0xff};
+        when(workspaceIconService.readIconImage(USER_ID, "ws_aaa11111"))
+                .thenReturn(new WorkspaceIconService.IconImage(jpeg, "image/jpeg", "hash-2"));
+
+        mockMvc.perform(get("/api/workspaces/ws_aaa11111/icon/image")
+                        .header("Authorization", bearerToken())
+                        .header("If-None-Match", "\"hash-1\""))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-cache, private"))
+                .andExpect(header().string("ETag", "\"hash-2\""))
+                .andExpect(content().contentType(MediaType.IMAGE_JPEG))
+                .andExpect(content().bytes(jpeg));
     }
 
     @Test

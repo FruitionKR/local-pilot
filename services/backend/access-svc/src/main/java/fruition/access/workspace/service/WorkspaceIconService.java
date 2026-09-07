@@ -11,6 +11,7 @@ import fruition.access.workspace.repository.WorkspaceIconRepository;
 import fruition.access.workspace.repository.WorkspaceMemberRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -58,7 +59,8 @@ public class WorkspaceIconService {
     }
 
     /** 아이콘 이미지 bytes. 멤버면 역할과 무관하게 볼 수 있다. */
-    @Transactional(readOnly = true)
+    // 메타데이터 조회 뒤 재업로드·삭제가 커밋돼도 바이너리는 같은 스냅샷에서 읽는다.
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public IconImage readIconImage(String userId, String workspaceId) {
         Workspace workspace = workspaceMemberRepository.findActiveWorkspaceForMember(workspaceId, userId)
                 .orElseThrow(() -> new WorkspaceNotFoundException(workspaceId));

@@ -802,7 +802,7 @@ curl -X PUT "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/icon/ima
 | 헤더 | 값 |
 |---|---|
 | `ETag` | 이미지 SHA-256 |
-| `Cache-Control` | `max-age=3600, private` |
+| `Cache-Control` | `no-cache, private` |
 | `X-Content-Type-Options` | `nosniff` |
 
 #### 6. Error response
@@ -819,7 +819,8 @@ curl -X PUT "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/icon/ima
 #### 8. 권한 규칙
 
 - 멤버면 역할과 무관하게 조회할 수 있다. 비멤버는 `404`로 존재를 숨긴다.
-- `private` 캐시라 공유 캐시에 남지 않는다.
+- `private` 캐시라 공유 캐시에 남지 않는다. 고정 URL이므로 `no-cache`로 매번 서버에 재검증하고, 이미지가 같을 때만 `304`로 캐시를 재사용한다. `200`과 `304` 모두 이 정책을 반환한다.
+- 이미지 조회는 `REPEATABLE_READ` 트랜잭션에서 메타데이터와 바이너리를 같은 스냅샷으로 읽는다. 조회 중 교체·삭제되어도 응답의 Content-Type·ETag·바이너리가 서로 다른 버전으로 섞이지 않으며, 다음 요청은 변경된 상태를 조회한다.
 
 #### 9. 예시 요청/응답
 

@@ -33,7 +33,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class WorkspaceController {
 
     private static final CacheControl PRIVATE_CACHE =
-            CacheControl.maxAge(1, java.util.concurrent.TimeUnit.HOURS).cachePrivate();
+            CacheControl.noCache().cachePrivate();
 
     private final WorkspaceService workspaceService;
     private final WorkspaceIconService workspaceIconService;
