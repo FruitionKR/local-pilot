@@ -1,6 +1,6 @@
 "use client";
 
-import { menuSearchIcon, SvgIcon, userCircleIcon } from "@/shared/ui/SvgIcon";
+import { menuSearchIcon, settingScrollIcon, SvgIcon, userCircleIcon } from "@/shared/ui/SvgIcon";
 import modalStyles from "../SettingsModal.module.css";
 import styles from "./MembersPanel.module.css";
 
@@ -19,11 +19,11 @@ export function MembersPanel({ name, email }: { name: string; email: string }) {
       <div className={styles.toolbar}>
         <div className={styles["toolbar-group"]}>
           <button type="button" className={styles["filter-btn"]} disabled>
-            권한 <span aria-hidden>⌄</span>
+            권한 <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
           </button>
           <button type="button" className={styles["filter-btn"]} disabled>
             <span className={styles["filter-accent"]}>권한 : OWNER</span>
-            <span aria-hidden>⌄</span>
+            <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
           </button>
         </div>
         <div className={styles["toolbar-group"]}>
@@ -31,7 +31,7 @@ export function MembersPanel({ name, email }: { name: string; email: string }) {
             <SvgIcon src={menuSearchIcon} className={styles["search-icon"]} />
           </button>
           <button type="button" className={styles["invite-btn"]} disabled>
-            멤버 추가하기 <span aria-hidden>⌄</span>
+            멤버 추가하기 <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
           </button>
         </div>
       </div>
@@ -57,7 +57,7 @@ export function MembersPanel({ name, email }: { name: string; email: string }) {
             </div>
             <span className={styles["cell-role"]}>
               <button type="button" className={styles["role-chip"]} disabled>
-                OWNER <span aria-hidden>⌄</span>
+                OWNER <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
               </button>
             </span>
           </div>

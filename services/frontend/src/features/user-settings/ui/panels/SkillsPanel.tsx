@@ -14,7 +14,7 @@ import {
 } from "@/entities/skill";
 import { getSelectedWorkspaceId } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
-import { menuSearchIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { menuSearchIcon, settingScrollIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import modalStyles from "../SettingsModal.module.css";
 import styles from "./SkillsPanel.module.css";
 
@@ -212,7 +212,7 @@ export function SkillsPanel() {
             ) : (
               <span className={styles["filter-accent"]}>저장범위 : {SCOPE_LABELS[scopeFilter]}</span>
             )}
-            <span aria-hidden>⌄</span>
+            <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
           </button>
           <button type="button" className={styles["filter-btn"]} onClick={cycleStateFilter}>
             {stateFilter === "all" ? (
@@ -220,7 +220,7 @@ export function SkillsPanel() {
             ) : (
               <span className={styles["filter-accent"]}>상태 : {STATE_LABELS[stateFilter]}</span>
             )}
-            <span aria-hidden>⌄</span>
+            <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
           </button>
         </div>
         <div className={styles["toolbar-group"]}>
@@ -250,7 +250,7 @@ export function SkillsPanel() {
             className={styles["create-btn"]}
             onClick={() => (createOpen ? closeCreateForm() : setCreateOpen(true))}
           >
-            새 스킬 만들기 <span aria-hidden>⌄</span>
+            새 스킬 만들기 <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
           </button>
         </div>
       </div>

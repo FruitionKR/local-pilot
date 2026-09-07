@@ -170,3 +170,10 @@
   font-size: 16px;
   line-height: 1;
 }
+
+/* 드롭다운 셰브론 아이콘 (svg/setting_scroll.svg) */
+.chev-icon {
+  width: 10px;
+  height: 5px;
+  flex: 0 0 auto;
+}
