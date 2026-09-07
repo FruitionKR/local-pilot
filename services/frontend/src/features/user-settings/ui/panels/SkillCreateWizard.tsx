@@ -45,14 +45,24 @@ const SCOPE_OPTIONS = ["personal", "team"] as const;
 type ScopeType = (typeof SCOPE_OPTIONS)[number];
 const SCOPE_LABELS: Record<ScopeType, string> = { personal: "개인", team: "팀" };
 
-/** issues 항목은 문서상 스키마가 느슨해 문자열·객체 모두 방어적으로 렌더한다. */
+// 안전 검토 issue category 한글 라벨
+const ISSUE_CATEGORY_LABELS: Record<string, string> = {
+  approval_bypass: "권한 우회 표현",
+  sensitive_info: "민감정보로 보이는 내용",
+  tool_policy: "허용되지 않은 도구 사용"
+};
+
+/** author 응답 issues 항목({category, text, reason, ...})을 표시용 텍스트로 변환한다. */
 function issueTexts(issue: unknown): { title: string; detail: string } {
   if (typeof issue === "string") return { title: issue, detail: "" };
   if (issue != null && typeof issue === "object") {
     const record = issue as Record<string, unknown>;
-    const title = record.title ?? record.code ?? record.type ?? "안전 검토 지적";
-    const detail = record.detail ?? record.message ?? record.description ?? "";
-    return { title: String(title), detail: String(detail) };
+    const category = typeof record.category === "string" ? record.category : "";
+    const title = ISSUE_CATEGORY_LABELS[category] ?? String(record.reason ?? category ?? "안전 검토 지적");
+    const quoted = record.text ? `"${String(record.text)}"` : "";
+    const reason = ISSUE_CATEGORY_LABELS[category] ? String(record.reason ?? "") : "";
+    const detail = [quoted, reason].filter(Boolean).join(" — ");
+    return { title, detail };
   }
   return { title: String(issue), detail: "" };
 }
@@ -94,6 +104,8 @@ export function SkillCreateWizard({
 
   // 서버 name 패턴에 맞을 때만 전달한다. 빈 값·비허용 문자를 보내면 400이 난다.
   const validCommand = COMMAND_PATTERN.test(command.trim()) ? command.trim() : undefined;
+  // STEP 3 표시·게시용 최종 커맨드명: 사용자가 넣은 유효 커맨드가 없으면 AI 초안 name을 쓴다.
+  const publishName = validCommand ?? draft?.name ?? "";
 
   const authorMutation = useMutation({
     mutationFn: (body: { instruction: string }) =>
@@ -113,7 +125,7 @@ export function SkillCreateWizard({
     mutationFn: () => {
       if (draft == null) throw new Error("게시할 초안이 없습니다.");
       return publishSkill(workspaceId, {
-        name: validCommand ?? draft.name,
+        name: publishName,
         description: draft.description,
         instructions_markdown: draft.instructions_markdown,
         scope_type: scopeType,
@@ -140,7 +152,9 @@ export function SkillCreateWizard({
   const authorError =
     authorMutation.error != null ? getErrorMessage(authorMutation.error, "스킬 초안을 생성하지 못했습니다.") : null;
 
-  const instructionLines = (draft?.instructions_markdown ?? "").split("\n").length;
+  // blocked 응답이면 초안 내용이 null이라, STEP1에서 입력한 지침을 편집 대상으로 보여준다.
+  const reviewContent = draft?.instructions_markdown ?? instruction;
+  const instructionLines = reviewContent.split("\n").length;
 
   function renderStep1() {
     return (
@@ -338,8 +352,12 @@ export function SkillCreateWizard({
               <textarea
                 className={styles["code-textarea"]}
                 rows={Math.max(instructionLines, 8)}
-                value={draft.instructions_markdown}
-                onChange={(event) => setDraft({ ...draft, instructions_markdown: event.target.value })}
+                value={reviewContent}
+                onChange={(event) =>
+                  draft.instructions_markdown != null
+                    ? setDraft({ ...draft, instructions_markdown: event.target.value })
+                    : setInstruction(event.target.value)
+                }
               />
             </div>
           </div>
@@ -366,7 +384,7 @@ export function SkillCreateWizard({
               type="button"
               className={styles["btn-primary"]}
               disabled={authorMutation.isPending}
-              onClick={() => authorMutation.mutate({ instruction: draft.instructions_markdown })}
+              onClick={() => authorMutation.mutate({ instruction: reviewContent })}
             >
               {authorMutation.isPending ? "검토 중…" : "다시 검토하기 ›"}
             </button>
@@ -392,43 +410,28 @@ export function SkillCreateWizard({
     return (
       <>
         <div className={styles.fields}>
+          {/* STEP 3은 게시 전 최종 확인용이라 전부 읽기 전용이다. 수정은 STEP 1·2에서 한다. */}
           <div className={styles.field}>
             <span className={styles["field-label"]}>커맨드</span>
             <div className={styles["input-wrap"]}>
-              <input
-                type="text"
-                className={styles.input}
-                maxLength={NAME_MAX}
-                value={command}
-                onChange={(event) => setCommand(event.target.value)}
-              />
-              <span className={styles.counter}>{command.length}/{NAME_MAX}</span>
+              <input type="text" className={styles.input} value={publishName} readOnly />
+              <span className={styles.counter}>{publishName.length}/{NAME_MAX}</span>
             </div>
           </div>
 
           <div className={styles.field}>
             <span className={styles["field-label"]}>설명</span>
-            <input
-              type="text"
-              className={styles.input}
-              value={draft.description}
-              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-            />
+            <input type="text" className={styles.input} value={draft.description} readOnly />
           </div>
 
           <div className={styles.field}>
             <span className={styles["field-label"]}>스킬 내용</span>
-            <textarea
-              className={styles.textarea}
-              rows={8}
-              value={draft.instructions_markdown}
-              onChange={(event) => setDraft({ ...draft, instructions_markdown: event.target.value })}
-            />
+            <textarea className={styles.textarea} rows={8} value={draft.instructions_markdown} readOnly />
           </div>
 
           {draft.allowed_tools.length > 0 && (
             <div className={styles.field}>
-              <span className={styles["field-label"]}>실행 권한</span>
+              <span className={styles["field-label"]}>실행 가능한 워크스페이스</span>
               <div className={styles["tool-chips"]}>
                 {draft.allowed_tools.map((tool) => (
                   <span key={tool} className={styles["tool-chip"]}>{tool}</span>
@@ -460,7 +463,7 @@ export function SkillCreateWizard({
             <button
               type="button"
               className={styles["btn-primary"]}
-              disabled={publishMutation.isPending || command.trim().length === 0}
+              disabled={publishMutation.isPending || publishName.length === 0}
               onClick={() => publishMutation.mutate()}
             >
               {publishMutation.isPending ? "게시 중…" : "최종 게시 ›"}
