@@ -3,7 +3,9 @@
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  /* 설정 모달·문서 선택 모달(CenteredModal)과 같은 40으로 맞춰
+     portal 마운트 순서(설정 → 위저드 → 문서 선택)대로 쌓이게 한다. */
+  z-index: 40;
   display: flex;
   align-items: center;
   justify-content: center;
