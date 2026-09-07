@@ -238,3 +238,43 @@
   height: 5px;
   flex: 0 0 auto;
 }
+
+/* 필터 드롭다운 */
+.filter-wrap {
+  position: relative;
+}
+
+.filter-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
+.filter-option {
+  padding: 6px 8px;
+  color: var(--ink);
+  background: transparent;
+  border-radius: 4px;
+  font-size: 14px;
+  letter-spacing: -0.28px;
+  text-align: left;
+}
+
+.filter-option:hover,
+.filter-option:focus-visible {
+  background: var(--soft);
+}
+
+.filter-option.is-selected {
+  color: var(--yellow);
+  font-weight: 600;
+}

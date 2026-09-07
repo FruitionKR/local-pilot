@@ -58,6 +58,8 @@ export function SkillsPanel() {
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
   const [searchOpen, setSearchOpen] = useState(false);
+  // 열려 있는 필터 드롭다운 (한 번에 하나만)
+  const [openMenu, setOpenMenu] = useState<"scope" | "state" | null>(null);
   const [searchText, setSearchText] = useState("");
 
   // 새 스킬 작성 폼 상태
@@ -176,13 +178,6 @@ export function SkillsPanel() {
     publishMutation.reset();
   }
 
-  function cycleScopeFilter() {
-    setScopeFilter((current) => SCOPE_FILTERS[(SCOPE_FILTERS.indexOf(current) + 1) % SCOPE_FILTERS.length]);
-  }
-
-  function cycleStateFilter() {
-    setStateFilter((current) => STATE_FILTERS[(STATE_FILTERS.indexOf(current) + 1) % STATE_FILTERS.length]);
-  }
 
   function openEditForm(skill: SkillResponse) {
     const version = skill.enabled_version ?? skill.latest_version;
@@ -206,22 +201,74 @@ export function SkillsPanel() {
       {/* 필터·검색·생성 툴바 */}
       <div className={styles.toolbar}>
         <div className={styles["toolbar-group"]}>
-          <button type="button" className={styles["filter-btn"]} onClick={cycleScopeFilter}>
-            {scopeFilter === "all" ? (
-              <>저장범위 : 전체</>
-            ) : (
-              <span className={styles["filter-accent"]}>저장범위 : {SCOPE_LABELS[scopeFilter]}</span>
+          <div className={styles["filter-wrap"]}>
+            <button
+              type="button"
+              className={styles["filter-btn"]}
+              aria-expanded={openMenu === "scope"}
+              onClick={() => setOpenMenu(openMenu === "scope" ? null : "scope")}
+            >
+              {scopeFilter === "all" ? (
+                <>저장범위 : 전체</>
+              ) : (
+                <span className={styles["filter-accent"]}>저장범위 : {SCOPE_LABELS[scopeFilter]}</span>
+              )}
+              <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
+            </button>
+            {openMenu === "scope" && (
+              <div className={styles["filter-menu"]} role="listbox" aria-label="저장범위 선택">
+                {SCOPE_FILTERS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    role="option"
+                    aria-selected={scopeFilter === option}
+                    className={`${styles["filter-option"]} ${scopeFilter === option ? styles["is-selected"] : ""}`}
+                    onClick={() => {
+                      setScopeFilter(option);
+                      setOpenMenu(null);
+                    }}
+                  >
+                    {SCOPE_LABELS[option]}
+                  </button>
+                ))}
+              </div>
             )}
-            <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
-          </button>
-          <button type="button" className={styles["filter-btn"]} onClick={cycleStateFilter}>
-            {stateFilter === "all" ? (
-              <>상태</>
-            ) : (
-              <span className={styles["filter-accent"]}>상태 : {STATE_LABELS[stateFilter]}</span>
+          </div>
+          <div className={styles["filter-wrap"]}>
+            <button
+              type="button"
+              className={styles["filter-btn"]}
+              aria-expanded={openMenu === "state"}
+              onClick={() => setOpenMenu(openMenu === "state" ? null : "state")}
+            >
+              {stateFilter === "all" ? (
+                <>상태</>
+              ) : (
+                <span className={styles["filter-accent"]}>상태 : {STATE_LABELS[stateFilter]}</span>
+              )}
+              <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
+            </button>
+            {openMenu === "state" && (
+              <div className={styles["filter-menu"]} role="listbox" aria-label="상태 선택">
+                {STATE_FILTERS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    role="option"
+                    aria-selected={stateFilter === option}
+                    className={`${styles["filter-option"]} ${stateFilter === option ? styles["is-selected"] : ""}`}
+                    onClick={() => {
+                      setStateFilter(option);
+                      setOpenMenu(null);
+                    }}
+                  >
+                    {STATE_LABELS[option]}
+                  </button>
+                ))}
+              </div>
             )}
-            <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
-          </button>
+          </div>
         </div>
         <div className={styles["toolbar-group"]}>
           {searchOpen && (
