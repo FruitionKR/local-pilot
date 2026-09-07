@@ -370,18 +370,17 @@
   resize: vertical;
 }
 
-/* 검토 통과 오버레이 */
+/* 검토 진행·통과 오버레이. 모달이 스크롤 컨테이너라 absolute로는 아래가 안 덮여 fixed로 화면 전체를 덮는다. */
 .pass-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 50;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 16px;
   background: rgba(0, 0, 0, 0.8);
-  border-radius: 20px;
   cursor: pointer;
 }
 

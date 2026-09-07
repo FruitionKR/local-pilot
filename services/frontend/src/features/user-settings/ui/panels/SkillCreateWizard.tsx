@@ -8,6 +8,7 @@ import { authorSkill, publishSkill, type SkillAuthoringResult } from "@/entities
 import { DocumentPickerModal } from "./DocumentPickerModal";
 import { SafetyReviewBadge } from "./SafetyReviewBadge";
 import { getErrorMessage } from "@/shared/lib/errors";
+import { useWorkspaceName } from "@/entities/workspace";
 import { useEscapeKey } from "@/shared/lib/useEscapeKey";
 import { menuSearchIcon, questionMarkIcon, settingScrollIcon, skillBackIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import styles from "./SkillCreateWizard.module.css";
@@ -82,6 +83,7 @@ export function SkillCreateWizard({
   onPublished: () => void;
 }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const workspaceName = useWorkspaceName();
 
   // STEP 1 입력
   const [scopeType, setScopeType] = useState<ScopeType>("personal");
@@ -455,16 +457,15 @@ export function SkillCreateWizard({
             />
           </div>
 
-          {draft.allowed_tools.length > 0 && (
-            <div className={styles.field}>
-              <span className={styles["field-label"]}>실행 가능한 워크스페이스</span>
-              <div className={styles["tool-chips"]}>
-                {draft.allowed_tools.map((tool) => (
-                  <span key={tool} className={styles["tool-chip"]}>{tool}</span>
-                ))}
-              </div>
+          <div className={styles.field}>
+            <span className={styles["field-label"]}>실행 가능한 워크스페이스</span>
+            <div className={styles["tool-chips"]}>
+              {/* 저장 범위에 따라 실제 적용 워크스페이스를 보여준다. 개인은 모든 워크스페이스에서 쓸 수 있다. */}
+              <span className={styles["tool-chip"]}>
+                {scopeType === "personal" ? "모든 워크스페이스" : `${workspaceName ?? "현재 워크스페이스"} (팀)`}
+              </span>
             </div>
-          )}
+          </div>
         </div>
 
         {publishMutation.error != null && (
