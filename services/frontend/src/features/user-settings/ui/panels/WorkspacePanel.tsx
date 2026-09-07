@@ -64,6 +64,8 @@ export function WorkspacePanel({
     setNameError(null);
     try {
       await renameWorkspace(workspaceId, trimmedName);
+      // 서버에 저장된 정규화 값(trim)으로 입력창을 맞춘다.
+      setNameInput(trimmedName);
       // 사이드바 등 useWorkspaceName 소비처가 새 이름을 반영하도록 캐시를 무효화한다.
       await queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     } catch (error: unknown) {

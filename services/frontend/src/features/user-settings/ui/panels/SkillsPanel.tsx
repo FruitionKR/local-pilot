@@ -118,7 +118,8 @@ export function SkillsPanel() {
       }),
     onSuccess: (result, { skill }) => {
       setEditError(null);
-      setEditingId(null);
+      // 저장 중 다른 스킬 편집으로 전환했을 수 있으니, 저장한 스킬의 편집 상태만 닫는다.
+      setEditingId((current) => (current === skill.id ? null : current));
       // PATCH 응답 필드로 캐시 행의 버전 정보를 교체한다.
       queryClient.setQueryData<SkillResponse[]>(SKILLS_QUERY_KEY, (current) =>
         current?.map((item) => {
@@ -259,6 +260,7 @@ export function SkillsPanel() {
           <button
             type="button"
             className={styles["create-btn"]}
+            disabled={workspaceId == null}
             onClick={() => setCreateOpen(true)}
           >
             새 스킬 만들기 <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
@@ -303,6 +305,7 @@ export function SkillsPanel() {
                 <button
                   type="button"
                   className={styles.command}
+                  disabled={updateMutation.isPending}
                   onClick={() => (isEditing ? setEditingId(null) : openEditForm(skill))}
                 >
                   {command}

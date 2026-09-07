@@ -130,7 +130,10 @@ export function SkillCreateWizard({
   useEscapeKey(true, onClose);
 
   // 서버 name 패턴에 맞을 때만 전달한다. 빈 값·비허용 문자를 보내면 400이 난다.
-  const validCommand = COMMAND_PATTERN.test(command.trim()) ? command.trim() : undefined;
+  const normalizedCommand = command.trim();
+  const validCommand = COMMAND_PATTERN.test(normalizedCommand) ? normalizedCommand : undefined;
+  // 비어 있지 않은데 패턴에 어긋나면(한글·대문자 등) 진행을 막고 오류를 보여준다.
+  const isInvalidCommand = normalizedCommand !== "" && validCommand == null;
   // STEP 3 표시·게시용 최종 커맨드명: 사용자가 넣은 유효 커맨드가 없으면 AI 초안 name을 쓴다.
   const publishName = validCommand ?? draft?.name ?? "";
   // 기존 스킬 커맨드와 중복이면 미리 막는다. STEP1은 입력값, STEP3 게시는 AI 이름 포함 최종값 기준.
@@ -322,6 +325,11 @@ export function SkillCreateWizard({
               />
               <span className={styles.counter}>{command.length}/{NAME_MAX}</span>
             </div>
+            {isInvalidCommand && (
+              <small className={styles.error} role="alert">
+                커맨드는 영문 소문자·숫자·하이픈만 사용할 수 있습니다. (예: meeting-summary)
+              </small>
+            )}
             {isDuplicateCommand && (
               <small className={styles.error} role="alert">
                 이미 사용 중인 커맨드입니다. 다른 커맨드 이름을 입력해 주세요.
@@ -387,7 +395,7 @@ export function SkillCreateWizard({
           <button
             type="button"
             className={styles["btn-primary"]}
-            disabled={instruction.trim().length === 0 || isDuplicateCommand || authorMutation.isPending}
+            disabled={instruction.trim().length === 0 || isInvalidCommand || isDuplicateCommand || authorMutation.isPending}
             onClick={() => authorMutation.mutate({ instruction })}
           >
             {authorMutation.isPending ? "안전 검토 중…" : "안전 검토 들어가기 ›"}
@@ -514,6 +522,11 @@ export function SkillCreateWizard({
             />
           </div>
 
+          {isInvalidCommand && (
+            <small className={styles.error} role="alert">
+              커맨드는 영문 소문자·숫자·하이픈만 사용할 수 있습니다. 게시 시에는 AI 이름 대신 입력값을 고쳐 주세요.
+            </small>
+          )}
           {isDuplicatePublishName && (
             <small className={styles.error} role="alert">
               이미 사용 중인 커맨드입니다. 커맨드 이름을 수정해 주세요.
@@ -598,7 +611,7 @@ export function SkillCreateWizard({
             <button
               type="button"
               className={styles["btn-primary"]}
-              disabled={publishMutation.isPending || publishName.length === 0 || isDuplicatePublishName}
+              disabled={publishMutation.isPending || publishName.length === 0 || isInvalidCommand || isDuplicatePublishName}
               onClick={() => publishMutation.mutate()}
             >
               {publishMutation.isPending ? "게시 중…" : "최종 게시 ›"}

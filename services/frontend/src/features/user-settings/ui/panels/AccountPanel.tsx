@@ -68,14 +68,15 @@ export function AccountPanel({ name, email }: { name: string; email: string }) {
         <div className={styles.row}>
           <div className={styles["row-title"]}>
             <strong>다단계 인증</strong>
-            <small>계정 보안을 위한 인증 단계에요.</small>
+            <small>계정 보안을 위한 인증 단계에요. (준비 중)</small>
           </div>
+          {/* 실제 상태가 없는 값을 켜짐으로 보여주지 않도록 OFF 상태로 둔다. */}
           <button
             type="button"
             role="switch"
-            aria-checked
+            aria-checked={false}
             aria-label="다단계 인증"
-            className={`${styles.switch} ${styles["is-on"]}`}
+            className={styles.switch}
             disabled
           >
             <span className={styles["switch-ball"]} />
@@ -87,7 +88,7 @@ export function AccountPanel({ name, email }: { name: string; email: string }) {
             <small>여러 기기에서 로그인 중인 기기 수에요.</small>
           </div>
           <button type="button" className={panelStyles.pill} disabled>
-            18개 기기 로그인 중 ›
+            준비 중
           </button>
         </div>
       </div>
