@@ -107,10 +107,12 @@ export function SkillCreateWizard({
   // STEP 3 표시·게시용 최종 커맨드명: 사용자가 넣은 유효 커맨드가 없으면 AI 초안 name을 쓴다.
   const publishName = validCommand ?? draft?.name ?? "";
 
+  // authoring_mode: enhance(LLM 구체화, 기본) / preserve(원문 유지 재검토) / regenerate(차단 구간 제거 후 안전 재작성)
   const authorMutation = useMutation({
-    mutationFn: (body: { instruction: string }) =>
+    mutationFn: (body: { instruction: string; mode?: "enhance" | "preserve" | "regenerate" }) =>
       authorSkill(workspaceId, {
         instruction: body.instruction,
+        ...(body.mode ? { authoring_mode: body.mode } : {}),
         ...(validCommand ? { name: validCommand } : {}),
         scope_type: scopeType,
         ...(selectedDocs.length > 0 ? { reference_document_ids: selectedDocs.map((doc) => doc.id) } : {})
@@ -376,7 +378,7 @@ export function SkillCreateWizard({
               type="button"
               className={styles["btn-regen"]}
               disabled={authorMutation.isPending}
-              onClick={() => authorMutation.mutate({ instruction })}
+              onClick={() => authorMutation.mutate({ instruction: reviewContent, mode: "regenerate" })}
             >
               ✦ AI로 안전하게 다시 만들기
             </button>
@@ -384,7 +386,7 @@ export function SkillCreateWizard({
               type="button"
               className={styles["btn-primary"]}
               disabled={authorMutation.isPending}
-              onClick={() => authorMutation.mutate({ instruction: reviewContent })}
+              onClick={() => authorMutation.mutate({ instruction: reviewContent, mode: "preserve" })}
             >
               {authorMutation.isPending ? "검토 중…" : "다시 검토하기 ›"}
             </button>
@@ -456,7 +458,10 @@ export function SkillCreateWizard({
               type="button"
               className={styles["btn-regen"]}
               disabled={authorMutation.isPending}
-              onClick={() => authorMutation.mutate({ instruction })}
+              onClick={() => {
+                // 초안을 원본 요구 기준으로 안전 재생성하고 STEP 2에서 다시 확인한다.
+                authorMutation.mutate({ instruction, mode: "regenerate" });
+              }}
             >
               ✦ AI로 안전하게 다시 만들기
             </button>

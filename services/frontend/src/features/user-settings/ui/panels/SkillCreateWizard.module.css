@@ -445,11 +445,17 @@
   opacity: 0.5;
 }
 
+/* Figma 1011:9321 이전 버튼: 셰브론 + 텍스트, gap 8px 가운데 정렬, #c4c4c4 semibold */
 .btn-ghost {
-  padding: 10px 12px;
-  color: var(--muted, #a7a7a7);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  color: #c4c4c4;
   background: transparent;
   font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.28px;
   white-space: nowrap;
 }
 
