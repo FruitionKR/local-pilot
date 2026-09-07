@@ -15,6 +15,9 @@ import fruition.access.user.exception.VerificationCodeAttemptsExceededException;
 import fruition.access.user.exception.VerificationCodeExpiredException;
 import fruition.access.user.exception.VerificationRateLimitedException;
 import fruition.access.user.exception.EmailAvailabilityRateLimitedException;
+import fruition.access.workspace.exception.LastOwnerException;
+import fruition.access.workspace.exception.WorkspaceAccessDeniedException;
+import fruition.access.workspace.exception.WorkspaceMemberNotFoundException;
 import fruition.access.workspace.exception.WorkspaceNotFoundException;
 import fruition.shared.util.BaseExceptionHandler;
 import fruition.shared.util.ErrorResponse;
@@ -65,6 +68,30 @@ public class AccessExceptionHandler extends BaseExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("WORKSPACE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceMemberNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceMemberNotFound(WorkspaceMemberNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "WORKSPACE_MEMBER_NOT_FOUND");
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("WORKSPACE_MEMBER_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceAccessDenied(WorkspaceAccessDeniedException e) {
+        logHandled(e, HttpStatus.FORBIDDEN, "WORKSPACE_ACCESS_DENIED");
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("WORKSPACE_ACCESS_DENIED", e.getMessage()));
+    }
+
+    @ExceptionHandler(LastOwnerException.class)
+    public ResponseEntity<ErrorResponse> handleLastOwner(LastOwnerException e) {
+        logHandled(e, HttpStatus.CONFLICT, "LAST_OWNER");
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("LAST_OWNER", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidOAuthCodeException.class)
