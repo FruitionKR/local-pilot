@@ -16,9 +16,7 @@
   flex-direction: column;
   gap: 40px;
   width: min(720px, calc(100vw - 48px));
-  max-height: calc(100vh - 64px);
   padding: 36px 40px;
-  overflow-y: auto;
   background: var(--bg, #0a0a0a);
   border: 1px solid var(--line, #4f4f4f);
   border-radius: 20px;
@@ -101,6 +99,49 @@
 .help-icon {
   width: 16px;
   height: 16px;
+  flex: 0 0 auto;
+}
+
+/* 물음표 hover 툴팁 (Figma 1036:8568) — 아이콘 위쪽·좌측 정렬 */
+.help-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 12px;
+  color: var(--muted, #a7a7a7);
+  background: var(--panel, #1e1e1e);
+  border: 1px solid var(--soft, #323232);
+  border-radius: 6px;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.24));
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.help-wrap:hover .tooltip,
+.help-wrap:focus-visible .tooltip {
+  display: flex;
+}
+
+.tooltip-row {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.tooltip-term {
+  width: 21px;
   flex: 0 0 auto;
 }
 

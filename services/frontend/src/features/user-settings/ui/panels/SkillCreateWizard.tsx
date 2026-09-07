@@ -115,7 +115,26 @@ export function SkillCreateWizard({
             <div className={styles["field-text"]}>
               <span className={styles["field-label-row"]}>
                 <span className={styles["field-label"]}>저장 범위</span>
-                <SvgIcon src={questionMarkIcon} className={styles["help-icon"]} />
+                {/* 물음표 hover 시 저장 범위 설명 툴팁 (Figma 1036:8568, 위치 1036:8567: 아이콘 위·좌측 정렬) */}
+                <span className={styles["help-wrap"]} tabIndex={0}>
+                  <SvgIcon src={questionMarkIcon} className={styles["help-icon"]} />
+                  <span className={styles.tooltip} role="tooltip">
+                    <span className={styles["tooltip-row"]}>
+                      <span className={styles["tooltip-term"]}>개인</span>
+                      <span>-</span>
+                      <span>모든 워크스페이스에서 사용됩니다.</span>
+                    </span>
+                    <span className={styles["tooltip-row"]}>
+                      <span className={styles["tooltip-term"]}>팀</span>
+                      <span>-</span>
+                      <span>
+                        현재 워크스페이스에서 사용됩니다.
+                        <br />
+                        (OWNER만 관리 가능)
+                      </span>
+                    </span>
+                  </span>
+                </span>
               </span>
               <span className={styles["field-desc"]}>스킬을 적용할 범위를 지정합니다.</span>
             </div>
