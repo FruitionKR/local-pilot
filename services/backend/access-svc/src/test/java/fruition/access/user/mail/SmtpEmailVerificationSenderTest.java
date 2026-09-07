@@ -57,4 +57,15 @@ class SmtpEmailVerificationSenderTest {
         assertThatThrownBy(() -> sender.send("user@example.com", "signup", "123456"))
                 .isInstanceOf(EmailVerificationSendException.class);
     }
+    @Test
+    void send_emailChange_explainsPurposeInSubjectAndBody() {
+        SmtpEmailVerificationSender sender = new SmtpEmailVerificationSender(mailSender, "no-reply@fruition.app");
+        sender.send("new@example.com", "email_change", "123456");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getSubject()).contains("이메일 변경");
+        assertThat(captor.getValue().getText()).contains("이메일 변경", "123456").doesNotContain("회원가입");
+    }
+
 }

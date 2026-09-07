@@ -22,6 +22,8 @@ import fruition.access.user.exception.PasswordLoginUnavailableException;
 import fruition.access.user.exception.UserNotFoundException;
 import fruition.access.user.repository.UserRefreshTokenRepository;
 import fruition.access.user.repository.UserRepository;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -192,6 +194,18 @@ public class AuthService {
         }
 
         user.changeEmail(newEmail);
+        // 사전 조회 이후 발생한 중복도 커밋 전에 확인해 같은 오류 계약으로 반환한다.
+        try {
+            userRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+                if (cause instanceof ConstraintViolationException violation
+                        && "uq_users_email_provider".equals(violation.getConstraintName())) {
+                    throw new DuplicateEmailException(newEmail);
+                }
+            }
+            throw exception;
+        }
         int revoked = revokeOtherSessions(userId, currentRefreshToken);
         log.info("[이메일 변경 성공] userId={} revokedSessions={}", userId, revoked);
         return new MeResponse(user.getId(), user.getEmail(), user.getDisplayName(), user.getCreatedAt());

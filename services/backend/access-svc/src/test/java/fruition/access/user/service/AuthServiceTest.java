@@ -22,6 +22,8 @@ import fruition.access.user.exception.InvalidVerificationTokenException;
 import fruition.access.user.exception.PasswordLoginUnavailableException;
 import fruition.access.user.repository.UserRefreshTokenRepository;
 import fruition.access.user.repository.UserRepository;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -394,4 +396,31 @@ class AuthServiceTest {
         assertThat(user.getEmail()).isEqualTo("user@example.com");
         verifyNoInteractions(refreshTokenRepository);
     }
+    @Test
+    void changeEmail_duplicateAtFlushThrowsDuplicateEmail() {
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(localUser("password1")));
+        var violation = new ConstraintViolationException("duplicate", new java.sql.SQLException("duplicate", "23505"),
+                "uq_users_email_provider");
+        doThrow(new DataIntegrityViolationException("duplicate", violation)).when(userRepository).flush();
+
+        assertThatThrownBy(() -> authService.changeEmail("user_1",
+                new EmailChangeRequest("new@example.com", "verification-token"), null))
+                .isInstanceOf(DuplicateEmailException.class);
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    @Test
+    void changeEmail_otherConstraintFailureIsNotDuplicateEmail() {
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(localUser("password1")));
+        var violation = new ConstraintViolationException("constraint", new java.sql.SQLException("constraint"),
+                "another_constraint");
+        var failure = new DataIntegrityViolationException("constraint", violation);
+        doThrow(failure).when(userRepository).flush();
+
+        assertThatThrownBy(() -> authService.changeEmail("user_1",
+                new EmailChangeRequest("new@example.com", "verification-token"), null))
+                .isSameAs(failure);
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
 }

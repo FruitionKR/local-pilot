@@ -45,6 +45,7 @@ public class SmtpEmailVerificationSender implements EmailVerificationSender {
 
     private String subjectFor(String purpose) {
         return switch (purpose) {
+            case "email_change" -> "[Fruition] 이메일 변경 인증번호";
             case "signup" -> "[Fruition] 회원가입 인증번호";
             case "password_reset" -> "[Fruition] 비밀번호 재설정 인증번호";
             default -> "[Fruition] 인증번호";
@@ -52,7 +53,11 @@ public class SmtpEmailVerificationSender implements EmailVerificationSender {
     }
 
     private String bodyFor(String purpose, String code) {
-        String action = "password_reset".equals(purpose) ? "비밀번호 재설정" : "회원가입";
+        String action = switch (purpose) {
+            case "email_change" -> "이메일 변경";
+            case "password_reset" -> "비밀번호 재설정";
+            default -> "회원가입";
+        };
         return "Fruition " + action + " 인증번호는 아래와 같습니다.\n\n"
                 + "인증번호: " + code + "\n\n"
                 + "인증번호를 요청하지 않으셨다면 이 메일을 무시하셔도 됩니다.";
