@@ -11,10 +11,29 @@
   display: block;
 }
 
-/* 검토 중: 노란 호 회전 — Figma 타임라인 5.42s, 3회전 후 정지 구간 포함 loop
-   (rotate 0→1080deg, times [0, 0.018, 0.686, 1], linear) */
-.arc {
-  transform-origin: 40px 40px;
+/* 검토 중 스피너 — Figma 1033:8398 Ring Arc 원본 재현:
+   conic-gradient(from 90deg, 투명 → #00de5a 349.6deg → 투명)를 링 모양으로 마스킹하고
+   타임라인 5.42s 동안 3회전 후 잠시 멈추는 loop (times [0, 0.018, 0.686, 1], linear) */
+.ring-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+}
+
+.gradient-arc {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 90deg,
+    rgba(166, 166, 166, 0) 0deg,
+    #00de5a 349.6deg,
+    rgba(255, 255, 255, 0) 360deg
+  );
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 5.4px), #000 calc(100% - 5.3px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 5.4px), #000 calc(100% - 5.3px));
   animation: spin 5.42s linear infinite;
 }
 
@@ -55,7 +74,7 @@
   }
 }
 
-[data-reduce-motion="true"] .arc,
+[data-reduce-motion="true"] .gradient-arc,
 [data-reduce-motion="true"] .fill-circle,
 [data-reduce-motion="true"] .checkmark {
   animation: none;
