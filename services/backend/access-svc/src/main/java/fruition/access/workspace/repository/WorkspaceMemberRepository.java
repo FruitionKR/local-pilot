@@ -73,4 +73,26 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
             @Param("userId") String userId,
             @Param("role") WorkspaceRole role
     );
+
+    @Query("""
+            SELECT m
+            FROM WorkspaceMember m
+            JOIN FETCH m.user
+            WHERE m.workspace.id = :workspaceId
+              AND m.workspace.deletedAt IS NULL
+            ORDER BY m.joinedAt
+            """)
+    List<WorkspaceMember> findActiveMembers(@Param("workspaceId") String workspaceId);
+
+    @Query("""
+            SELECT COUNT(m)
+            FROM WorkspaceMember m
+            WHERE m.workspace.id = :workspaceId
+              AND m.role = :role
+              AND m.workspace.deletedAt IS NULL
+            """)
+    long countActiveByRole(
+            @Param("workspaceId") String workspaceId,
+            @Param("role") WorkspaceRole role
+    );
 }

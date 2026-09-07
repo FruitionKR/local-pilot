@@ -38,7 +38,7 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         MDC.put("requestId", requestId);
         response.setHeader(REQUEST_ID_HEADER, requestId);
         if (logged) {
-            log.info("[HTTP 요청 시작] method={} uri={}", request.getMethod(), request.getRequestURI());
+            log.info("[HTTP 요청 시작] method={} uri={}", request.getMethod(), LoggableUri.mask(request.getRequestURI()));
         }
         try {
             filterChain.doFilter(request, response);
@@ -46,7 +46,7 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
             if (logged) {
                 long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
                 log.info("[HTTP 요청 완료] method={} uri={} status={} elapsedMs={}",
-                        request.getMethod(), request.getRequestURI(), response.getStatus(), elapsedMs);
+                        request.getMethod(), LoggableUri.mask(request.getRequestURI()), response.getStatus(), elapsedMs);
             }
             // 요청 MDC 범위는 가장 바깥인 이 필터가 닫는다. userId는 JwtAuthenticationFilter가 채운다.
             MDC.remove("userId");

@@ -25,6 +25,28 @@ const nextConfig = {
         destination: `${accessUrl}/api/workspaces/:wid/restore`
       },
       {
+        // 멤버 관리와 초대는 멤버십을 소유한 access-svc가 받는다.
+        source: "/api/workspaces/:wid/members",
+        destination: `${accessUrl}/api/workspaces/:wid/members`
+      },
+      {
+        source: "/api/workspaces/:wid/members/:uid",
+        destination: `${accessUrl}/api/workspaces/:wid/members/:uid`
+      },
+      {
+        source: "/api/workspaces/:wid/invitations",
+        destination: `${accessUrl}/api/workspaces/:wid/invitations`
+      },
+      {
+        source: "/api/workspaces/:wid/invitations/:invitationId",
+        destination: `${accessUrl}/api/workspaces/:wid/invitations/:invitationId`
+      },
+      {
+        // 초대 링크 수신자가 부르는 경로. 워크스페이스 하위가 아니라 최상위다.
+        source: "/api/invitations/:path*",
+        destination: `${accessUrl}/api/invitations/:path*`
+      },
+      {
         source: "/api/:path*",
         destination: `${documentUrl}/api/:path*`
       }

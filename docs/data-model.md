@@ -26,6 +26,7 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | user_refresh_tokens | access-svc | JWT refresh token | `token_hash`(SHA-256), `revoked_at`으로 탈취 감지 |
 | workspaces | access-svc | 격리 단위 | 문서·Wiki·채팅의 소속 기준, workspace 설정 snapshot인 `ingest_lint_provider`·`ingest_lint_model`(새 workspace 기본값 `gemini/gemini-3.1-flash-lite`) |
 | workspace_members | access-svc | 멤버십(N:M 대비) | 복합 PK `(workspace_id, user_id)`, `role`(owner/member) |
+| workspace_invitations | access-svc | 이메일 초대(수락 전 상태) | `token_hash`(SHA-256, 원문 미저장), `expires_at`, `accepted_at`/`accepted_by`/`revoked_at`. 대기 중 초대는 `(workspace_id, email)` partial unique라 재초대는 새 행이 아니라 재발송이다. 계정이 `(email, provider)`로 분리돼 있어 어느 계정이 멤버가 될지는 수락 시점에 정해진다 |
 
 ### core_db (document-svc)
 
@@ -94,6 +95,7 @@ LLM provider/model은 workspace 설정 또는 chat/request에서 snapshot되어 
 erDiagram
     users ||--o{ workspace_members : ""
     workspaces ||--o{ workspace_members : ""
+    workspaces ||--o{ workspace_invitations : ""
     workspaces ||--o{ documents : ""
     workspaces ||--o{ wiki_pages : ""
     workspaces ||--o{ chat_sessions : ""

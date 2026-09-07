@@ -4,7 +4,7 @@
 
 워크스페이스 관리와 서비스 간 인가·AI 모델 설정 API다.
 
-- API 수: 10
+- API 수: 13
 
 ## API 목차
 
@@ -15,6 +15,9 @@
 | [`GET /api/workspaces/trash`](#summary-get-api-workspaces-trash) | 소유자가 삭제한 워크스페이스를 반환합니다. |
 | [`PATCH /api/workspaces/{workspace_id}`](#summary-patch-api-workspaces-workspace-id) | 로그인한 사용자가 소유한 워크스페이스의 이름을 변경합니다. |
 | [`DELETE /api/workspaces/{workspace_id}`](#summary-delete-api-workspaces-workspace-id) | 소유한 워크스페이스를 하위 데이터 변경 없이 소프트 삭제합니다. |
+| [`GET /api/workspaces/{workspace_id}/members`](#summary-get-api-workspaces-workspace-id-members) | 워크스페이스의 활성 멤버를 합류 순으로 반환합니다. 멤버만 조회할 수 있습니다. |
+| [`PATCH /api/workspaces/{workspace_id}/members/{user_id}`](#summary-patch-api-workspaces-workspace-id-members-user-id) | 멤버의 역할을 OWNER 또는 MEMBER로 변경합니다. OWNER만 호출할 수 있습니다. |
+| [`DELETE /api/workspaces/{workspace_id}/members/{user_id}`](#summary-delete-api-workspaces-workspace-id-members-user-id) | OWNER는 다른 멤버를 제거할 수 있고, 멤버는 자신을 제거해 탈퇴할 수 있습니다. |
 | [`POST /api/workspaces/{workspace_id}/restore`](#summary-post-api-workspaces-workspace-id-restore) | 소프트 삭제한 워크스페이스와 기존 하위 데이터의 접근을 복구합니다. |
 | [`GET /internal/authz/workspaces/{workspace_id}/users/{user_id}`](#summary-get-internal-authz-workspaces-workspace-id-users-user-id) | 워크스페이스에서 사용자의 활성 역할을 조회합니다. |
 | [`GET /internal/users/{user_id}`](#summary-get-internal-users-user-id) | 워크스페이스에서 사용자의 활성 역할을 조회합니다. |
@@ -545,6 +548,352 @@ curl -X DELETE "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a" \
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: delete`)
 
 [↑ 요약으로 돌아가기](#summary-delete-api-workspaces-workspace-id)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-members"></a>
+### `GET /api/workspaces/{workspace_id}/members`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 워크스페이스의 활성 멤버를 합류 순으로 반환합니다. 멤버만 조회할 수 있습니다. |
+| 입력 | **Path** — `workspace_id`: `string` |
+| 출력 | `200` 조회 성공 — `WorkspaceMemberListResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
+| 주요 오류 | `404` 워크스페이스를 찾을 수 없거나 멤버가 아님 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+<a id="detail-get-api-workspaces-workspace-id-members"></a>
+### `GET /api/workspaces/{workspace_id}/members` 상세
+
+#### 1. Method + Path
+
+`GET /api/workspaces/{workspace_id}/members`
+
+#### 2. 목적
+
+워크스페이스의 활성 멤버를 합류 순으로 반환합니다. 멤버만 조회할 수 있습니다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- `Authorization: Bearer <access_token>`을 검증한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| path | `workspace_id` | `string` | 예 | 워크스페이스 ID |
+
+- 요청 본문 없음
+
+#### 5. Response body
+
+- HTTP `200`: 조회 성공
+- Content-Type: `*/*` (`WorkspaceMemberListResponse`)
+
+```json
+{
+  "members": [
+    {
+      "user_id": "user_1f9a74af",
+      "email": "owner@example.com",
+      "display_name": "홍길동",
+      "provider": "local",
+      "role": "OWNER",
+      "joined_at": "2026-08-13T04:25:24.371948Z"
+    },
+    {
+      "user_id": "user_8b21c530",
+      "email": "member@example.com",
+      "display_name": "김철수",
+      "provider": "google",
+      "role": "MEMBER",
+      "joined_at": "2026-08-20T09:11:03.882014Z"
+    }
+  ]
+}
+```
+
+`provider`는 계정을 만든 수단이다. 계정은 `(email, provider)` 단위로 분리돼 있어, 같은 이메일이라도 `provider`가 다르면 서로 다른 계정이고 멤버 목록에 각각 나타날 수 있다.
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 응답 스키마 |
+|---|---|---|
+| `404` | 워크스페이스를 찾을 수 없거나 멤버가 아님 | `ErrorResponse` |
+
+비멤버에게도 `404`를 준다. `403`을 주면 워크스페이스의 존재 자체가 드러나기 때문이다.
+
+```json
+{
+  "error": {
+    "code": "WORKSPACE_NOT_FOUND",
+    "message": "워크스페이스를 찾을 수 없습니다: id=ws_9d47a0e9a6324341b47562553b75f92a"
+  }
+}
+```
+
+#### 7. Pagination / filtering
+
+- 페이지네이션: 지원하지 않음
+- 필터링: 지원하지 않음
+- 정렬: `joined_at` 오름차순 고정
+
+#### 8. 권한 규칙
+
+- 인증된 사용자만 호출할 수 있다.
+- path의 `workspace_id`에 대한 활성 멤버십을 검증한다.
+- 역할과 무관하게 모든 멤버가 조회할 수 있다.
+- 소프트 삭제된 워크스페이스는 조회 대상이 아니다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/members" \
+  -H 'Authorization: Bearer <access_token>'
+```
+
+```json
+{
+  "members": [
+    {
+      "user_id": "user_1f9a74af",
+      "email": "owner@example.com",
+      "display_name": "홍길동",
+      "provider": "local",
+      "role": "OWNER",
+      "joined_at": "2026-08-13T04:25:24.371948Z"
+    }
+  ]
+}
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceMemberController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: listMembers`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-members)
+
+</details>
+
+<a id="summary-patch-api-workspaces-workspace-id-members-user-id"></a>
+### `PATCH /api/workspaces/{workspace_id}/members/{user_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 멤버의 역할을 OWNER 또는 MEMBER로 변경합니다. OWNER만 호출할 수 있습니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `user_id`: `string`<br>**Body** — `WorkspaceMemberRoleUpdateRequest` |
+| 출력 | `200` 변경 성공 — `WorkspaceMemberResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>호출자의 역할이 `OWNER`여야 한다. |
+| 주요 오류 | `403` OWNER 권한 없음 — `ErrorResponse`<br>`404` 워크스페이스 또는 대상 멤버를 찾을 수 없음 — `ErrorResponse`<br>`409` 마지막 OWNER는 강등할 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+<a id="detail-patch-api-workspaces-workspace-id-members-user-id"></a>
+### `PATCH /api/workspaces/{workspace_id}/members/{user_id}` 상세
+
+#### 1. Method + Path
+
+`PATCH /api/workspaces/{workspace_id}/members/{user_id}`
+
+#### 2. 목적
+
+멤버의 역할을 OWNER 또는 MEMBER로 변경합니다. OWNER만 호출할 수 있습니다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- `Authorization: Bearer <access_token>`을 검증한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| path | `workspace_id` | `string` | 예 | 워크스페이스 ID |
+| path | `user_id` | `string` | 예 | 대상 멤버 사용자 ID |
+| body | `role` | `string` | 예 | 새 역할. `OWNER` 또는 `MEMBER` |
+
+- Content-Type: `application/json` (`WorkspaceMemberRoleUpdateRequest`)
+
+```json
+{
+  "role": "OWNER"
+}
+```
+
+#### 5. Response body
+
+- HTTP `200`: 변경 성공
+- Content-Type: `*/*` (`WorkspaceMemberResponse`)
+
+```json
+{
+  "user_id": "user_8b21c530",
+  "email": "member@example.com",
+  "display_name": "김철수",
+  "provider": "google",
+  "role": "OWNER",
+  "joined_at": "2026-08-20T09:11:03.882014Z"
+}
+```
+
+이미 같은 역할이면 아무것도 바꾸지 않고 현재 상태를 그대로 돌려준다.
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 응답 스키마 |
+|---|---|---|
+| `403` | OWNER 권한 없음 (`WORKSPACE_ACCESS_DENIED`) | `ErrorResponse` |
+| `404` | 워크스페이스를 찾을 수 없거나 호출자가 멤버가 아님 (`WORKSPACE_NOT_FOUND`), 대상이 멤버가 아님 (`WORKSPACE_MEMBER_NOT_FOUND`) | `ErrorResponse` |
+| `409` | 마지막 OWNER는 강등할 수 없음 (`LAST_OWNER`) | `ErrorResponse` |
+
+```json
+{
+  "error": {
+    "code": "LAST_OWNER",
+    "message": "워크스페이스의 마지막 OWNER는 변경하거나 제거할 수 없습니다: workspaceId=ws_9d47a0e9a6324341b47562553b75f92a"
+  }
+}
+```
+
+#### 7. Pagination / filtering
+
+- 페이지네이션: 지원하지 않음
+- 필터링: 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 인증된 사용자만 호출할 수 있다.
+- 호출자가 멤버가 아니면 `404`, 멤버지만 `OWNER`가 아니면 `403`이다.
+- 워크스페이스에 `OWNER`가 하나뿐이면 그 `OWNER`를 `MEMBER`로 강등할 수 없다(`409`). 승격은 언제나 허용한다.
+- 변경에 성공하면 대상 사용자의 인가 projection(`authz:role:{workspaceId}:{userId}`)을 무효화한다. 그렇지 않으면 document-svc가 TTL이 만료될 때까지 옛 역할로 판정한다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X PATCH "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/members/user_8b21c530" \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  --data '{"role":"OWNER"}'
+```
+
+```json
+{
+  "user_id": "user_8b21c530",
+  "email": "member@example.com",
+  "display_name": "김철수",
+  "provider": "google",
+  "role": "OWNER",
+  "joined_at": "2026-08-20T09:11:03.882014Z"
+}
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceMemberController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: changeRole`)
+
+[↑ 요약으로 돌아가기](#summary-patch-api-workspaces-workspace-id-members-user-id)
+
+</details>
+
+<a id="summary-delete-api-workspaces-workspace-id-members-user-id"></a>
+### `DELETE /api/workspaces/{workspace_id}/members/{user_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | OWNER는 다른 멤버를 제거할 수 있고, 멤버는 자신을 제거해 탈퇴할 수 있습니다. |
+| 입력 | **Path** — `workspace_id`: `string`, `user_id`: `string` |
+| 출력 | `204` 제거 성공 — 본문 없음 |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>호출자가 `OWNER`이거나 대상이 호출자 자신이어야 한다. |
+| 주요 오류 | `403` 다른 멤버를 제거할 OWNER 권한 없음 — `ErrorResponse`<br>`404` 워크스페이스 또는 대상 멤버를 찾을 수 없음 — `ErrorResponse`<br>`409` 마지막 OWNER는 제거할 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+<a id="detail-delete-api-workspaces-workspace-id-members-user-id"></a>
+### `DELETE /api/workspaces/{workspace_id}/members/{user_id}` 상세
+
+#### 1. Method + Path
+
+`DELETE /api/workspaces/{workspace_id}/members/{user_id}`
+
+#### 2. 목적
+
+OWNER는 다른 멤버를 제거할 수 있고, 멤버는 자신을 제거해 탈퇴할 수 있습니다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- `Authorization: Bearer <access_token>`을 검증한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| path | `workspace_id` | `string` | 예 | 워크스페이스 ID |
+| path | `user_id` | `string` | 예 | 대상 멤버 사용자 ID |
+
+- 요청 본문 없음
+
+#### 5. Response body
+
+- HTTP `204`: 제거 성공
+- 본문 없음
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 응답 스키마 |
+|---|---|---|
+| `403` | 다른 멤버를 제거할 OWNER 권한 없음 (`WORKSPACE_ACCESS_DENIED`) | `ErrorResponse` |
+| `404` | 워크스페이스를 찾을 수 없거나 호출자가 멤버가 아님 (`WORKSPACE_NOT_FOUND`), 대상이 멤버가 아님 (`WORKSPACE_MEMBER_NOT_FOUND`) | `ErrorResponse` |
+| `409` | 마지막 OWNER는 제거할 수 없음 (`LAST_OWNER`) | `ErrorResponse` |
+
+```json
+{
+  "error": {
+    "code": "WORKSPACE_ACCESS_DENIED",
+    "message": "다른 멤버를 제거하려면 OWNER 권한이 필요합니다."
+  }
+}
+```
+
+#### 7. Pagination / filtering
+
+- 페이지네이션: 지원하지 않음
+- 필터링: 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 인증된 사용자만 호출할 수 있다.
+- `user_id`가 호출자 자신이면 역할과 무관하게 탈퇴로 처리한다.
+- 다른 멤버를 제거하려면 호출자가 `OWNER`여야 한다.
+- 워크스페이스에 `OWNER`가 하나뿐이면 그 `OWNER`는 제거할 수 없다(`409`). 탈퇴하려면 먼저 다른 멤버를 `OWNER`로 승격해야 한다.
+- 제거에 성공하면 대상 사용자의 인가 projection(`authz:role:{workspaceId}:{userId}`)을 무효화한다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X DELETE "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/members/user_8b21c530" \
+  -H 'Authorization: Bearer <access_token>' \
+  -i
+```
+
+```
+HTTP/1.1 204 No Content
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceMemberController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: remove`)
+
+[↑ 요약으로 돌아가기](#summary-delete-api-workspaces-workspace-id-members-user-id)
 
 </details>
 

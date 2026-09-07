@@ -41,7 +41,8 @@ export PIPELINE=http://localhost:8000  # ai-svc pipeline: 내부 전용
 ```
 
 프론트엔드는 `/api/*` 경로 기반 rewrite로 두 backend에 나눠 보낸다(`services/frontend/next.config.mjs`).
-`/api/auth/*`, 워크스페이스 자체 CRUD·휴지통·복구는 access-svc, 그 밖의 워크스페이스 하위 기능은 document-svc가 받는다.
+`/api/auth/*`, 워크스페이스 자체 CRUD·휴지통·복구, 멤버·초대 관리(`/api/workspaces/{id}/members`,
+`/api/workspaces/{id}/invitations`, `/api/invitations/*`)는 access-svc, 그 밖의 워크스페이스 하위 기능은 document-svc가 받는다.
 
 ## 문서 읽는 법
 
@@ -54,7 +55,7 @@ export PIPELINE=http://localhost:8000  # ai-svc pipeline: 내부 전용
 
 | 서비스 | Gateway `/api/**` | 내부·운영 | 합계 | 역할 |
 |---|---:|---:|---:|---|
-| [access-svc](access/README.md) | 16 | 4 | 20 | 인증과 워크스페이스 관리 |
+| [access-svc](access/README.md) | 24 | 4 | 28 | 인증과 워크스페이스·멤버·초대 관리 |
 | [document-svc](document/README.md) | 78 | 6 | 84 | 문서 저장과 사용자용 AI·Wiki·Agent Gateway |
 | [ai-svc](ai/README.md) | 0 | 43 | 43 | 내부 Query·Agent·Wiki·Skill pipeline |
 

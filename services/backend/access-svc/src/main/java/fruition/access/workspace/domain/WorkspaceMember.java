@@ -43,6 +43,11 @@ public class WorkspaceMember {
         this.joinedAt = Instant.now();
     }
 
+    public void changeRole(WorkspaceRole role) {
+        this.role = role;
+    }
+
+    public User getUser() { return user; }
     public String getWorkspaceId() { return id.getWorkspaceId(); }
     public String getUserId() { return id.getUserId(); }
     public WorkspaceRole getRole() { return role; }

@@ -15,6 +15,16 @@ import fruition.access.user.exception.VerificationCodeAttemptsExceededException;
 import fruition.access.user.exception.VerificationCodeExpiredException;
 import fruition.access.user.exception.VerificationRateLimitedException;
 import fruition.access.user.exception.EmailAvailabilityRateLimitedException;
+import fruition.access.workspace.exception.AlreadyMemberException;
+import fruition.access.workspace.exception.InvitationAlreadyAcceptedException;
+import fruition.access.workspace.exception.InvitationEmailMismatchException;
+import fruition.access.workspace.exception.InvitationExpiredException;
+import fruition.access.workspace.exception.InvitationInProgressException;
+import fruition.access.workspace.exception.InvitationSendException;
+import fruition.access.workspace.exception.InvitationNotFoundException;
+import fruition.access.workspace.exception.LastOwnerException;
+import fruition.access.workspace.exception.WorkspaceAccessDeniedException;
+import fruition.access.workspace.exception.WorkspaceMemberNotFoundException;
 import fruition.access.workspace.exception.WorkspaceNotFoundException;
 import fruition.shared.util.BaseExceptionHandler;
 import fruition.shared.util.ErrorResponse;
@@ -65,6 +75,86 @@ public class AccessExceptionHandler extends BaseExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("WORKSPACE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceMemberNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceMemberNotFound(WorkspaceMemberNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "WORKSPACE_MEMBER_NOT_FOUND");
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("WORKSPACE_MEMBER_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceAccessDenied(WorkspaceAccessDeniedException e) {
+        logHandled(e, HttpStatus.FORBIDDEN, "WORKSPACE_ACCESS_DENIED");
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("WORKSPACE_ACCESS_DENIED", e.getMessage()));
+    }
+
+    @ExceptionHandler(LastOwnerException.class)
+    public ResponseEntity<ErrorResponse> handleLastOwner(LastOwnerException e) {
+        logHandled(e, HttpStatus.CONFLICT, "LAST_OWNER");
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("LAST_OWNER", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvitationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationNotFound(InvitationNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND");
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("INVITATION_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvitationExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationExpired(InvitationExpiredException e) {
+        logHandled(e, HttpStatus.GONE, "INVITATION_EXPIRED");
+        return ResponseEntity
+                .status(HttpStatus.GONE)
+                .body(ErrorResponse.of("INVITATION_EXPIRED", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvitationAlreadyAcceptedException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationAlreadyAccepted(InvitationAlreadyAcceptedException e) {
+        logHandled(e, HttpStatus.CONFLICT, "INVITATION_ALREADY_ACCEPTED");
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("INVITATION_ALREADY_ACCEPTED", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvitationEmailMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationEmailMismatch(InvitationEmailMismatchException e) {
+        logHandled(e, HttpStatus.FORBIDDEN, "INVITATION_EMAIL_MISMATCH");
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("INVITATION_EMAIL_MISMATCH", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvitationInProgressException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationInProgress(InvitationInProgressException e) {
+        logHandled(e, HttpStatus.CONFLICT, "INVITATION_IN_PROGRESS");
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("INVITATION_IN_PROGRESS", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvitationSendException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationSend(InvitationSendException e) {
+        logHandled(e, HttpStatus.BAD_GATEWAY, "INVITATION_SEND_FAILED");
+        return ResponseEntity
+                .status(HttpStatus.BAD_GATEWAY)
+                .body(ErrorResponse.of("INVITATION_SEND_FAILED", e.getMessage()));
+    }
+
+    @ExceptionHandler(AlreadyMemberException.class)
+    public ResponseEntity<ErrorResponse> handleAlreadyMember(AlreadyMemberException e) {
+        logHandled(e, HttpStatus.CONFLICT, "ALREADY_MEMBER");
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("ALREADY_MEMBER", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidOAuthCodeException.class)
