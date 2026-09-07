@@ -6,6 +6,7 @@ import fruition.access.user.exception.EmailVerificationSendException;
 import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidMfaChallengeException;
 import fruition.access.user.exception.InvalidMfaCodeException;
+import fruition.access.user.exception.MfaRateLimitedException;
 import fruition.access.user.exception.MfaAlreadyEnabledException;
 import fruition.access.user.exception.MfaNotEnabledException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
@@ -67,6 +68,14 @@ public class AccessExceptionHandler extends BaseExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.UNAUTHORIZED)
                 .body(ErrorResponse.of("INVALID_REFRESH_TOKEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(MfaRateLimitedException.class)
+    public ResponseEntity<ErrorResponse> handleMfaRateLimited(MfaRateLimitedException e) {
+        logHandled(e, HttpStatus.TOO_MANY_REQUESTS, "MFA_RATE_LIMITED");
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(e.getRetryAfter()))
+                .body(ErrorResponse.of("MFA_RATE_LIMITED", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidMfaCodeException.class)

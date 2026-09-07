@@ -572,4 +572,20 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.loginMfa(new MfaLoginRequest("nope", "482917")))
                 .isInstanceOf(InvalidMfaChallengeException.class);
     }
+    @Test
+    void exchangeOAuthCode_mfaEnabled_returnsChallengeWithoutTokens() {
+        User user = new User("oauth_mfa", "oauth@example.com", "google", "사용자", null);
+        when(userRepository.findById("oauth_mfa")).thenReturn(Optional.of(user));
+        when(mfaService.isEnabled("oauth_mfa")).thenReturn(true);
+        String code = oAuthExchangeCodeStore.issue("oauth_mfa");
+
+        LoginResponse response = authService.exchangeOAuthCode(new OAuthExchangeRequest(code));
+
+        assertThat(response.mfaRequired()).isTrue();
+        assertThat(response.mfaToken()).isNotBlank();
+        assertThat(response.accessToken()).isNull();
+        assertThat(response.refreshToken()).isNull();
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
 }

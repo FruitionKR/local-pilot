@@ -50,6 +50,7 @@ public class MfaService {
     private final UserMfaRepository mfaRepository;
     private final UserMfaRecoveryCodeRepository recoveryCodeRepository;
     private final MfaSecretCipher cipher;
+    private final MfaAttemptLimiter attemptLimiter;
     private final TimeBasedOneTimePasswordGenerator totp = new TimeBasedOneTimePasswordGenerator();
     private final SecureRandom secureRandom = new SecureRandom();
     private final String issuer;
@@ -58,11 +59,13 @@ public class MfaService {
                       UserMfaRepository mfaRepository,
                       UserMfaRecoveryCodeRepository recoveryCodeRepository,
                       MfaSecretCipher cipher,
+                      MfaAttemptLimiter attemptLimiter,
                       @Value("${app.auth.mfa.issuer:Fruition}") String issuer) {
         this.userRepository = userRepository;
         this.mfaRepository = mfaRepository;
         this.recoveryCodeRepository = recoveryCodeRepository;
         this.cipher = cipher;
+        this.attemptLimiter = attemptLimiter;
         this.issuer = issuer;
     }
 
@@ -71,7 +74,7 @@ public class MfaService {
     public MfaRegistrationResponse register(String userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
-        mfaRepository.findById(userId).ifPresent(existing -> {
+        mfaRepository.findForUpdate(userId).ifPresent(existing -> {
             if (existing.isActivated()) {
                 throw new MfaAlreadyEnabledException();
             }
@@ -81,7 +84,7 @@ public class MfaService {
         secureRandom.nextBytes(secret);
         MfaSecretCipher.Encrypted encrypted = cipher.encrypt(secret);
 
-        UserMfa mfa = mfaRepository.findById(userId)
+        UserMfa mfa = mfaRepository.findForUpdate(userId)
                 .map(existing -> {
                     existing.reissue(encrypted.ciphertext(), encrypted.nonce());
                     return existing;
@@ -104,7 +107,8 @@ public class MfaService {
     /** 2단계: 코드를 맞춰야 실제로 켜진다. 바로 켜면 QR을 잘못 스캔한 사용자가 잠긴다. */
     @Transactional
     public void activate(String userId, String code) {
-        UserMfa mfa = mfaRepository.findById(userId).orElseThrow(MfaNotEnabledException::new);
+        attemptLimiter.check(userId);
+        UserMfa mfa = mfaRepository.findForUpdate(userId).orElseThrow(MfaNotEnabledException::new);
         if (mfa.isActivated()) {
             throw new MfaAlreadyEnabledException();
         }
@@ -116,7 +120,8 @@ public class MfaService {
     /** 로그인 2단계와 해제에서 함께 쓴다. TOTP가 아니면 복구 코드로 한 번 더 본다. */
     @Transactional
     public void verify(String userId, String code) {
-        UserMfa mfa = mfaRepository.findById(userId).orElseThrow(MfaNotEnabledException::new);
+        attemptLimiter.check(userId);
+        UserMfa mfa = mfaRepository.findForUpdate(userId).orElseThrow(MfaNotEnabledException::new);
         if (!mfa.isActivated()) {
             throw new MfaNotEnabledException();
         }
@@ -129,8 +134,9 @@ public class MfaService {
     }
 
     @Transactional
-    public void disable(String userId) {
-        UserMfa mfa = mfaRepository.findById(userId).orElseThrow(MfaNotEnabledException::new);
+    public void disable(String userId, String code) {
+        verify(userId, code);
+        UserMfa mfa = mfaRepository.findForUpdate(userId).orElseThrow(MfaNotEnabledException::new);
         recoveryCodeRepository.deleteAllByUserId(userId);
         mfaRepository.delete(mfa);
         log.info("[MFA 해제] userId={}", userId);

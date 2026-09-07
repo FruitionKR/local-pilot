@@ -37,6 +37,7 @@ class MfaServiceTest {
     private static final String USER_ID = "user_1";
     private static final String KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
+    @Mock MfaAttemptLimiter attemptLimiter;
     @Mock UserRepository userRepository;
     @Mock UserMfaRepository mfaRepository;
     @Mock UserMfaRecoveryCodeRepository recoveryCodeRepository;
@@ -48,7 +49,7 @@ class MfaServiceTest {
     @BeforeEach
     void setUp() {
         cipher = new MfaSecretCipher(KEY);
-        service = new MfaService(userRepository, mfaRepository, recoveryCodeRepository, cipher, "Fruition");
+        service = new MfaService(userRepository, mfaRepository, recoveryCodeRepository, cipher, attemptLimiter, "Fruition");
         savedCodes.clear();
         lenient().when(recoveryCodeRepository.saveAll(any())).thenAnswer(invocation -> {
             invocation.<Iterable<UserMfaRecoveryCode>>getArgument(0).forEach(savedCodes::add);
@@ -88,7 +89,7 @@ class MfaServiceTest {
 
     private UserMfa registerAndCapture() {
         user();
-        when(mfaRepository.findById(USER_ID)).thenReturn(Optional.empty());
+        when(mfaRepository.findForUpdate(USER_ID)).thenReturn(Optional.empty());
         MfaRegistrationResponse response = service.register(USER_ID);
         var captor = org.mockito.ArgumentCaptor.forClass(UserMfa.class);
         verify(mfaRepository).save(captor.capture());
@@ -124,7 +125,7 @@ class MfaServiceTest {
     @Test
     void activate_withValidCodeTurnsOn() throws Exception {
         UserMfa mfa = registerAndCapture();
-        when(mfaRepository.findById(USER_ID)).thenReturn(Optional.of(mfa));
+        when(mfaRepository.findForUpdate(USER_ID)).thenReturn(Optional.of(mfa));
 
         service.activate(USER_ID, codeFor(registered.secret(), Instant.now()));
 
@@ -134,7 +135,7 @@ class MfaServiceTest {
     @Test
     void activate_withWrongCodeThrows() {
         UserMfa mfa = registerAndCapture();
-        when(mfaRepository.findById(USER_ID)).thenReturn(Optional.of(mfa));
+        when(mfaRepository.findForUpdate(USER_ID)).thenReturn(Optional.of(mfa));
 
         assertThatThrownBy(() -> service.activate(USER_ID, "000000"))
                 .isInstanceOf(InvalidMfaCodeException.class);
@@ -145,7 +146,7 @@ class MfaServiceTest {
     @Test
     void verify_rejectsReuseOfSameTimeStep() throws Exception {
         UserMfa mfa = registerAndCapture();
-        when(mfaRepository.findById(USER_ID)).thenReturn(Optional.of(mfa));
+        when(mfaRepository.findForUpdate(USER_ID)).thenReturn(Optional.of(mfa));
         String code = codeFor(registered.secret(), Instant.now());
         service.activate(USER_ID, code);
 
@@ -156,7 +157,7 @@ class MfaServiceTest {
     @Test
     void verify_acceptsRecoveryCodeAndConsumesIt() throws Exception {
         UserMfa mfa = registerAndCapture();
-        when(mfaRepository.findById(USER_ID)).thenReturn(Optional.of(mfa));
+        when(mfaRepository.findForUpdate(USER_ID)).thenReturn(Optional.of(mfa));
         service.activate(USER_ID, codeFor(registered.secret(), Instant.now()));
         String recovery = registered.recoveryCodes().get(3);
         when(recoveryCodeRepository.findAllByUserIdAndConsumedAtIsNull(USER_ID)).thenReturn(savedCodes);
@@ -172,7 +173,7 @@ class MfaServiceTest {
     @Test
     void verify_notActivatedThrows() {
         UserMfa mfa = registerAndCapture();
-        when(mfaRepository.findById(USER_ID)).thenReturn(Optional.of(mfa));
+        when(mfaRepository.findForUpdate(USER_ID)).thenReturn(Optional.of(mfa));
 
         assertThatThrownBy(() -> service.verify(USER_ID, "000000"))
                 .isInstanceOf(MfaNotEnabledException.class);
@@ -181,7 +182,7 @@ class MfaServiceTest {
     @Test
     void register_whenAlreadyActivatedThrows() throws Exception {
         UserMfa mfa = registerAndCapture();
-        when(mfaRepository.findById(USER_ID)).thenReturn(Optional.of(mfa));
+        when(mfaRepository.findForUpdate(USER_ID)).thenReturn(Optional.of(mfa));
         service.activate(USER_ID, codeFor(registered.secret(), Instant.now()));
 
         assertThatThrownBy(() -> service.register(USER_ID))
@@ -191,10 +192,11 @@ class MfaServiceTest {
     @Test
     void disable_removesSecretAndRecoveryCodes() throws Exception {
         UserMfa mfa = registerAndCapture();
-        when(mfaRepository.findById(USER_ID)).thenReturn(Optional.of(mfa));
+        when(mfaRepository.findForUpdate(USER_ID)).thenReturn(Optional.of(mfa));
         service.activate(USER_ID, codeFor(registered.secret(), Instant.now()));
 
-        service.disable(USER_ID);
+        when(recoveryCodeRepository.findAllByUserIdAndConsumedAtIsNull(USER_ID)).thenReturn(savedCodes);
+        service.disable(USER_ID, registered.recoveryCodes().get(0));
 
         verify(mfaRepository).delete(mfa);
         verify(recoveryCodeRepository, org.mockito.Mockito.times(2)).deleteAllByUserId(USER_ID);
@@ -203,8 +205,9 @@ class MfaServiceTest {
     @Test
     void isEnabled_falseUntilActivated() throws Exception {
         UserMfa mfa = registerAndCapture();
-        when(mfaRepository.findById(USER_ID)).thenReturn(Optional.of(mfa));
+        when(mfaRepository.findForUpdate(USER_ID)).thenReturn(Optional.of(mfa));
 
+        when(mfaRepository.findById(USER_ID)).thenReturn(Optional.of(mfa));
         assertThat(service.isEnabled(USER_ID)).isFalse();
         service.activate(USER_ID, codeFor(registered.secret(), Instant.now()));
         assertThat(service.isEnabled(USER_ID)).isTrue();

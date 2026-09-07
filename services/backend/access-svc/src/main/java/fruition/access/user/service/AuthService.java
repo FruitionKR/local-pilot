@@ -150,6 +150,10 @@ public class AuthService {
                     log.warn("[OAuth code 교환 실패] reason=user_not_found userId={}", userId);
                     return new InvalidOAuthCodeException();
                 });
+        if (mfaService.isEnabled(user.getId())) {
+            return LoginResponse.mfaRequired(issueMfaChallenge(user));
+        }
+
         LoginResponse response = issueTokenPair(user);
         log.info("[OAuth code 교환 성공] userId={} email={}", user.getId(), user.getEmail());
         return response;

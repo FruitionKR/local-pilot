@@ -1054,11 +1054,11 @@ HTTP/1.1 204 No Content
 
 #### 2. 목적
 
-`POST /api/auth/login`이 `mfa_required: true`를 돌려줬을 때 두 번째 단계를 마친다.
+`POST /api/auth/login` 또는 `POST /api/auth/oauth/exchange`가 `mfa_required: true`를 돌려줬을 때 두 번째 단계를 마친다.
 
 #### 3. Auth 필요 여부
 
-- 불필요. 아직 로그인 전이며 `mfa_token`이 "비밀번호는 통과했다"는 증거다.
+- 불필요. 아직 로그인 전이며 `mfa_token`은 비밀번호 또는 OAuth 인증을 통과했다는 증거다.
 - `mfa_token`은 1회용이고 기본 300초 뒤 만료된다.
 
 #### 4. Request body
@@ -1095,6 +1095,12 @@ HTTP/1.1 204 No Content
 |---|---|---|
 | `400` | `mfa_token`이 없거나 만료·소비됨 | `INVALID_MFA_CHALLENGE` |
 | `401` | 코드가 올바르지 않음 | `INVALID_MFA_CODE` |
+
+일반·OAuth 로그인 모두 MFA가 켜져 있으면 challenge만 반환하며 access/refresh 토큰과 refresh 쿠키는 발급하지 않는다.
+
+MFA 활성화·로그인·해제의 코드 검증은 사용자별로 300초 동안 총 5회까지 허용한다. 초과하면 `429 MFA_RATE_LIMITED`와 `Retry-After`를 반환한다. 실패한 요청의 롤백이나 challenge 재발급으로 횟수가 초기화되지 않는다.
+
+코드와 challenge 소비는 DB 잠금으로 직렬화한다. 같은 TOTP·복구 코드·challenge를 동시에 제출해도 하나만 성공한다.
 
 **코드가 틀려도 `mfa_token`은 살아 있다.** 오타 한 번에 비밀번호부터 다시 넣게 만들지 않는다.
 TOTP인지 복구 코드인지는 구분해 알려주지 않는다.

@@ -320,9 +320,11 @@ public class AuthController {
     }
 
     @Operation(summary = "로그인 2단계(다단계 인증)",
-            description = "POST /api/auth/login이 mfa_required를 돌려줬을 때 코드로 로그인을 마칩니다."
+            description = "일반 또는 OAuth 로그인이 mfa_required를 돌려줬을 때 코드로 로그인을 마칩니다."
                     + " code에는 인증 앱의 6자리 코드 또는 복구 코드를 넣습니다.")
     @ApiResponses({
+        @ApiResponse(responseCode = "429", description = "사용자별 MFA 검증 횟수 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "200", description = "로그인 성공",
             content = @Content(schema = @Schema(implementation = LoginResponse.class))),
         @ApiResponse(responseCode = "400", description = "mfa_token이 만료되었거나 이미 사용됨",
@@ -366,6 +368,8 @@ public class AuthController {
     @Operation(summary = "다단계 인증 활성화(2단계)",
             description = "인증 앱의 코드를 확인하고 실제로 켭니다. 이 단계를 통과해야 로그인에 코드가 요구됩니다.")
     @ApiResponses({
+        @ApiResponse(responseCode = "429", description = "사용자별 MFA 검증 횟수 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "204", description = "활성화 성공"),
         @ApiResponse(responseCode = "401", description = "인증되지 않았거나 코드가 올바르지 않음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
@@ -385,6 +389,8 @@ public class AuthController {
     @Operation(summary = "다단계 인증 해제",
             description = "인증 앱의 코드 또는 복구 코드로 본인을 확인한 뒤 해제합니다.")
     @ApiResponses({
+        @ApiResponse(responseCode = "429", description = "사용자별 MFA 검증 횟수 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "204", description = "해제 성공"),
         @ApiResponse(responseCode = "401", description = "인증되지 않았거나 코드가 올바르지 않음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
@@ -395,12 +401,14 @@ public class AuthController {
     public ResponseEntity<Void> disableMfa(
             @AuthenticationPrincipal String userId,
             @Valid @RequestBody MfaCodeRequest request) {
-        mfaService.verify(userId, request.code());
-        mfaService.disable(userId);
+        mfaService.disable(userId, request.code());
         return ResponseEntity.noContent().build();
     }
 
     private ResponseEntity<LoginResponse> authenticatedResponse(LoginResponse response) {
+        if (Boolean.TRUE.equals(response.mfaRequired())) {
+            return ResponseEntity.ok(response);
+        }
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE,
                         refreshCookie(response.refreshToken(), refreshTokenExpirationSeconds).toString())

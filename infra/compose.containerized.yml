@@ -139,6 +139,7 @@ services:
       ACCESS_DB_MIGRATION_PASSWORD: ${ACCESS_DB_MIGRATION_PASSWORD:-access_migration_dev_password}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?MFA_ENCRYPTION_KEY is required}
       JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-change-me-please-32bytes-min}
       INTERNAL_CALLBACK_TOKEN: ${INTERNAL_CALLBACK_TOKEN:-local-internal-callback}
       # document-svc 내부 호출(/internal/workspaces/*/initial-note) — 컨테이너 네트워크 경유

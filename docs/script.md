@@ -473,3 +473,7 @@ docker compose -f infra/compose.monitoring.yml down
 개별 종료 스크립트: `scripts/front-down.sh`, `scripts/back-down.sh`, `scripts/ai-down.sh`.
 호스트 앱 종료 스크립트는 `.runtime/`에 등록된 supervisor만 종료한다. 다른 프로젝트가 같은 포트를 사용 중이면 종료하지 않는다.
 `scripts/ai-down.sh`는 pipeline-api와 전체 워커를 함께 종료한다.
+
+### MFA 컨테이너 설정
+
+`infra/.env`의 `MFA_ENCRYPTION_KEY`에 Base64로 인코딩한 32바이트 키를 설정한다. `compose.containerized.yml`은 이 값을 access-svc 환경에 전달하며, 누락되면 Compose 단계에서 중단한다. 기존 MFA secret 복호화에 필요한 키이므로 재시작 때 같은 값을 유지한다.
