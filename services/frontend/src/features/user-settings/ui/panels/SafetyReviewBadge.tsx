@@ -19,21 +19,21 @@ export function SafetyReviewBadge({ variant }: { variant: "loading" | "complete"
               className={styles.checkmark}
               d="M26 41l10 10 18-20"
               fill="none"
-              stroke="#0a0a0a"
+              stroke="#ffffff"
               strokeWidth="5"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
           </>
         ) : (
-          /* 노란 호가 회전하는 스피너 */
+          /* 초록 호가 회전하는 스피너 (Figma 1033:8390) */
           <circle
             className={styles.arc}
             cx="40"
             cy="40"
             r="32"
             fill="none"
-            stroke="#ffc117"
+            stroke="#00de5a"
             strokeWidth="6"
             strokeLinecap="round"
             strokeDasharray="60 141"

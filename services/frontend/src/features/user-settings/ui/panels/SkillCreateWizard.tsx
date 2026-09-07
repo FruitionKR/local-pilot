@@ -7,6 +7,7 @@ import { fetchDocuments, type DocumentItemResponse } from "@/entities/document";
 import { authorSkill, publishSkill, type SkillAuthoringResult } from "@/entities/skill";
 import { DocumentPickerModal } from "./DocumentPickerModal";
 import { SafetyReviewBadge } from "./SafetyReviewBadge";
+import { AlertModal } from "@/shared/ui/AlertModal";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useWorkspaceName } from "@/entities/workspace";
 import { useEscapeKey } from "@/shared/lib/useEscapeKey";
@@ -305,10 +306,6 @@ export function SkillCreateWizard({
           </div>
         </div>
 
-        {authorError && (
-          <small className={styles.error} role="alert">{authorError}</small>
-        )}
-
         <div className={styles.footer}>
           <span />
           <button
@@ -373,15 +370,6 @@ export function SkillCreateWizard({
             </div>
           </div>
         </div>
-
-        {authorError && (
-          <small className={styles.error} role="alert">
-            {authorError}
-            {/* 서버가 재생성조차 거부한 경우: 위험 표현이 많아 자동 정화가 불가능한 상태 */}
-            {authorError.includes("거부") &&
-              " 위험한 표현이 많아 AI가 안전하게 재작성하지 못했습니다. 승인 우회·무확인 실행 같은 표현을 직접 고친 뒤 다시 검토해 주세요."}
-          </small>
-        )}
 
         <div className={styles.footer}>
           <button type="button" className={styles["btn-ghost"]} onClick={() => setStep(1)}>
@@ -540,6 +528,27 @@ export function SkillCreateWizard({
           <button type="button" className={styles["pass-overlay"]} onClick={() => setStep(3)}>
             <SafetyReviewBadge variant="complete" />
           </button>
+        )}
+
+        {/* 검토·재생성 실패 사유 알림 (인라인 대신 알림 창으로 안내) */}
+        {authorError && (
+          <AlertModal
+            titleId="skill-author-error-title"
+            title="스킬 검토 요청이 거부되었습니다."
+            description={
+              <>
+                {authorError}
+                <br />
+                위험한 표현(승인 우회·무확인 실행·민감정보 등)이 많으면 AI가 안전하게
+                재작성하지 못합니다. 스킬 내용에서 해당 표현을 직접 고친 뒤 다시 검토해 주세요.
+              </>
+            }
+            onClose={() => authorMutation.reset()}
+          >
+            <button type="button" className="modal-confirm-button" onClick={() => authorMutation.reset()}>
+              확인
+            </button>
+          </AlertModal>
         )}
 
         {/* 참고 문서 선택 — 네비게이션 검색과 동일한 중앙 모달 */}
