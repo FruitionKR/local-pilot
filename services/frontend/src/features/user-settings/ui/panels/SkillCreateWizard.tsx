@@ -460,12 +460,12 @@ export function SkillCreateWizard({
             />
           </div>
 
-          <div className={styles.field}>
-            <span className={styles["field-label"]}>실행 가능한 워크스페이스</span>
-            <div className={styles["tool-chips"]}>
-              {scopeType === "personal" ? (
-                <span className={styles["tool-chip"]}>모든 워크스페이스</span>
-              ) : (
+          {/* 개인 스킬은 모든 워크스페이스에서 쓰여 선택이 무의미하므로 섹션을 표시하지 않는다 (Figma 1039:8579) */}
+          {scopeType === "team" && (
+            <div className={styles.field}>
+              <span className={styles["field-label"]}>실행 가능한 워크스페이스</span>
+              <div className={styles["tool-chips"]}>
+                {(
                 /* 팀 스킬은 게시할 워크스페이스를 선택한다. publish 호출 워크스페이스에 귀속된다. */
                 <div className={styles["scope-wrap"]}>
                   <button
@@ -498,8 +498,9 @@ export function SkillCreateWizard({
                   )}
                 </div>
               )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {publishMutation.error != null && (
