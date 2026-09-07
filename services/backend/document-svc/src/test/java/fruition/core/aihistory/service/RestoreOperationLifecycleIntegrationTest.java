@@ -2,6 +2,7 @@ package fruition.core.aihistory.service;
 
 import fruition.TestcontainersConfiguration;
 import fruition.core.aihistory.domain.OperationLog;
+import fruition.core.aihistory.domain.OperationStatus;
 import fruition.core.aihistory.domain.OperationType;
 import fruition.core.aihistory.repository.OperationLogRepository;
 import org.junit.jupiter.api.Test;
@@ -101,7 +102,31 @@ class RestoreOperationLifecycleIntegrationTest {
     }
 
     @Test
-    void documentEdit_failedClaimRejectsSameTokenRetry() {
+    void failedClaimAllowsSameTokenRetry() {
+        String targetId = "op_target_" + UUID.randomUUID();
+        String workspaceId = "ws_" + UUID.randomUUID();
+        OperationLog target = OperationLog.completed(
+                targetId, workspaceId, "user_1", OperationType.ingest,
+                null, "ingest", 1, Instant.now());
+        operationLogRepository.save(target);
+
+        Optional<OperationLog> first = lifecycle.startQueued(target, "{}", "c".repeat(64), Instant.now());
+        assertThat(first).isPresent();
+        lifecycle.fail(first.orElseThrow().getOperationId(), "wiki restore failed", Instant.now());
+
+        // 실패한 복구는 아무것도 반영하지 못했으므로 같은 미리보기 토큰으로 다시 시도할 수 있어야 한다.
+        assertThat(lifecycle.isClaimed(targetId, "c".repeat(64))).isFalse();
+        assertThat(lifecycle.startQueued(target, "{}", "c".repeat(64), Instant.now())).isPresent();
+
+        // 실패 기록 자체는 감사용으로 남되, 요약은 워커 오류 원문이 아니라 사용자용 문구다.
+        assertThat(operationLogRepository.findById(first.orElseThrow().getOperationId()))
+                .get()
+                .extracting(OperationLog::getStatus, OperationLog::getSummary)
+                .containsExactly(OperationStatus.failed, "되돌리기에 실패했습니다.");
+    }
+
+    @Test
+    void lateFailureLeavesSucceededRestoreUntouched() {
         String targetId = "op_target_" + UUID.randomUUID();
         String workspaceId = "ws_" + UUID.randomUUID();
         OperationLog target = OperationLog.completed(
@@ -109,13 +134,34 @@ class RestoreOperationLifecycleIntegrationTest {
                 null, "edit", 1, Instant.now());
         operationLogRepository.save(target);
 
-        Optional<OperationLog> first = lifecycle.start(target, "{}", "c".repeat(64), Instant.now());
+        Optional<OperationLog> first = lifecycle.start(target, "{}", "e".repeat(64), Instant.now());
         assertThat(first).isPresent();
-        lifecycle.fail(first.orElseThrow().getOperationId(), "document restore failed", Instant.now());
+        lifecycle.finishDocument(first.orElseThrow().getOperationId(), 1L, 2L, Instant.now());
 
-        assertThat(lifecycle.start(target, "{}", "c".repeat(64), Instant.now())).isEmpty();
+        // 반영이 끝난 뒤 늦게 도착한 실패 신호. 상태를 덮거나 선점을 풀면 같은 미리보기로 두 번 반영된다.
+        lifecycle.fail(first.orElseThrow().getOperationId(), "late failure", Instant.now());
+
         assertThat(operationLogRepository.findById(first.orElseThrow().getOperationId()))
-                .get().extracting(OperationLog::getStatus).isEqualTo(fruition.core.aihistory.domain.OperationStatus.failed);
+                .get().extracting(OperationLog::getStatus).isEqualTo(OperationStatus.succeeded);
+        assertThat(lifecycle.isClaimed(targetId, "e".repeat(64))).isTrue();
+    }
+
+    @Test
+    void succeededClaimRejectsSameTokenRetry() {
+        String targetId = "op_target_" + UUID.randomUUID();
+        String workspaceId = "ws_" + UUID.randomUUID();
+        OperationLog target = OperationLog.completed(
+                targetId, workspaceId, "user_1", OperationType.document_edit,
+                null, "edit", 1, Instant.now());
+        operationLogRepository.save(target);
+
+        Optional<OperationLog> first = lifecycle.start(target, "{}", "d".repeat(64), Instant.now());
+        assertThat(first).isPresent();
+        lifecycle.finishDocument(first.orElseThrow().getOperationId(), 1L, 2L, Instant.now());
+
+        // 이미 반영된 복구는 중복 실행을 막아야 한다.
+        assertThat(lifecycle.isClaimed(targetId, "d".repeat(64))).isTrue();
+        assertThat(lifecycle.start(target, "{}", "d".repeat(64), Instant.now())).isEmpty();
     }
 
     @Test

@@ -3,6 +3,7 @@ package fruition.core.aihistory.service;
 import fruition.core.aihistory.domain.ChangeType;
 import fruition.core.aihistory.domain.OperationChange;
 import fruition.core.aihistory.domain.OperationLog;
+import fruition.core.aihistory.domain.OperationStatus;
 import fruition.core.aihistory.domain.OperationType;
 import fruition.core.aihistory.dto.OperationResultRequest;
 import fruition.core.aihistory.repository.OperationChangeRepository;
@@ -92,6 +93,58 @@ class LintOperationApplierTest {
         verify(contributionRepository, never()).save(any());
         assertThat(operation.getStatus().name()).isEqualTo("succeeded");
         assertThat(operation.getChangedResourceCount()).isEqualTo(1);
+    }
+
+    @Test
+    void apply_failureWithoutAnyAppliedPageIsFailed() {
+        OperationLog operation = OperationLog.processing(
+                "op_lint_1", "ws_1", "user_1", OperationType.lint, null, Instant.now());
+        when(operationLogRepository.findById("op_lint_1")).thenReturn(Optional.of(operation));
+        OperationResultRequest request = new OperationResultRequest(
+                "op_lint_1", "lint", "failed", "ws_1", "user_1", null,
+                "500: pipeline lint stage crashed", List.of(),
+                List.of(new OperationResultRequest.FailedPage("page_1", "error")));
+
+        applier.apply("op_lint_1", request, List.of(), "payload-hash", Instant.now());
+
+        // 0건이면 "일부만 반영"이 아니라 실패다. OperationApplier와 같은 규칙이다.
+        assertThat(operation.getStatus()).isEqualTo(OperationStatus.failed);
+        assertThat(operation.getChangedResourceCount()).isZero();
+        // 요약은 사용자에게 그대로 보이므로 워커 오류 원문을 싣지 않는다.
+        assertThat(operation.getSummary()).isEqualTo("Wiki 정합성 검사에 실패했습니다.");
+    }
+
+    @Test
+    void apply_failureWithAppliedPageIsPartiallySucceeded() {
+        OperationLog operation = OperationLog.processing(
+                "op_lint_1", "ws_1", "user_1", OperationType.lint, null, Instant.now());
+        WikiPageVersion previous = org.mockito.Mockito.mock(WikiPageVersion.class);
+        when(operationLogRepository.findById("op_lint_1")).thenReturn(Optional.of(operation));
+        when(wikiStateRequester.lookup(List.of("page_1"), "ws_1")).thenReturn(List.of(
+                new PipelineWikiStateRequester.WikiPageSnapshot(
+                        "page_1", "concept", "제목", "title", "ws_1", "active")));
+        when(versionRepository.findTopByIdPageIdOrderByIdRevisionDesc("page_1"))
+                .thenReturn(Optional.of(previous));
+        when(previous.getRevision()).thenReturn(3L);
+        when(previous.getMarkdown()).thenReturn("# 이전 본문");
+        when(versionRepository.findMaxRevision("page_1")).thenReturn(3L);
+        when(contributionRepository.countByIdPageIdAndActiveTrue("page_1")).thenReturn(2L);
+        when(lineCounter.count("page_1", 3L, "# 이전 본문", 4L, "# 정리된 본문"))
+                .thenReturn(new LineCounter.LineCount(1, 1));
+        OperationResultRequest request = new OperationResultRequest(
+                "op_lint_1", "lint", "failed", "ws_1", "user_1", null,
+                "500: pipeline lint stage crashed", List.of(),
+                List.of(new OperationResultRequest.FailedPage("page_2", "error")));
+
+        applier.apply("op_lint_1", request,
+                List.of(new LintOperationApplier.LoadedPage(
+                        "page_1", "wiki/ws_1/pages/page_1/ops/op_lint_1.md",
+                        "# 정리된 본문", CONTENT_HASH)),
+                "payload-hash", Instant.now());
+
+        assertThat(operation.getStatus()).isEqualTo(OperationStatus.partially_succeeded);
+        assertThat(operation.getChangedResourceCount()).isEqualTo(1);
+        assertThat(operation.getSummary()).isEqualTo("Wiki 정합성 검사를 일부만 반영했습니다.");
     }
 
     @Test

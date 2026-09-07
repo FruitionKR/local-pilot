@@ -46,7 +46,8 @@ class LintOperationStarterTest {
         starter.markFailed("op_lint_1", "pipeline failure");
 
         assertThat(operation.getStatus()).isEqualTo(OperationStatus.failed);
-        assertThat(operation.getSummary()).isEqualTo("pipeline failure");
+        // 요약은 사용자에게 그대로 보이므로 워커 오류 원문 대신 사용자용 문구를 남긴다.
+        assertThat(operation.getSummary()).isEqualTo("Wiki 정합성 검사에 실패했습니다.");
         assertThat(operation.getCompletedAt()).isNotNull();
     }
 
