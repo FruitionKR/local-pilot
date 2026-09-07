@@ -1,5 +1,6 @@
 package fruition.access.user.service;
 
+import fruition.access.security.OpaqueTokens;
 import fruition.access.user.domain.EmailVerification;
 import fruition.access.user.domain.User;
 import fruition.access.user.dto.EmailVerificationRequest;
@@ -23,13 +24,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.UUID;
 
 @Service
@@ -100,7 +97,7 @@ public class EmailVerificationService {
                 previous.expireCode();
             }
             verificationRepository.save(new EmailVerification(
-                    id, email, purpose, sha256(code), Instant.now().plusSeconds(codeTtlSeconds)));
+                    id, email, purpose, OpaqueTokens.sha256(code), Instant.now().plusSeconds(codeTtlSeconds)));
         });
 
         // 발송 실패 시 예외를 전파한다(레코드는 남지만 재요청 시 폐기되고 TTL로 만료된다).
@@ -125,14 +122,14 @@ public class EmailVerificationService {
         if (verification.isCodeExpired()) {
             throw new VerificationCodeExpiredException();
         }
-        if (!verification.getCodeHash().equals(sha256(request.code()))) {
+        if (!verification.getCodeHash().equals(OpaqueTokens.sha256(request.code()))) {
             verification.increaseAttempt();
             log.warn("[인증번호 검증 실패] verificationId={} attempt={}", verificationId, verification.getAttemptCount());
             throw new InvalidVerificationCodeException();
         }
 
-        String token = generateOpaqueToken();
-        verification.confirm(sha256(token), Instant.now().plusSeconds(tokenTtlSeconds));
+        String token = OpaqueTokens.generate();
+        verification.confirm(OpaqueTokens.sha256(token), Instant.now().plusSeconds(tokenTtlSeconds));
         log.info("[인증번호 검증 성공] verificationId={} email={}", verification.getId(), verification.getEmail());
 
         return new VerificationConfirmResponse(token, tokenTtlSeconds);
@@ -149,7 +146,7 @@ public class EmailVerificationService {
     }
 
     private void consumeToken(String email, String token, String purpose) {
-        EmailVerification verification = verificationRepository.findByTokenHash(sha256(token))
+        EmailVerification verification = verificationRepository.findByTokenHash(OpaqueTokens.sha256(token))
                 .orElseThrow(InvalidVerificationTokenException::new);
 
         if (!verification.getPurpose().equals(purpose)
@@ -188,18 +185,4 @@ public class EmailVerificationService {
         return String.format("%06d", secureRandom.nextInt(1_000_000));
     }
 
-    private String generateOpaqueToken() {
-        byte[] bytes = new byte[32];
-        secureRandom.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    private String sha256(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception e) {
-            throw new RuntimeException("해시 계산 실패", e);
-        }
-    }
 }
