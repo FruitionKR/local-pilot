@@ -13,6 +13,10 @@ public record WorkspaceResponse(
         @Schema(description = "워크스페이스 이름", example = "내 워크스페이스")
         String name,
 
+        @JsonProperty("icon_emoji")
+        @Schema(description = "아이콘 이모지. 설정하지 않았으면 null이다.", example = "📁", nullable = true)
+        String iconEmoji,
+
         @JsonProperty("created_at")
         @Schema(description = "생성 시각(ISO-8601 UTC)", example = "2026-08-13T04:25:24.371948Z")
         Instant createdAt,

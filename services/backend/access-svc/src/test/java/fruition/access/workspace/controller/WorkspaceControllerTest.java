@@ -10,6 +10,7 @@ import fruition.access.security.oauth.handler.OAuth2AuthenticationSuccessHandler
 import fruition.access.security.oauth.OAuthExchangeCodeStore;
 import fruition.access.AccessExceptionHandler;
 import fruition.access.workspace.dto.WorkspaceCreateRequest;
+import fruition.access.workspace.dto.WorkspaceIconUpdateRequest;
 import fruition.access.workspace.dto.WorkspaceListResponse;
 import fruition.access.workspace.dto.WorkspaceLifecycleResponse;
 import fruition.access.workspace.dto.WorkspaceRenameRequest;
@@ -34,6 +35,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -59,7 +61,7 @@ class WorkspaceControllerTest {
     @Test
     void create_authenticated_returns201() throws Exception {
         when(workspaceService.create(eq(USER_ID), any())).thenReturn(
-                new WorkspaceResponse("ws_aaa11111", "팀 워크스페이스", Instant.now(), Instant.now()));
+                new WorkspaceResponse("ws_aaa11111", "팀 워크스페이스", null, Instant.now(), Instant.now()));
 
         mockMvc.perform(post("/api/workspaces")
                         .header("Authorization", bearerToken())
@@ -82,17 +84,18 @@ class WorkspaceControllerTest {
     void list_authenticated_returnsWorkspaces() throws Exception {
         when(workspaceService.list(USER_ID)).thenReturn(
                 new WorkspaceListResponse(List.of(
-                        new WorkspaceResponse("ws_aaa11111", "워크스페이스 A", Instant.now(), Instant.now()))));
+                        new WorkspaceResponse("ws_aaa11111", "워크스페이스 A", "🌱", Instant.now(), Instant.now()))));
 
         mockMvc.perform(get("/api/workspaces").header("Authorization", bearerToken()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.workspaces[0].id").value("ws_aaa11111"));
+                .andExpect(jsonPath("$.workspaces[0].id").value("ws_aaa11111"))
+                .andExpect(jsonPath("$.workspaces[0].icon_emoji").value("🌱"));
     }
 
     @Test
     void rename_ownedWorkspace_returns200() throws Exception {
         when(workspaceService.rename(eq(USER_ID), eq("ws_aaa11111"), any())).thenReturn(
-                new WorkspaceResponse("ws_aaa11111", "새 이름", Instant.now(), Instant.now()));
+                new WorkspaceResponse("ws_aaa11111", "새 이름", null, Instant.now(), Instant.now()));
 
         mockMvc.perform(patch("/api/workspaces/ws_aaa11111")
                         .header("Authorization", bearerToken())
@@ -141,5 +144,62 @@ class WorkspaceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deleted").value(false))
                 .andExpect(jsonPath("$.deleted_at").doesNotExist());
+    }
+
+    @Test
+    void updateIcon_ownedWorkspace_returns200() throws Exception {
+        when(workspaceService.updateIcon(eq(USER_ID), eq("ws_aaa11111"), any())).thenReturn(
+                new WorkspaceResponse("ws_aaa11111", "워크스페이스", "📁", Instant.now(), Instant.now()));
+
+        mockMvc.perform(put("/api/workspaces/ws_aaa11111/icon")
+                        .header("Authorization", bearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new WorkspaceIconUpdateRequest("📁"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.icon_emoji").value("📁"));
+    }
+
+    @Test
+    void updateIcon_nullClears_returns200() throws Exception {
+        when(workspaceService.updateIcon(eq(USER_ID), eq("ws_aaa11111"), any())).thenReturn(
+                new WorkspaceResponse("ws_aaa11111", "워크스페이스", null, Instant.now(), Instant.now()));
+
+        mockMvc.perform(put("/api/workspaces/ws_aaa11111/icon")
+                        .header("Authorization", bearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"icon_emoji\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.icon_emoji").doesNotExist());
+    }
+
+    @Test
+    void updateIcon_withWhitespace_returns400() throws Exception {
+        mockMvc.perform(put("/api/workspaces/ws_aaa11111/icon")
+                        .header("Authorization", bearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"icon_emoji\":\"팀 아이콘\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void updateIcon_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(put("/api/workspaces/ws_aaa11111/icon")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new WorkspaceIconUpdateRequest("📁"))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void updateIcon_notOwnedWorkspace_returns404() throws Exception {
+        when(workspaceService.updateIcon(eq(USER_ID), eq("ws_unknown"), any()))
+                .thenThrow(new WorkspaceNotFoundException("ws_unknown"));
+
+        mockMvc.perform(put("/api/workspaces/ws_unknown/icon")
+                        .header("Authorization", bearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new WorkspaceIconUpdateRequest("📁"))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("WORKSPACE_NOT_FOUND"));
     }
 }

@@ -28,6 +28,10 @@ public class Workspace {
     @Column(name = "deleted_by")
     private String deletedBy;
 
+    /** 아이콘 이모지. 설정하지 않았으면 null이다. */
+    @Column(name = "icon_emoji", length = 32)
+    private String iconEmoji;
+
     @Column(name = "ingest_lint_provider", nullable = false)
     private String ingestLintProvider;
 
@@ -47,6 +51,12 @@ public class Workspace {
 
     public void rename(String name) {
         this.name = name;
+        this.updatedAt = Instant.now();
+    }
+
+    /** null을 주면 아이콘을 지운다. */
+    public void changeIcon(String iconEmoji) {
+        this.iconEmoji = iconEmoji;
         this.updatedAt = Instant.now();
     }
 
@@ -72,6 +82,7 @@ public class Workspace {
     public String getName() { return name; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public String getIconEmoji() { return iconEmoji; }
     public Instant getDeletedAt() { return deletedAt; }
     public String getDeletedBy() { return deletedBy; }
     public String getIngestLintProvider() { return ingestLintProvider; }

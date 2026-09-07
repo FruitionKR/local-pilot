@@ -4,7 +4,7 @@
 
 워크스페이스 관리와 서비스 간 인가·AI 모델 설정 API다.
 
-- API 수: 13
+- API 수: 14
 
 ## API 목차
 
@@ -15,6 +15,7 @@
 | [`GET /api/workspaces/trash`](#summary-get-api-workspaces-trash) | 소유자가 삭제한 워크스페이스를 반환합니다. |
 | [`PATCH /api/workspaces/{workspace_id}`](#summary-patch-api-workspaces-workspace-id) | 로그인한 사용자가 소유한 워크스페이스의 이름을 변경합니다. |
 | [`DELETE /api/workspaces/{workspace_id}`](#summary-delete-api-workspaces-workspace-id) | 소유한 워크스페이스를 하위 데이터 변경 없이 소프트 삭제합니다. |
+| [`PUT /api/workspaces/{workspace_id}/icon`](#summary-put-api-workspaces-workspace-id-icon) | 소유한 워크스페이스의 아이콘 이모지를 설정하거나 지웁니다. |
 | [`GET /api/workspaces/{workspace_id}/members`](#summary-get-api-workspaces-workspace-id-members) | 워크스페이스의 활성 멤버를 합류 순으로 반환합니다. 멤버만 조회할 수 있습니다. |
 | [`PATCH /api/workspaces/{workspace_id}/members/{user_id}`](#summary-patch-api-workspaces-workspace-id-members-user-id) | 멤버의 역할을 OWNER 또는 MEMBER로 변경합니다. OWNER만 호출할 수 있습니다. |
 | [`DELETE /api/workspaces/{workspace_id}/members/{user_id}`](#summary-delete-api-workspaces-workspace-id-members-user-id) | OWNER는 다른 멤버를 제거할 수 있고, 멤버는 자신을 제거해 탈퇴할 수 있습니다. |
@@ -548,6 +549,114 @@ curl -X DELETE "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a" \
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: delete`)
 
 [↑ 요약으로 돌아가기](#summary-delete-api-workspaces-workspace-id)
+
+</details>
+
+<a id="summary-put-api-workspaces-workspace-id-icon"></a>
+### `PUT /api/workspaces/{workspace_id}/icon`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 소유한 워크스페이스의 아이콘 이모지를 설정하거나 지웁니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Body** — `WorkspaceIconUpdateRequest` |
+| 출력 | `200` 변경 성공 — `WorkspaceResponse` |
+| 조건 | 인증 필요<br>호출자의 역할이 `OWNER`여야 한다. |
+| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+<a id="detail-put-api-workspaces-workspace-id-icon"></a>
+### `PUT /api/workspaces/{workspace_id}/icon` 상세
+
+#### 1. Method + Path
+
+`PUT /api/workspaces/{workspace_id}/icon`
+
+#### 2. 목적
+
+워크스페이스 아이콘을 이모지로 설정한다. 이미지 업로드는 아직 지원하지 않는다 —
+도입하면 응답에 `icon_url`이 더해지며, 지금의 `icon_emoji` 계약은 그대로 유지된다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- `Authorization: Bearer <access_token>`을 검증한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| path | `workspace_id` | `string` | 예 | 워크스페이스 ID |
+| body | `icon_emoji` | `string` | 아니오 | 아이콘 이모지(32자 이하, 공백 불가). `null`이면 아이콘을 지운다 |
+
+```json
+{
+  "icon_emoji": "📁"
+}
+```
+
+지우려면 `null`을 명시한다. 빈 문자열은 `400`이다 — 지우는 방법을 하나로 둔다.
+
+```json
+{
+  "icon_emoji": null
+}
+```
+
+32자를 허용하는 이유: 가족 이모지처럼 ZWJ로 이어 붙는 시퀀스는 코드포인트를 여러 개 쓴다.
+이모지인지 자체를 정규식으로 판별하지는 않는다. 유니코드 개정마다 표가 늘어 유지비가 크고,
+자기 워크스페이스의 아이콘이라 위험도가 낮다. 공백만 막는다.
+
+#### 5. Response body
+
+- HTTP `200`: 변경 성공 — `WorkspaceResponse`
+
+```json
+{
+  "id": "ws_9d47a0e9a6324341b47562553b75f92a",
+  "name": "내 워크스페이스",
+  "icon_emoji": "📁",
+  "created_at": "2026-08-13T04:25:24.371948Z",
+  "updated_at": "2026-09-07T21:10:02.118374Z"
+}
+```
+
+`icon_emoji`는 `GET /api/workspaces`, `POST /api/workspaces`,
+`PATCH /api/workspaces/{workspace_id}` 응답에도 함께 실린다. 설정하지 않았으면 생략된다.
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `400` | 32자를 넘거나 공백을 포함함 | `INVALID_REQUEST` |
+| `404` | 워크스페이스를 찾을 수 없거나 소유자가 아님 | `WORKSPACE_NOT_FOUND` |
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 인증된 사용자만 호출할 수 있다.
+- 소유(`OWNER`)한 워크스페이스만 대상이다. 이름 변경(`PATCH /api/workspaces/{workspace_id}`)과 같은 기준이다.
+- 소프트 삭제된 워크스페이스는 대상이 아니다(`404`).
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X PUT "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/icon" \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  --data '{"icon_emoji":"📁"}'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: updateIcon`)
+
+[↑ 요약으로 돌아가기](#summary-put-api-workspaces-workspace-id-icon)
 
 </details>
 

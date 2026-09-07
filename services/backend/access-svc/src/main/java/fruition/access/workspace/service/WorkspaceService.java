@@ -7,6 +7,7 @@ import fruition.access.workspace.domain.WorkspaceMember;
 import fruition.access.workspace.domain.WorkspaceRole;
 import fruition.access.workspace.dto.WorkspaceCreateRequest;
 import fruition.access.workspace.dto.WorkspaceListResponse;
+import fruition.access.workspace.dto.WorkspaceIconUpdateRequest;
 import fruition.access.workspace.dto.WorkspaceLifecycleResponse;
 import fruition.access.workspace.dto.WorkspaceRenameRequest;
 import fruition.access.workspace.dto.WorkspaceResponse;
@@ -69,6 +70,13 @@ public class WorkspaceService {
     public WorkspaceResponse rename(String userId, String workspaceId, WorkspaceRenameRequest request) {
         Workspace workspace = findOwned(userId, workspaceId);
         workspace.rename(request.name().trim());
+        return toResponse(workspace);
+    }
+
+    @Transactional
+    public WorkspaceResponse updateIcon(String userId, String workspaceId, WorkspaceIconUpdateRequest request) {
+        Workspace workspace = findOwned(userId, workspaceId);
+        workspace.changeIcon(request.iconEmoji());
         return toResponse(workspace);
     }
 
@@ -182,6 +190,11 @@ public class WorkspaceService {
     }
 
     private WorkspaceResponse toResponse(Workspace workspace) {
-        return new WorkspaceResponse(workspace.getId(), workspace.getName(), workspace.getCreatedAt(), workspace.getUpdatedAt());
+        return new WorkspaceResponse(
+                workspace.getId(),
+                workspace.getName(),
+                workspace.getIconEmoji(),
+                workspace.getCreatedAt(),
+                workspace.getUpdatedAt());
     }
 }

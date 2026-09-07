@@ -2,6 +2,7 @@ package fruition.access.workspace.controller;
 
 import fruition.shared.util.ErrorResponse;
 import fruition.access.workspace.dto.WorkspaceCreateRequest;
+import fruition.access.workspace.dto.WorkspaceIconUpdateRequest;
 import fruition.access.workspace.dto.WorkspaceListResponse;
 import fruition.access.workspace.dto.WorkspaceLifecycleResponse;
 import fruition.access.workspace.dto.WorkspaceRenameRequest;
@@ -70,6 +71,25 @@ public class WorkspaceController {
             @PathVariable("workspace_id") String workspaceId,
             @Valid @RequestBody WorkspaceRenameRequest request) {
         return ResponseEntity.ok(workspaceService.rename(userId, workspaceId, request));
+    }
+
+    @Operation(summary = "워크스페이스 아이콘 변경",
+            description = "소유한 워크스페이스의 아이콘 이모지를 설정하거나 지웁니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "변경 성공",
+            content = @Content(schema = @Schema(implementation = WorkspaceResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PutMapping("/{workspace_id}/icon")
+    public ResponseEntity<WorkspaceResponse> updateIcon(
+            @AuthenticationPrincipal String userId,
+            @Parameter(description = "워크스페이스 ID", example = "ws_abc12345")
+            @PathVariable("workspace_id") String workspaceId,
+            @Valid @RequestBody WorkspaceIconUpdateRequest request) {
+        return ResponseEntity.ok(workspaceService.updateIcon(userId, workspaceId, request));
     }
 
     @Operation(summary = "워크스페이스 삭제", description = "소유한 워크스페이스를 하위 데이터 변경 없이 소프트 삭제합니다.")
