@@ -542,3 +542,9 @@
   height: 10px;
   flex: 0 0 auto;
 }
+
+/* 다중 선택된 워크스페이스 강조 */
+.scope-option.is-selected {
+  color: var(--yellow, #ffc117);
+  font-weight: 600;
+}

@@ -101,8 +101,8 @@ export function SkillCreateWizard({
     enabled: docPickerOpen
   });
 
-  // 팀 스킬 게시 대상 워크스페이스 (기본: 현재 워크스페이스)
-  const [targetWorkspaceId, setTargetWorkspaceId] = useState(workspaceId);
+  // 팀 스킬 게시 대상 워크스페이스 — 여러 개 선택 가능 (기본: 현재 워크스페이스)
+  const [targetWorkspaceIds, setTargetWorkspaceIds] = useState<string[]>([workspaceId]);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const { data: workspaceList } = useQuery({
     queryKey: ["workspaces"],
@@ -111,8 +111,10 @@ export function SkillCreateWizard({
     enabled: scopeType === "team"
   });
   const ownedWorkspaces = workspaceList?.workspaces ?? [];
-  const targetWorkspaceName =
-    ownedWorkspaces.find((workspace) => workspace.id === targetWorkspaceId)?.name ?? workspaceName;
+  const targetWorkspaceLabel =
+    targetWorkspaceIds.length <= 1
+      ? ownedWorkspaces.find((workspace) => workspace.id === targetWorkspaceIds[0])?.name ?? workspaceName
+      : `워크스페이스 ${targetWorkspaceIds.length}개`;
 
   // STEP 2~3 초안 (author 결과, 로컬 편집 허용)
   const [draft, setDraft] = useState<SkillAuthoringResult | null>(null);
@@ -136,23 +138,34 @@ export function SkillCreateWizard({
       }),
     onSuccess: (result) => {
       setDraft(result);
-      setJustPassed((result.issues ?? []).length === 0);
-      setStep(2);
+      const clean = (result.issues ?? []).length === 0;
+      setJustPassed(clean);
+      if (clean) {
+        // 통과면 STEP 2를 건너뛰고 오버레이 후 STEP 3으로 직행한다. 이전 버튼 목적지를 위해 출발점을 기억한다.
+        setSkippedStep2(step === 1);
+      } else {
+        setSkippedStep2(false);
+        setStep(2);
+      }
     }
   });
 
   const publishMutation = useMutation({
     mutationFn: () => {
       if (draft == null) throw new Error("게시할 초안이 없습니다.");
-      // 팀 스킬은 publish를 호출한 워크스페이스에 귀속되므로 선택된 대상으로 호출한다.
-      return publishSkill(scopeType === "team" ? targetWorkspaceId : workspaceId, {
+      const body = {
         name: publishName,
         description: draft.description,
         instructions_markdown: draft.instructions_markdown,
         scope_type: scopeType,
         allowed_tools: draft.allowed_tools,
         capabilities: draft.capabilities
-      });
+      };
+      // 팀 스킬은 publish를 호출한 워크스페이스에 귀속된다. 여러 개 선택 시 각 워크스페이스에 게시한다.
+      if (scopeType === "team") {
+        return Promise.all(targetWorkspaceIds.map((id) => publishSkill(id, body))).then((results) => results[0]);
+      }
+      return publishSkill(workspaceId, body);
     },
     onSuccess: () => {
       onPublished();
@@ -161,15 +174,23 @@ export function SkillCreateWizard({
   });
 
   const issues = draft?.issues ?? [];
-  // 통과 오버레이·자동 진행은 검토 직후 1회만 보여준다. STEP3에서 '이전'으로 돌아오면 재생하지 않는다.
+  // 통과 오버레이는 검토 직후 1회만 보여준다. 이전/다음 이동으로는 재생하지 않는다.
   const [justPassed, setJustPassed] = useState(false);
-  const passed = step === 2 && justPassed && !authorMutation.isPending;
+  // STEP1에서 통과해 STEP2를 건너뛴 경우 true — STEP3의 '이전'이 STEP1로 가야 한다.
+  const [skippedStep2, setSkippedStep2] = useState(false);
+  const passed = justPassed && !authorMutation.isPending;
 
-  // 통과해도 자동으로 STEP 3으로 넘어가지 않는다. 오버레이는 잠시 보여준 뒤 STEP 2에 머문다.
+  function finishPassOverlay() {
+    setJustPassed(false);
+    setStep(3);
+  }
+
+  // 통과 오버레이를 잠시 보여준 뒤 STEP 3으로 진행한다.
   useEffect(() => {
     if (!passed) return;
-    const timer = setTimeout(() => setJustPassed(false), PASS_ADVANCE_MS);
+    const timer = setTimeout(finishPassOverlay, PASS_ADVANCE_MS);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [passed]);
 
   // STEP 3 진입 시 커맨드가 비어 있으면 AI가 지은 이름을 채워 수정 가능하게 한다.
@@ -409,11 +430,6 @@ export function SkillCreateWizard({
             >
               {authorMutation.isPending ? "검토 중…" : "다시 검토하기 ›"}
             </button>
-            {issues.length === 0 && draft.instructions_markdown != null && (
-              <button type="button" className={styles["btn-primary"]} onClick={() => setStep(3)}>
-                다음 ›
-              </button>
-            )}
           </div>
         </div>
 
@@ -474,26 +490,36 @@ export function SkillCreateWizard({
                     aria-expanded={workspaceMenuOpen}
                     onClick={() => setWorkspaceMenuOpen(!workspaceMenuOpen)}
                   >
-                    {targetWorkspaceName ?? "워크스페이스 선택"} (팀)
+                    {targetWorkspaceLabel ?? "워크스페이스 선택"} (팀)
                     <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
                   </button>
                   {workspaceMenuOpen && (
                     <div className={styles["scope-menu"]} role="listbox" aria-label="게시할 워크스페이스 선택">
-                      {ownedWorkspaces.map((workspace) => (
-                        <button
-                          key={workspace.id}
-                          type="button"
-                          role="option"
-                          aria-selected={workspace.id === targetWorkspaceId}
-                          className={styles["scope-option"]}
-                          onClick={() => {
-                            setTargetWorkspaceId(workspace.id);
-                            setWorkspaceMenuOpen(false);
-                          }}
-                        >
-                          {workspace.name}
-                        </button>
-                      ))}
+                      {ownedWorkspaces.map((workspace) => {
+                        const isSelected = targetWorkspaceIds.includes(workspace.id);
+                        return (
+                          <button
+                            key={workspace.id}
+                            type="button"
+                            role="option"
+                            aria-selected={isSelected}
+                            className={`${styles["scope-option"]} ${isSelected ? styles["is-selected"] : ""}`}
+                            onClick={() =>
+                              // 토글 선택. 최소 1개는 유지한다.
+                              setTargetWorkspaceIds((current) =>
+                                isSelected
+                                  ? current.length > 1
+                                    ? current.filter((id) => id !== workspace.id)
+                                    : current
+                                  : [...current, workspace.id]
+                              )
+                            }
+                          >
+                            {workspace.name}
+                            {isSelected && " ✓"}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -510,7 +536,7 @@ export function SkillCreateWizard({
         )}
 
         <div className={styles.footer}>
-          <button type="button" className={styles["btn-ghost"]} onClick={() => setStep(2)}>
+          <button type="button" className={styles["btn-ghost"]} onClick={() => setStep(skippedStep2 ? 1 : 2)}>
             <SvgIcon src={skillBackIcon} className={styles["back-icon"]} /> 이전
           </button>
           <div className={styles["footer-group"]}>
@@ -578,7 +604,7 @@ export function SkillCreateWizard({
             type="button"
             className={styles["pass-overlay"]}
             disabled={authorMutation.isPending}
-            onClick={() => setJustPassed(false)}
+            onClick={finishPassOverlay}
           >
             <SafetyReviewBadge variant={authorMutation.isPending ? "loading" : "complete"} />
           </button>
