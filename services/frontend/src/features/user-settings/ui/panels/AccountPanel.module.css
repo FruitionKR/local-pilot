@@ -1,0 +1,17 @@
+/* 계정 설정 패널 전용 스타일 (Figma 963:8660). */
+
+/* 로그인된 기기 수 표시용 알약 버튼 */
+.pill {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  color: var(--ink);
+  background: #323232;
+  border-radius: 100px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pill:disabled {
+  cursor: default;
+}
