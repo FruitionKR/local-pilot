@@ -1,0 +1,74 @@
+/* 안전 검토 상태 배지 (Figma 1033:8390 / 1033:8429) */
+
+.badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.ring {
+  display: block;
+}
+
+/* 검토 중: 노란 호 회전 */
+.arc {
+  transform-origin: 40px 40px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 통과: 초록 원 확대 후 체크 그리기 */
+.fill-circle {
+  transform-origin: 40px 40px;
+  animation: pop 0.3s ease-out both;
+}
+
+@keyframes pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.checkmark {
+  stroke-dasharray: 42;
+  stroke-dashoffset: 42;
+  animation: draw 0.35s ease-out 0.25s forwards;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+[data-reduce-motion="true"] .arc,
+[data-reduce-motion="true"] .fill-circle,
+[data-reduce-motion="true"] .checkmark {
+  animation: none;
+  stroke-dashoffset: 0;
+}
+
+.text-loading {
+  color: #6d6d6d;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.28px;
+}
+
+.text-complete {
+  color: #00de5a;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.28px;
+}

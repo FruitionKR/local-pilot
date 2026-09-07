@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { fetchDocuments, type DocumentItemResponse } from "@/entities/document";
 import { authorSkill, publishSkill, type SkillAuthoringResult } from "@/entities/skill";
 import { DocumentPickerModal } from "./DocumentPickerModal";
+import { SafetyReviewBadge } from "./SafetyReviewBadge";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useEscapeKey } from "@/shared/lib/useEscapeKey";
 import { menuSearchIcon, questionMarkIcon, settingScrollIcon, skillBackIcon, SvgIcon } from "@/shared/ui/SvgIcon";
@@ -150,6 +151,12 @@ export function SkillCreateWizard({
     const timer = setTimeout(() => setStep(3), PASS_ADVANCE_MS);
     return () => clearTimeout(timer);
   }, [passed]);
+
+  // STEP 3 진입 시 커맨드가 비어 있으면 AI가 지은 이름을 채워 수정 가능하게 한다.
+  useEffect(() => {
+    if (step === 3 && command.trim() === "" && draft?.name) setCommand(draft.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   const authorError =
     authorMutation.error != null ? getErrorMessage(authorMutation.error, "스킬 초안을 생성하지 못했습니다.") : null;
@@ -380,7 +387,7 @@ export function SkillCreateWizard({
               disabled={authorMutation.isPending}
               onClick={() => authorMutation.mutate({ instruction: reviewContent, mode: "regenerate" })}
             >
-              ✦ AI로 안전하게 다시 만들기
+              {authorMutation.isPending ? "✦ 안전하게 다시 만드는 중…" : "✦ AI로 안전하게 다시 만들기"}
             </button>
             <button
               type="button"
@@ -393,14 +400,16 @@ export function SkillCreateWizard({
           </div>
         </div>
 
-        {/* 검토 통과 오버레이 (Figma 1014:10593) */}
+        {/* 재검토 진행 오버레이 (Figma 1033:8390) */}
+        {authorMutation.isPending && (
+          <div className={styles["pass-overlay"]}>
+            <SafetyReviewBadge variant="loading" />
+          </div>
+        )}
+        {/* 검토 통과 오버레이 (Figma 1033:8429 / 1014:10593) */}
         {passed && (
           <button type="button" className={styles["pass-overlay"]} onClick={() => setStep(3)}>
-            <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden>
-              <circle cx="36" cy="36" r="34" fill="none" stroke="#00de5a" strokeWidth="4" />
-              <path d="M22 37l10 10 18-20" fill="none" stroke="#00de5a" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span className={styles["pass-text"]}>안전 검토를 통과했습니다.</span>
+            <SafetyReviewBadge variant="complete" />
           </button>
         )}
       </>
@@ -412,23 +421,38 @@ export function SkillCreateWizard({
     return (
       <>
         <div className={styles.fields}>
-          {/* STEP 3은 게시 전 최종 확인용이라 전부 읽기 전용이다. 수정은 STEP 1·2에서 한다. */}
           <div className={styles.field}>
             <span className={styles["field-label"]}>커맨드</span>
             <div className={styles["input-wrap"]}>
-              <input type="text" className={styles.input} value={publishName} readOnly />
-              <span className={styles.counter}>{publishName.length}/{NAME_MAX}</span>
+              <input
+                type="text"
+                className={styles.input}
+                maxLength={NAME_MAX}
+                value={command}
+                onChange={(event) => setCommand(event.target.value)}
+              />
+              <span className={styles.counter}>{command.length}/{NAME_MAX}</span>
             </div>
           </div>
 
           <div className={styles.field}>
             <span className={styles["field-label"]}>설명</span>
-            <input type="text" className={styles.input} value={draft.description} readOnly />
+            <input
+              type="text"
+              className={styles.input}
+              value={draft.description}
+              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+            />
           </div>
 
           <div className={styles.field}>
             <span className={styles["field-label"]}>스킬 내용</span>
-            <textarea className={styles.textarea} rows={8} value={draft.instructions_markdown} readOnly />
+            <textarea
+              className={styles.textarea}
+              rows={8}
+              value={draft.instructions_markdown}
+              onChange={(event) => setDraft({ ...draft, instructions_markdown: event.target.value })}
+            />
           </div>
 
           {draft.allowed_tools.length > 0 && (
@@ -463,7 +487,7 @@ export function SkillCreateWizard({
                 authorMutation.mutate({ instruction, mode: "regenerate" });
               }}
             >
-              ✦ AI로 안전하게 다시 만들기
+              {authorMutation.isPending ? "✦ 안전하게 다시 만드는 중…" : "✦ AI로 안전하게 다시 만들기"}
             </button>
             <button
               type="button"
