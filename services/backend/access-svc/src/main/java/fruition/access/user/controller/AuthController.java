@@ -9,6 +9,7 @@ import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
 import fruition.access.user.dto.DisplayNameUpdateRequest;
+import fruition.access.user.dto.EmailChangeRequest;
 import fruition.access.user.dto.PasswordChangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.dto.RefreshRequest;
@@ -252,6 +253,27 @@ public class AuthController {
             @CookieValue(name = REFRESH_COOKIE_NAME, required = false) String refreshToken) {
         authService.changePassword(userId, request, refreshToken);
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "이메일 변경",
+            description = "새 이메일로 받은 인증번호 토큰으로 본인 확인 후 계정 이메일을 바꿉니다."
+                    + " 성공하면 현재 세션을 제외한 refresh token이 폐기됩니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "변경 성공",
+            content = @Content(schema = @Schema(implementation = MeResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청이거나 유효하지 않은 verification_token",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "401", description = "인증되지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "같은 provider에 이미 그 이메일 계정이 있음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PutMapping("/me/email")
+    public ResponseEntity<MeResponse> changeEmail(
+            @AuthenticationPrincipal String userId,
+            @Valid @RequestBody EmailChangeRequest request,
+            @CookieValue(name = REFRESH_COOKIE_NAME, required = false) String refreshToken) {
+        return ResponseEntity.ok(authService.changeEmail(userId, request, refreshToken));
     }
 
     private ResponseEntity<LoginResponse> authenticatedResponse(LoginResponse response) {

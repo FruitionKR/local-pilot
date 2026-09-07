@@ -17,6 +17,7 @@ import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.DisplayNameUpdateRequest;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
+import fruition.access.user.dto.EmailChangeRequest;
 import fruition.access.user.dto.PasswordChangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.dto.SignupRequest;
@@ -419,5 +420,68 @@ class AuthControllerTest {
                                 new PasswordChangeRequest("wrongPassword", "newPassword1"))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("INVALID_CREDENTIALS"));
+    }
+
+    @Test
+    void changeEmail_authenticated_returns200() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+        when(authService.changeEmail(eq("user_1f9a74af"), any(), eq("current-refresh"))).thenReturn(
+                new MeResponse("user_1f9a74af", "new@example.com", "이름", Instant.now()));
+
+        mockMvc.perform(put("/api/auth/me/email")
+                        .header("Authorization", "Bearer " + token)
+                        .cookie(new jakarta.servlet.http.Cookie("fruition_refresh_token", "current-refresh"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new EmailChangeRequest("new@example.com", "verification-token"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("new@example.com"));
+    }
+
+    @Test
+    void changeEmail_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(put("/api/auth/me/email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new EmailChangeRequest("new@example.com", "verification-token"))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void changeEmail_invalidEmailFormat_returns400() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+
+        mockMvc.perform(put("/api/auth/me/email")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"new_email\":\"not-an-email\",\"verification_token\":\"t\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void changeEmail_duplicate_returns409() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+        when(authService.changeEmail(eq("user_1f9a74af"), any(), any()))
+                .thenThrow(new DuplicateEmailException("taken@example.com"));
+
+        mockMvc.perform(put("/api/auth/me/email")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new EmailChangeRequest("taken@example.com", "verification-token"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("DUPLICATE_EMAIL"));
+    }
+
+    @Test
+    void requestVerification_emailChangePurpose_isAccepted() throws Exception {
+        when(emailVerificationService.request(any()))
+                .thenReturn(new EmailVerificationResponse("ev_1", 300, 60));
+
+        mockMvc.perform(post("/api/auth/email-verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"new@example.com\",\"purpose\":\"email_change\"}"))
+                .andExpect(status().isAccepted());
     }
 }

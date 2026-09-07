@@ -4,19 +4,20 @@
 
 가입·이메일 인증·로그인·토큰 API다.
 
-- API 수: 12
+- API 수: 13
 
 ## API 목차
 
 | API | 목적 |
 |---|---|
 | [`POST /api/auth/email-availability`](#summary-post-api-auth-email-availability) | 회원가입 전에 이메일로 신규 가입할 수 있는지 빠르게 확인합니다. 일반 회원가입 계정만 대상으로 확인하므로, OAuth로만 가입된 이메일은 일반 회원가입이 가능해 `available: true`를 반환합니다. |
-| [`POST /api/auth/email-verifications`](#summary-post-api-auth-email-verifications) | 회원가입/비밀번호 재설정을 위한 인증번호를 발급합니다. |
+| [`POST /api/auth/email-verifications`](#summary-post-api-auth-email-verifications) | 회원가입/비밀번호 재설정/이메일 변경을 위한 인증번호를 발급합니다. |
 | [`POST /api/auth/email-verifications/{verification_id}/confirm`](#summary-post-api-auth-email-verifications-verification-id-confirm) | 인증번호를 검증하고 1회용 verification_token을 발급합니다. |
 | [`POST /api/auth/login`](#summary-post-api-auth-login) | 이메일/비밀번호를 검증하고 access token과 HttpOnly refresh 쿠키를 발급합니다. |
 | [`POST /api/auth/logout`](#summary-post-api-auth-logout) | HttpOnly refresh 쿠키를 폐기하고 제거합니다. |
 | [`GET /api/auth/me`](#summary-get-api-auth-me) | access token으로 인증된 사용자의 프로필을 반환합니다. |
 | [`PATCH /api/auth/me`](#summary-patch-api-auth-me) | 인증된 사용자의 표시 이름을 변경합니다. |
+| [`PUT /api/auth/me/email`](#summary-put-api-auth-me-email) | 새 이메일로 받은 인증번호 토큰으로 계정 이메일을 바꿉니다. |
 | [`PUT /api/auth/me/password`](#summary-put-api-auth-me-password) | 현재 비밀번호를 확인하고 새 비밀번호로 바꿉니다. |
 | [`POST /api/auth/oauth/exchange`](#summary-post-api-auth-oauth-exchange) | OAuth code를 access token과 HttpOnly refresh 쿠키로 교환합니다. |
 | [`POST /api/auth/password-reset`](#summary-post-api-auth-password-reset) | verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 세션을 폐기합니다. |
@@ -693,6 +694,110 @@ curl -X PATCH "$ACCESS/api/auth/me" \
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: updateDisplayName`)
 
 [↑ 요약으로 돌아가기](#summary-patch-api-auth-me)
+
+</details>
+
+<a id="summary-put-api-auth-me-email"></a>
+### `PUT /api/auth/me/email`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 새 이메일로 받은 인증번호 토큰으로 본인 확인 후 계정 이메일을 바꿉니다. |
+| 입력 | **Body** — `EmailChangeRequest`<br>**Cookie** — `fruition_refresh_token`(선택) |
+| 출력 | `200` 변경 성공 — `MeResponse` |
+| 조건 | 인증 필요<br>`purpose=email_change`로 **새 주소에** 발급받은 토큰이어야 한다. |
+| 주요 오류 | `400` 유효하지 않은 `verification_token` — `ErrorResponse`<br>`401` 인증되지 않음 — `ErrorResponse`<br>`409` 같은 provider에 이미 그 이메일 계정이 있음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`PUT /api/auth/me/email`
+
+#### 2. 목적
+
+계정 이메일을 바꾼다. 인증번호는 **바꾸려는 새 주소로** 발송해, 그 메일함을 통제하는지 확인한다.
+
+흐름은 두 단계다.
+
+1. `POST /api/auth/email-verifications` — `{"email": "<새 주소>", "purpose": "email_change"}`
+2. `POST /api/auth/email-verifications/{verification_id}/confirm` — 코드 검증, `verification_token` 발급
+3. `PUT /api/auth/me/email` — 토큰으로 확정
+
+#### 3. Auth 필요 여부
+
+- 필요
+- refresh 쿠키(`fruition_refresh_token`)를 함께 읽어 현재 세션을 식별한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| body | `new_email` | `string` | 예 | 바꿀 새 이메일(255자 이하). 서버가 trim·소문자화한다 |
+| body | `verification_token` | `string` | 예 | `purpose=email_change`로 받은 1회용 토큰 |
+| cookie | `fruition_refresh_token` | `string` | 아니오 | 현재 세션의 refresh token. 없으면 모든 세션이 폐기된다 |
+
+```json
+{
+  "new_email": "new@example.com",
+  "verification_token": "EXAMPLE-verification-token-not-real-0000000"
+}
+```
+
+#### 5. Response body
+
+- HTTP `200`: 변경 성공 — `MeResponse`
+
+```json
+{
+  "id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
+  "email": "new@example.com",
+  "display_name": "표시 이름",
+  "created_at": "2026-08-13T04:25:24.371948Z"
+}
+```
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `400` | `new_email` 형식 오류 등 | `INVALID_REQUEST` |
+| `400` | 토큰이 없거나 만료·소비됐거나 `new_email`과 다른 주소로 발급됨 | `INVALID_VERIFICATION_TOKEN` |
+| `401` | access token이 없거나 유효하지 않음 | — |
+| `409` | 같은 provider에 이미 그 이메일 계정이 있음 | `DUPLICATE_EMAIL` |
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 토큰의 사용자 본인만 대상이다.
+- 계정은 `(email, provider)`로 유일하다. **같은 이메일이라도 provider가 다르면 충돌이 아니다** —
+  일반 가입 계정이 이미 쓰는 주소로 구글 계정의 이메일을 바꾸는 건 허용된다.
+- OAuth 계정도 바꿀 수 있다. OAuth 로그인은 `(provider, provider_user_id)`로 사용자를 찾으므로
+  이메일이 바뀌어도 로그인이 끊기지 않고, 다음 로그인이 provider 이메일로 되돌리지도 않는다.
+- 성공하면 현재 세션을 제외한 refresh token을 폐기한다. 비밀번호 변경과 같은 기준이다.
+- 인증번호 발송(`POST /api/auth/email-verifications`)은 인증이 필요 없는 엔드포인트라,
+  중복 확인은 여기 확정 시점에 한다. 발송 단계에서는 계정 존재 여부를 노출하지 않는다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X PUT "$ACCESS/api/auth/me/email" \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  -b 'fruition_refresh_token=<refresh_token>' \
+  --data '{"new_email":"new@example.com","verification_token":"<token>"}'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: changeEmail`)
+
+[↑ 요약으로 돌아가기](#summary-put-api-auth-me-email)
 
 </details>
 
