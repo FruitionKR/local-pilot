@@ -3,8 +3,10 @@ package fruition.access.user.service;
 import fruition.shared.security.JwtTokenProvider;
 import fruition.access.security.oauth.OAuthExchangeCodeStore;
 import fruition.access.user.domain.User;
+import fruition.access.user.domain.UserMfaChallenge;
 import fruition.access.user.domain.UserRefreshToken;
 import fruition.access.user.dto.LoginRequest;
+import fruition.access.user.dto.MfaLoginRequest;
 import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
@@ -17,12 +19,15 @@ import fruition.access.user.exception.DuplicateEmailException;
 import fruition.access.user.dto.SessionListResponse;
 import fruition.access.user.dto.SessionResponse;
 import fruition.access.user.exception.InvalidCredentialsException;
+import fruition.access.user.exception.InvalidMfaChallengeException;
 import fruition.access.user.exception.InvalidVerificationTokenException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
 import fruition.access.user.exception.InvalidRefreshTokenException;
 import fruition.access.user.exception.PasswordLoginUnavailableException;
 import fruition.access.user.exception.SessionNotFoundException;
 import fruition.access.user.exception.UserNotFoundException;
+import fruition.access.user.mfa.MfaService;
+import fruition.access.user.repository.UserMfaChallengeRepository;
 import fruition.access.user.repository.UserRefreshTokenRepository;
 import fruition.access.user.repository.UserRepository;
 import org.hibernate.exception.ConstraintViolationException;
@@ -42,6 +47,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.UUID;
 import java.util.HexFormat;
 import java.util.List;
 
@@ -56,7 +62,10 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final OAuthExchangeCodeStore oAuthExchangeCodeStore;
     private final EmailVerificationService emailVerificationService;
+    private final MfaService mfaService;
+    private final UserMfaChallengeRepository mfaChallengeRepository;
     private final long refreshTokenExpirationSeconds;
+    private final long mfaChallengeTtlSeconds;
 
     public AuthService(UserRepository userRepository,
                        UserRefreshTokenRepository refreshTokenRepository,
@@ -64,14 +73,20 @@ public class AuthService {
                        JwtTokenProvider jwtTokenProvider,
                        OAuthExchangeCodeStore oAuthExchangeCodeStore,
                        EmailVerificationService emailVerificationService,
-                       @Value("${app.jwt.refresh-token-expiration-seconds}") long refreshTokenExpirationSeconds) {
+                       MfaService mfaService,
+                       UserMfaChallengeRepository mfaChallengeRepository,
+                       @Value("${app.jwt.refresh-token-expiration-seconds}") long refreshTokenExpirationSeconds,
+                       @Value("${app.auth.mfa.challenge-ttl-seconds:300}") long mfaChallengeTtlSeconds) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.oAuthExchangeCodeStore = oAuthExchangeCodeStore;
         this.emailVerificationService = emailVerificationService;
+        this.mfaService = mfaService;
+        this.mfaChallengeRepository = mfaChallengeRepository;
         this.refreshTokenExpirationSeconds = refreshTokenExpirationSeconds;
+        this.mfaChallengeTtlSeconds = mfaChallengeTtlSeconds;
     }
 
     @Transactional
@@ -88,6 +103,11 @@ public class AuthService {
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             log.warn("[로그인 실패] reason=password_mismatch userId={} email={}", user.getId(), email);
             throw new InvalidCredentialsException();
+        }
+
+        if (mfaService.isEnabled(user.getId())) {
+            log.info("[로그인 1단계 통과] userId={} mfa=required", user.getId());
+            return LoginResponse.mfaRequired(issueMfaChallenge(user));
         }
 
         LoginResponse response = issueTokenPair(user);
@@ -310,6 +330,34 @@ public class AuthService {
         return userAgent.length() > 512 ? userAgent.substring(0, 512) : userAgent;
     }
 
+    /** 로그인 2단계. 코드가 맞아야 토큰을 준다. */
+    @Transactional
+    public LoginResponse loginMfa(MfaLoginRequest request) {
+        UserMfaChallenge challenge = mfaChallengeRepository.findByTokenHash(sha256(request.mfaToken()))
+                .filter(UserMfaChallenge::isUsable)
+                .orElseThrow(InvalidMfaChallengeException::new);
+        User user = userRepository.findById(challenge.getUserId())
+                .orElseThrow(() -> new UserNotFoundException(challenge.getUserId()));
+
+        // 코드가 틀리면 challenge를 소비하지 않는다 — 오타 한 번에 로그인을 처음부터 다시 하게 만들지 않는다.
+        mfaService.verify(user.getId(), request.code());
+        challenge.consume();
+
+        LoginResponse response = issueTokenPair(user);
+        log.info("[로그인 성공] userId={} email={} mfa=verified", user.getId(), user.getEmail());
+        return response;
+    }
+
+    private String issueMfaChallenge(User user) {
+        String token = generateOpaqueToken();
+        mfaChallengeRepository.save(new UserMfaChallenge(
+                "mfc_" + UUID.randomUUID().toString().replace("-", ""),
+                user.getId(),
+                sha256(token),
+                Instant.now().plusSeconds(mfaChallengeTtlSeconds)));
+        return token;
+    }
+
     private LoginResponse issueTokenPair(User user) {
         String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getEmail());
 
@@ -318,7 +366,8 @@ public class AuthService {
         refreshTokenRepository.save(new UserRefreshToken(
                 user.getId(), sha256(refreshTokenValue), expiresAt, currentUserAgent()));
 
-        return new LoginResponse(accessToken, refreshTokenValue, "Bearer", jwtTokenProvider.getAccessTokenExpirationSeconds());
+        return LoginResponse.tokens(
+                accessToken, refreshTokenValue, jwtTokenProvider.getAccessTokenExpirationSeconds());
     }
 
     private String generateOpaqueToken() {

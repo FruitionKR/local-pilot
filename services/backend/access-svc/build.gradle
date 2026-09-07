@@ -15,6 +15,9 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
+	// TOTP(RFC 6238) 코드 생성. 의존성 없는 소형 라이브러리라 HMAC 계산만 맡기고
+	// 시간 창·재사용 방지 정책은 MfaService가 직접 다룬다.
+	implementation 'com.eatthepath:java-otp:0.4.0'
 	implementation 'org.springframework.session:spring-session-jdbc'
 	// 다중 인스턴스 공유 store: OAuth 교환 코드
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
@@ -36,6 +39,8 @@ tasks.named('test') {
 	useJUnitPlatform()
 	// 운영 기본값을 두지 않는 설정이라 테스트에서만 고정값을 준다.
 	environment('INTERNAL_CALLBACK_TOKEN', 'test-internal-callback')
+	// MFA secret 암호화 키(base64 32바이트). 없으면 부팅이 실패하도록 만들어 둬서 테스트에도 필요하다.
+	environment('MFA_ENCRYPTION_KEY', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=')
 	// OpenAPI 스냅샷 위치. rootDir은 services/backend이므로 두 단계 위가 저장소 루트다.
 	// 스냅샷 파일을 input으로 선언한다. systemProperty는 경로 문자열이라, 이것이 없으면
 	// api-specs/access-svc/openapi.yaml을 손으로 고쳐도 태스크가 UP-TO-DATE로 판정돼 비교가 다시 돌지 않는다.

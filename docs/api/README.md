@@ -17,6 +17,7 @@
 - Gateway 라우팅: 인증과 워크스페이스 자체 CRUD·휴지통·복구는 access-svc(:8081),
   그 밖의 `/api/**`는 document-svc(:8080)로 전달한다. ai-svc는 Gateway에서 직접 노출하지 않는다.
 - 인증: `Authorization: Bearer <access JWT(HS256, 기본 900s)>`. refresh는 opaque 토큰(DB에 sha256 해시만 저장, rotation).
+- MFA(TOTP)를 켠 사용자는 `POST /api/auth/login`이 토큰 대신 `mfa_required`와 1회용 `mfa_token`을 돌려주고, `POST /api/auth/login/mfa`가 코드 검증 후 토큰을 발급한다. 켜지 않은 사용자의 응답은 그대로다.
 - 사용자 API는 authenticated다. health·OpenAPI만 permitAll이다. `/internal/**`는 원칙적으로 `X-Internal-Token`을 검증하고, Agent worker가 document-svc의 Tool을 호출하는 `/internal/agent/tools/**`와 Skill 참조 read는 `X-Agent-Service-Token`을 검증한다.
 - 내부 인증 헤더는 런타임에서 필수다. OpenAPI에는 인증 코드가 누락 요청을 직접 `401`로 처리할 수 있도록 nullable parameter로 표현되지만, 이 문서에서는 `필수(인증 계층 검증)`로 표기한다.
 - 에러 envelope: `{ "error": { "code", "message", "details" } }`. 검증 실패는 400 `INVALID_REQUEST` + field details. 예외→코드 전체 매핑은 원문 참조.
@@ -55,7 +56,7 @@ export PIPELINE=http://localhost:8000  # ai-svc pipeline: 내부 전용
 
 | 서비스 | Gateway `/api/**` | 내부·운영 | 합계 | 역할 |
 |---|---:|---:|---:|---|
-| [access-svc](access/README.md) | 32 | 4 | 36 | 인증·프로필과 워크스페이스·멤버·초대 관리 |
+| [access-svc](access/README.md) | 37 | 4 | 41 | 인증·프로필과 워크스페이스·멤버·초대 관리 |
 | [document-svc](document/README.md) | 78 | 6 | 84 | 문서 저장과 사용자용 AI·Wiki·Agent Gateway |
 | [ai-svc](ai/README.md) | 0 | 43 | 43 | 내부 Query·Agent·Wiki·Skill pipeline |
 

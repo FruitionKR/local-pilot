@@ -4,6 +4,10 @@ import fruition.access.user.exception.DuplicateEmailException;
 import fruition.access.user.exception.EmailVerificationNotFoundException;
 import fruition.access.user.exception.EmailVerificationSendException;
 import fruition.access.user.exception.InvalidCredentialsException;
+import fruition.access.user.exception.InvalidMfaChallengeException;
+import fruition.access.user.exception.InvalidMfaCodeException;
+import fruition.access.user.exception.MfaAlreadyEnabledException;
+import fruition.access.user.exception.MfaNotEnabledException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
 import fruition.access.user.exception.InvalidRefreshTokenException;
 import fruition.access.user.exception.InvalidVerificationCodeException;
@@ -63,6 +67,38 @@ public class AccessExceptionHandler extends BaseExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.UNAUTHORIZED)
                 .body(ErrorResponse.of("INVALID_REFRESH_TOKEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidMfaCodeException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMfaCode(InvalidMfaCodeException e) {
+        logHandled(e, HttpStatus.UNAUTHORIZED, "INVALID_MFA_CODE");
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of("INVALID_MFA_CODE", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidMfaChallengeException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMfaChallenge(InvalidMfaChallengeException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_MFA_CHALLENGE");
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_MFA_CHALLENGE", e.getMessage()));
+    }
+
+    @ExceptionHandler(MfaNotEnabledException.class)
+    public ResponseEntity<ErrorResponse> handleMfaNotEnabled(MfaNotEnabledException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "MFA_NOT_ENABLED");
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("MFA_NOT_ENABLED", e.getMessage()));
+    }
+
+    @ExceptionHandler(MfaAlreadyEnabledException.class)
+    public ResponseEntity<ErrorResponse> handleMfaAlreadyEnabled(MfaAlreadyEnabledException e) {
+        logHandled(e, HttpStatus.CONFLICT, "MFA_ALREADY_ENABLED");
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("MFA_ALREADY_ENABLED", e.getMessage()));
     }
 
     @ExceptionHandler(UserNotFoundException.class)

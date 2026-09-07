@@ -30,6 +30,7 @@ import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
 import fruition.access.user.exception.InvalidRefreshTokenException;
 import fruition.access.user.exception.InvalidVerificationCodeException;
+import fruition.access.user.mfa.MfaService;
 import fruition.access.user.service.AuthService;
 import fruition.access.user.service.EmailAvailabilityRateLimiter;
 import fruition.access.user.service.EmailVerificationService;
@@ -75,6 +76,7 @@ class AuthControllerTest {
     @Autowired JwtTokenProvider jwtTokenProvider;
     @MockBean UserService userService;
     @MockBean AuthService authService;
+    @MockBean MfaService mfaService;
     @MockBean EmailAvailabilityRateLimiter emailAvailabilityRateLimiter;
     @MockBean EmailVerificationService emailVerificationService;
     @MockBean CustomOAuth2UserService customOAuth2UserService;
@@ -231,7 +233,7 @@ class AuthControllerTest {
     @Test
     void login_validCredentials_returns200WithTokens() throws Exception {
         when(authService.login(any())).thenReturn(
-                new LoginResponse("access-token", "refresh-token", "Bearer", 900));
+                LoginResponse.tokens("access-token", "refresh-token", 900));
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -261,7 +263,7 @@ class AuthControllerTest {
     @Test
     void refresh_validToken_returns200WithNewTokens() throws Exception {
         when(authService.refresh(any())).thenReturn(
-                new LoginResponse("new-access-token", "new-refresh-token", "Bearer", 900));
+                LoginResponse.tokens("new-access-token", "new-refresh-token", 900));
 
         mockMvc.perform(post("/api/auth/refresh")
                         .cookie(new Cookie("fruition_refresh_token", "old-refresh-token")))
@@ -322,7 +324,7 @@ class AuthControllerTest {
     @Test
     void exchangeOAuthCode_validCode_returns200WithTokens() throws Exception {
         when(authService.exchangeOAuthCode(any())).thenReturn(
-                new LoginResponse("access-token", "refresh-token", "Bearer", 900));
+                LoginResponse.tokens("access-token", "refresh-token", 900));
 
         mockMvc.perform(post("/api/auth/oauth/exchange")
                         .contentType(MediaType.APPLICATION_JSON)

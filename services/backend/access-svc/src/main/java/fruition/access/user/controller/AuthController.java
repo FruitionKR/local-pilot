@@ -5,6 +5,10 @@ import fruition.access.user.dto.EmailAvailabilityResponse;
 import fruition.access.user.dto.EmailVerificationRequest;
 import fruition.access.user.dto.EmailVerificationResponse;
 import fruition.access.user.dto.LoginRequest;
+import fruition.access.user.dto.MfaCodeRequest;
+import fruition.access.user.dto.MfaLoginRequest;
+import fruition.access.user.dto.MfaRegistrationResponse;
+import fruition.access.user.dto.MfaStatusResponse;
 import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
@@ -19,6 +23,7 @@ import fruition.access.user.dto.SignupResponse;
 import fruition.access.user.dto.VerificationConfirmRequest;
 import fruition.access.user.dto.VerificationConfirmResponse;
 import fruition.access.user.exception.InvalidRefreshTokenException;
+import fruition.access.user.mfa.MfaService;
 import fruition.access.user.service.AuthService;
 import fruition.access.user.service.EmailAvailabilityRateLimiter;
 import fruition.access.user.service.EmailVerificationService;
@@ -59,18 +64,21 @@ public class AuthController {
 
     private final UserService userService;
     private final AuthService authService;
+    private final MfaService mfaService;
     private final EmailAvailabilityRateLimiter emailAvailabilityRateLimiter;
     private final EmailVerificationService emailVerificationService;
     private final boolean refreshCookieSecure;
     private final long refreshTokenExpirationSeconds;
 
     public AuthController(UserService userService, AuthService authService,
+                          MfaService mfaService,
                           EmailAvailabilityRateLimiter emailAvailabilityRateLimiter,
                           EmailVerificationService emailVerificationService,
                           @Value("${app.auth.refresh-cookie-secure}") boolean refreshCookieSecure,
                           @Value("${app.jwt.refresh-token-expiration-seconds}") long refreshTokenExpirationSeconds) {
         this.userService = userService;
         this.authService = authService;
+        this.mfaService = mfaService;
         this.emailAvailabilityRateLimiter = emailAvailabilityRateLimiter;
         this.emailVerificationService = emailVerificationService;
         this.refreshCookieSecure = refreshCookieSecure;
@@ -308,6 +316,87 @@ public class AuthController {
             @Parameter(description = "세션 ID", example = "42")
             @PathVariable("session_id") Long sessionId) {
         authService.revokeSession(userId, sessionId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "로그인 2단계(다단계 인증)",
+            description = "POST /api/auth/login이 mfa_required를 돌려줬을 때 코드로 로그인을 마칩니다."
+                    + " code에는 인증 앱의 6자리 코드 또는 복구 코드를 넣습니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "로그인 성공",
+            content = @Content(schema = @Schema(implementation = LoginResponse.class))),
+        @ApiResponse(responseCode = "400", description = "mfa_token이 만료되었거나 이미 사용됨",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "401", description = "코드가 올바르지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/login/mfa")
+    public ResponseEntity<LoginResponse> loginMfa(@Valid @RequestBody MfaLoginRequest request) {
+        return authenticatedResponse(authService.loginMfa(request));
+    }
+
+    @Operation(summary = "다단계 인증 상태 조회")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "조회 성공",
+            content = @Content(schema = @Schema(implementation = MfaStatusResponse.class))),
+        @ApiResponse(responseCode = "401", description = "인증되지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/me/mfa")
+    public ResponseEntity<MfaStatusResponse> mfaStatus(@AuthenticationPrincipal String userId) {
+        return ResponseEntity.ok(mfaService.status(userId));
+    }
+
+    @Operation(summary = "다단계 인증 등록(1단계)",
+            description = "secret과 복구 코드를 발급합니다. 아직 켜지지 않으며 로그인을 막지 않습니다."
+                    + " 복구 코드는 이 응답에서만 볼 수 있습니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "발급 성공",
+            content = @Content(schema = @Schema(implementation = MfaRegistrationResponse.class))),
+        @ApiResponse(responseCode = "401", description = "인증되지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "이미 켜져 있음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/me/mfa")
+    public ResponseEntity<MfaRegistrationResponse> registerMfa(@AuthenticationPrincipal String userId) {
+        return ResponseEntity.ok(mfaService.register(userId));
+    }
+
+    @Operation(summary = "다단계 인증 활성화(2단계)",
+            description = "인증 앱의 코드를 확인하고 실제로 켭니다. 이 단계를 통과해야 로그인에 코드가 요구됩니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "활성화 성공"),
+        @ApiResponse(responseCode = "401", description = "인증되지 않았거나 코드가 올바르지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "등록된 다단계 인증이 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "이미 켜져 있음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/me/mfa/activate")
+    public ResponseEntity<Void> activateMfa(
+            @AuthenticationPrincipal String userId,
+            @Valid @RequestBody MfaCodeRequest request) {
+        mfaService.activate(userId, request.code());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "다단계 인증 해제",
+            description = "인증 앱의 코드 또는 복구 코드로 본인을 확인한 뒤 해제합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "해제 성공"),
+        @ApiResponse(responseCode = "401", description = "인증되지 않았거나 코드가 올바르지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "켜져 있지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @DeleteMapping("/me/mfa")
+    public ResponseEntity<Void> disableMfa(
+            @AuthenticationPrincipal String userId,
+            @Valid @RequestBody MfaCodeRequest request) {
+        mfaService.verify(userId, request.code());
+        mfaService.disable(userId);
         return ResponseEntity.noContent().build();
     }
 
