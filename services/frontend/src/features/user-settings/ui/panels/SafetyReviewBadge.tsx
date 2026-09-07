@@ -9,19 +9,30 @@ export function SafetyReviewBadge({ variant }: { variant: "loading" | "complete"
   return (
     <div className={styles.badge}>
       {isComplete ? (
-        <svg className={styles.ring} width="80" height="80" viewBox="0 0 80 80" aria-hidden>
-          {/* 초록 원이 차오르고 흰 체크가 그려진다 (Figma 1033:8429) */}
-          <circle className={styles["fill-circle"]} cx="40" cy="40" r="32" fill="#00de5a" />
-          <path
-            className={styles.checkmark}
-            d="M26 41l10 10 18-20"
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth="5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        /* 통과 (Figma 1033:8429 asset 원본): 정지한 그라데이션 링 위에
+           초록 아웃라인 원이 페이드 인되고 초록 체크가 그려진다 */
+        <div className={styles["ring-box"]} aria-hidden>
+          <div className={`${styles["gradient-arc"]} ${styles["is-static"]}`} />
+          <svg className={styles["complete-overlay"]} width="64" height="64" viewBox="0 0 64 64">
+            <circle
+              className={styles["outline-circle"]}
+              cx="32"
+              cy="32"
+              r="29.6"
+              fill="none"
+              stroke="#00de5a"
+              strokeWidth="4.8"
+            />
+            <path
+              className={styles.checkmark}
+              d="M17.4 34.3 L27.2 44.1 L45.9 25.4"
+              fill="none"
+              stroke="#00de5a"
+              strokeWidth="4.8"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
       ) : (
         /* 꼬리가 투명으로 사라지는 conic-gradient 초록 링 회전 (Figma 1033:8398 Ring Arc 원본과 동일) */
         <div className={styles["ring-box"]} aria-hidden>

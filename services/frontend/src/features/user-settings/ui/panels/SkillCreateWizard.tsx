@@ -123,6 +123,7 @@ export function SkillCreateWizard({
       }),
     onSuccess: (result) => {
       setDraft(result);
+      setJustPassed((result.issues ?? []).length === 0);
       setStep(2);
     }
   });
@@ -146,13 +147,21 @@ export function SkillCreateWizard({
   });
 
   const issues = draft?.issues ?? [];
-  const passed = step === 2 && draft != null && issues.length === 0 && !authorMutation.isPending;
+  // 통과 오버레이·자동 진행은 검토 직후 1회만 보여준다. STEP3에서 '이전'으로 돌아오면 재생하지 않는다.
+  const [justPassed, setJustPassed] = useState(false);
+  const passed = step === 2 && justPassed && !authorMutation.isPending;
+
+  function advanceToStep3() {
+    setJustPassed(false);
+    setStep(3);
+  }
 
   // 검토 통과 시 2초 뒤 STEP 3으로 자동 진행
   useEffect(() => {
     if (!passed) return;
-    const timer = setTimeout(() => setStep(3), PASS_ADVANCE_MS);
+    const timer = setTimeout(advanceToStep3, PASS_ADVANCE_MS);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [passed]);
 
   // STEP 3 진입 시 커맨드가 비어 있으면 AI가 지은 이름을 채워 수정 가능하게 한다.
@@ -525,7 +534,7 @@ export function SkillCreateWizard({
         )}
         {/* 검토 통과 오버레이 (Figma 1033:8429) — 2초 뒤 자동 진행, 클릭 시 즉시 진행 */}
         {passed && (
-          <button type="button" className={styles["pass-overlay"]} onClick={() => setStep(3)}>
+          <button type="button" className={styles["pass-overlay"]} onClick={advanceToStep3}>
             <SafetyReviewBadge variant="complete" />
           </button>
         )}

@@ -48,8 +48,23 @@
   }
 }
 
-/* 통과: 초록 원 페이드 인(0.1s) 후 체크 드로잉(0.48s) — Figma keyframe 그대로 */
-.fill-circle {
+/* 통과: 링은 정지 상태로 남고, 아웃라인 원 페이드 인(0.1s) 후 체크 드로잉(0.48s) — Figma keyframe 그대로 */
+.is-static {
+  animation: none;
+}
+
+.ring-box {
+  position: relative;
+}
+
+.complete-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.outline-circle {
   animation: fade-in 0.1s cubic-bezier(0.5, 0, 0.5, 1) both;
 }
 
@@ -63,8 +78,8 @@
 }
 
 .checkmark {
-  stroke-dasharray: 42;
-  stroke-dashoffset: 42;
+  stroke-dasharray: 41;
+  stroke-dashoffset: 41;
   animation: draw 0.48s cubic-bezier(0, 0, 0.58, 1) 0.1s forwards;
 }
 
@@ -75,7 +90,7 @@
 }
 
 [data-reduce-motion="true"] .gradient-arc,
-[data-reduce-motion="true"] .fill-circle,
+[data-reduce-motion="true"] .outline-circle,
 [data-reduce-motion="true"] .checkmark {
   animation: none;
   stroke-dashoffset: 0;
