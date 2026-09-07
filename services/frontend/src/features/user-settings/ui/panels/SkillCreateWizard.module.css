@@ -523,3 +523,10 @@
   line-height: 1;
 }
 
+
+/* 이전 버튼 셰브론 (svg/navigation/skill_back.svg) */
+.back-icon {
+  width: 5px;
+  height: 10px;
+  flex: 0 0 auto;
+}

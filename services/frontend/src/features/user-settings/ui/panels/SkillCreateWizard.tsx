@@ -8,7 +8,7 @@ import { authorSkill, publishSkill, type SkillAuthoringResult } from "@/entities
 import { DocumentPickerModal } from "./DocumentPickerModal";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useEscapeKey } from "@/shared/lib/useEscapeKey";
-import { menuSearchIcon, questionMarkIcon, settingScrollIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { menuSearchIcon, questionMarkIcon, settingScrollIcon, skillBackIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import styles from "./SkillCreateWizard.module.css";
 
 const NAME_MAX = 63;
@@ -369,7 +369,7 @@ export function SkillCreateWizard({
 
         <div className={styles.footer}>
           <button type="button" className={styles["btn-ghost"]} onClick={() => setStep(1)}>
-            ‹ 이전
+            <SvgIcon src={skillBackIcon} className={styles["back-icon"]} /> 이전
           </button>
           <div className={styles["footer-group"]}>
             <button
@@ -449,7 +449,7 @@ export function SkillCreateWizard({
 
         <div className={styles.footer}>
           <button type="button" className={styles["btn-ghost"]} onClick={() => setStep(2)}>
-            ‹ 이전
+            <SvgIcon src={skillBackIcon} className={styles["back-icon"]} /> 이전
           </button>
           <div className={styles["footer-group"]}>
             <button
