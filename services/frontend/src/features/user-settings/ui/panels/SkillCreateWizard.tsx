@@ -402,18 +402,6 @@ export function SkillCreateWizard({
           </div>
         </div>
 
-        {/* 재검토 진행 오버레이 (Figma 1033:8390) */}
-        {authorMutation.isPending && (
-          <div className={styles["pass-overlay"]}>
-            <SafetyReviewBadge variant="loading" />
-          </div>
-        )}
-        {/* 검토 통과 오버레이 (Figma 1033:8429 / 1014:10593) */}
-        {passed && (
-          <button type="button" className={styles["pass-overlay"]} onClick={() => setStep(3)}>
-            <SafetyReviewBadge variant="complete" />
-          </button>
-        )}
       </>
     );
   }
@@ -535,6 +523,19 @@ export function SkillCreateWizard({
         {step === 1 && renderStep1()}
         {step === 2 && renderStep2()}
         {step === 3 && renderStep3()}
+
+        {/* 안전 검토 진행 오버레이 (Figma 1033:8390) — 어느 단계에서 시작하든 화면 전체를 덮는다 */}
+        {authorMutation.isPending && (
+          <div className={styles["pass-overlay"]}>
+            <SafetyReviewBadge variant="loading" />
+          </div>
+        )}
+        {/* 검토 통과 오버레이 (Figma 1033:8429) — 2초 뒤 자동 진행, 클릭 시 즉시 진행 */}
+        {passed && (
+          <button type="button" className={styles["pass-overlay"]} onClick={() => setStep(3)}>
+            <SafetyReviewBadge variant="complete" />
+          </button>
+        )}
 
         {/* 참고 문서 선택 — 네비게이션 검색과 동일한 중앙 모달 */}
         {docPickerOpen && (

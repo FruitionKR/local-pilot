@@ -11,31 +11,34 @@
   display: block;
 }
 
-/* 검토 중: 노란 호 회전 */
+/* 검토 중: 노란 호 회전 — Figma 타임라인 5.42s, 3회전 후 정지 구간 포함 loop
+   (rotate 0→1080deg, times [0, 0.018, 0.686, 1], linear) */
 .arc {
   transform-origin: 40px 40px;
-  animation: spin 1s linear infinite;
+  animation: spin 5.42s linear infinite;
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
+  0%,
+  1.8% {
+    transform: rotate(0deg);
+  }
+  68.6%,
+  100% {
+    transform: rotate(1080deg);
   }
 }
 
-/* 통과: 초록 원 확대 후 체크 그리기 */
+/* 통과: 초록 원 페이드 인(0.1s) 후 체크 드로잉(0.48s) — Figma keyframe 그대로 */
 .fill-circle {
-  transform-origin: 40px 40px;
-  animation: pop 0.3s ease-out both;
+  animation: fade-in 0.1s cubic-bezier(0.5, 0, 0.5, 1) both;
 }
 
-@keyframes pop {
+@keyframes fade-in {
   from {
-    transform: scale(0.4);
     opacity: 0;
   }
   to {
-    transform: scale(1);
     opacity: 1;
   }
 }
@@ -43,7 +46,7 @@
 .checkmark {
   stroke-dasharray: 42;
   stroke-dashoffset: 42;
-  animation: draw 0.35s ease-out 0.25s forwards;
+  animation: draw 0.48s cubic-bezier(0, 0, 0.58, 1) 0.1s forwards;
 }
 
 @keyframes draw {
