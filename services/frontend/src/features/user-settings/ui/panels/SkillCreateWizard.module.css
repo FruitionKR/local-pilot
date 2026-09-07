@@ -6,6 +6,8 @@
   /* 설정 모달·문서 선택 모달(CenteredModal)과 같은 40으로 맞춰
      portal 마운트 순서(설정 → 위저드 → 문서 선택)대로 쌓이게 한다. */
   z-index: 40;
+  /* 작은 화면에서 모달 하단이 잘리지 않게 여백을 확보한다. */
+  padding: 24px 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -18,6 +20,9 @@
   flex-direction: column;
   gap: 40px;
   width: min(720px, calc(100vw - 48px));
+  /* 콘텐츠가 화면보다 클 때만 스크롤이 생긴다(1080 화면 기준 스크롤 없음). */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   padding: 36px 40px;
   background: var(--bg, #0a0a0a);
   border: 1px solid var(--line, #4f4f4f);
