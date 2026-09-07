@@ -7,6 +7,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 
@@ -61,5 +63,40 @@ class AuthzProjectionStoreTest {
         store.evictWorkspace("ws_1");
 
         verify(redisTemplate, never()).delete(anyList());
+    }
+
+    /**
+     * 커밋 전에 지우면 evict와 commit 사이의 조회가 아직 커밋되지 않은 옛 역할을 다시 캐시하고,
+     * 그 판정이 TTL 만료까지 남는다. 그래서 무효화는 커밋 이후여야 한다.
+     */
+    @Test
+    void evict_insideTransaction_isDeferredUntilCommit() {
+        AuthzProjectionStore store = new AuthzProjectionStore(redisTemplate);
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            store.evict("ws_1", "user_1");
+            verify(redisTemplate, never()).delete("authz:role:ws_1:user_1");
+
+            for (TransactionSynchronization synchronization :
+                    TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCommit();
+            }
+            verify(redisTemplate).delete("authz:role:ws_1:user_1");
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void evictWorkspace_insideTransaction_doesNotScanBeforeCommit() {
+        AuthzProjectionStore store = new AuthzProjectionStore(redisTemplate);
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            store.evictWorkspace("ws_1");
+
+            verify(redisTemplate, never()).scan(any(ScanOptions.class));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 }

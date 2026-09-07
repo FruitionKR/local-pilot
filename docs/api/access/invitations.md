@@ -97,10 +97,14 @@
 | `403` | OWNER 권한 없음 | `WORKSPACE_ACCESS_DENIED` |
 | `404` | 워크스페이스를 찾을 수 없거나 호출자가 멤버가 아님 | `WORKSPACE_NOT_FOUND` |
 | `409` | 그 이메일의 계정 중 하나가 이미 멤버임 | `ALREADY_MEMBER` |
-| `502` | 초대 메일 발송 실패 | `EMAIL_SEND_FAILED` |
+| `409` | 같은 주소로 초대가 동시에 진행 중임 | `INVITATION_IN_PROGRESS` |
+| `502` | 초대 메일 발송 실패 | `INVITATION_SEND_FAILED` |
 
 `502`가 나도 초대 행은 남는다. DB 커밋과 SMTP 발송을 분리해 외부 메일 서버 왕복 동안
 DB 커넥션을 붙잡지 않기 때문이며, 재초대하면 같은 행이 새 링크로 덮어쓰인다.
+
+`INVITATION_IN_PROGRESS`는 같은 주소로 요청이 동시에 들어와 대기 중 초대 unique 제약에
+걸린 경우다. 먼저 들어온 요청이 이미 메일을 보냈으므로 재시도할 필요는 없다.
 
 #### 7. Pagination / filtering
 
@@ -316,6 +320,8 @@ curl -X DELETE "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/invit
 
 - 불필요 (`SecurityConfig`에서 `GET /api/invitations/*`만 permitAll)
 - 수락(`POST .../accept`)은 인증이 필요하다.
+- 토큰이 path에 있으므로 요청 로그에서는 `/api/invitations/***`로 가린다(`LoggableUri`).
+  가리지 않으면 로그 열람만으로 유효한 토큰을 얻을 수 있어, DB에 해시만 두는 설계가 상쇄된다.
 
 #### 4. Request body
 
@@ -441,6 +447,8 @@ curl "$ACCESS/api/invitations/<token>"
 - 로그인 계정의 이메일과 초대 이메일이 일치해야 한다. 이 검증이 링크 유출에 대한 유일한 방어다.
 - 수락에 성공하면 인가 projection(`authz:role:{workspaceId}:{userId}`)을 무효화한다.
   수락 전 조회로 캐시된 `NONE` 판정이 남아 있으면 document-svc가 TTL 만료까지 계속 거부한다.
+  무효화는 트랜잭션 커밋 이후에 일어난다 — 커밋 전에 지우면 그 사이의 조회가 아직 커밋되지 않은
+  `NONE`을 다시 캐시한다.
 
 #### 9. 예시 요청/응답
 

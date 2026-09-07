@@ -96,6 +96,7 @@ public class WorkspaceInvitation {
 
     public String getId() { return id; }
     public String getWorkspaceId() { return workspaceId; }
+    public String getTokenHash() { return tokenHash; }
     public String getEmail() { return email; }
     public WorkspaceRole getRole() { return role; }
     public Instant getExpiresAt() { return expiresAt; }

@@ -44,7 +44,7 @@ public class WorkspaceInvitationController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "409", description = "이미 워크스페이스 멤버임",
+        @ApiResponse(responseCode = "409", description = "이미 워크스페이스 멤버이거나 같은 주소로 초대가 진행 중임",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "502", description = "초대 메일 발송 실패",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))

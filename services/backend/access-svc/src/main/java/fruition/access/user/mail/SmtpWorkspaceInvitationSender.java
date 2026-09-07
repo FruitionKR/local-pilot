@@ -1,6 +1,6 @@
 package fruition.access.user.mail;
 
-import fruition.access.user.exception.EmailVerificationSendException;
+import fruition.access.workspace.exception.InvitationSendException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.mail.MailException;
@@ -41,7 +41,7 @@ public class SmtpWorkspaceInvitationSender implements WorkspaceInvitationSender 
             log.info("[초대 메일 발송 완료] workspaceName={}", workspaceName);
         } catch (MailException e) {
             log.warn("[초대 메일 발송 실패] workspaceName={} error={}", workspaceName, e.getMessage());
-            throw new EmailVerificationSendException("초대 메일 발송에 실패했습니다.", e);
+            throw new InvitationSendException("초대 메일 발송에 실패했습니다. 잠시 후 다시 시도해 주세요.", e);
         }
     }
 }

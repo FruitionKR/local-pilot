@@ -19,6 +19,8 @@ import fruition.access.workspace.exception.AlreadyMemberException;
 import fruition.access.workspace.exception.InvitationAlreadyAcceptedException;
 import fruition.access.workspace.exception.InvitationEmailMismatchException;
 import fruition.access.workspace.exception.InvitationExpiredException;
+import fruition.access.workspace.exception.InvitationInProgressException;
+import fruition.access.workspace.exception.InvitationSendException;
 import fruition.access.workspace.exception.InvitationNotFoundException;
 import fruition.access.workspace.exception.LastOwnerException;
 import fruition.access.workspace.exception.WorkspaceAccessDeniedException;
@@ -129,6 +131,22 @@ public class AccessExceptionHandler extends BaseExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of("INVITATION_EMAIL_MISMATCH", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvitationInProgressException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationInProgress(InvitationInProgressException e) {
+        logHandled(e, HttpStatus.CONFLICT, "INVITATION_IN_PROGRESS");
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("INVITATION_IN_PROGRESS", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvitationSendException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationSend(InvitationSendException e) {
+        logHandled(e, HttpStatus.BAD_GATEWAY, "INVITATION_SEND_FAILED");
+        return ResponseEntity
+                .status(HttpStatus.BAD_GATEWAY)
+                .body(ErrorResponse.of("INVITATION_SEND_FAILED", e.getMessage()));
     }
 
     @ExceptionHandler(AlreadyMemberException.class)

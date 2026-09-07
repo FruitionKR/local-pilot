@@ -18,6 +18,7 @@ import fruition.access.workspace.exception.AlreadyMemberException;
 import fruition.access.workspace.exception.InvitationAlreadyAcceptedException;
 import fruition.access.workspace.exception.InvitationEmailMismatchException;
 import fruition.access.workspace.exception.InvitationExpiredException;
+import fruition.access.workspace.exception.InvitationInProgressException;
 import fruition.access.workspace.exception.InvitationNotFoundException;
 import fruition.access.workspace.exception.WorkspaceAccessDeniedException;
 import fruition.access.workspace.exception.WorkspaceNotFoundException;
@@ -27,6 +28,7 @@ import fruition.access.workspace.repository.WorkspaceRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -89,18 +91,25 @@ public class WorkspaceInvitationService {
 
         // DB 쓰기만 트랜잭션으로 처리하고 커밋한다. SMTP 발송을 트랜잭션 안에서 하면
         // 외부 메일 서버 왕복 동안 DB 커넥션을 붙잡는다(EmailVerificationService와 같은 이유).
-        WorkspaceInvitation invitation = transactionTemplate.execute(status ->
-                invitationRepository
-                        .findByWorkspaceIdAndEmailAndAcceptedAtIsNullAndRevokedAtIsNull(workspaceId, email)
-                        .map(pending -> {
-                            // 재초대는 새 행이 아니라 재발송이다. 옛 링크는 이 시점에 무효가 된다.
-                            pending.reissue(OpaqueTokens.sha256(token), expiresAt, request.role(), actorId);
-                            return pending;
-                        })
-                        .orElseGet(() -> invitationRepository.save(new WorkspaceInvitation(
-                                "inv_" + UUID.randomUUID().toString().replace("-", ""),
-                                workspaceId, email, request.role(),
-                                OpaqueTokens.sha256(token), expiresAt, actorId))));
+        WorkspaceInvitation invitation;
+        try {
+            invitation = transactionTemplate.execute(status ->
+                    invitationRepository
+                            .findByWorkspaceIdAndEmailAndAcceptedAtIsNullAndRevokedAtIsNull(workspaceId, email)
+                            .map(pending -> {
+                                // 재초대는 새 행이 아니라 재발송이다. 옛 링크는 이 시점에 무효가 된다.
+                                pending.reissue(OpaqueTokens.sha256(token), expiresAt, request.role(), actorId);
+                                return pending;
+                            })
+                            .orElseGet(() -> invitationRepository.save(new WorkspaceInvitation(
+                                    "inv_" + UUID.randomUUID().toString().replace("-", ""),
+                                    workspaceId, email, request.role(),
+                                    OpaqueTokens.sha256(token), expiresAt, actorId))));
+        } catch (DataIntegrityViolationException e) {
+            // 같은 주소로 동시에 초대가 들어오면 대기 중 초대 partial unique 제약에 걸린다.
+            // 먼저 들어온 요청이 이미 메일을 보냈으므로 500이 아니라 409로 알린다.
+            throw new InvitationInProgressException(email);
+        }
 
         // 발송 실패 시 예외를 전파한다. 초대 행은 남지만 재초대로 덮어쓰이고 만료로 정리된다.
         sender.send(email, workspace.getName(), inviterName, acceptUrlBase + "/" + token);

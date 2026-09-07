@@ -4,6 +4,7 @@ import fruition.shared.ai.InvalidAiModelException;
 import fruition.shared.idempotency.IdempotencyConflictException;
 import fruition.shared.idempotency.IdempotencyInProgressException;
 import fruition.shared.idempotency.InvalidIdempotencyKeyException;
+import fruition.shared.logging.LoggableUri;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,7 +53,7 @@ public abstract class BaseExceptionHandler {
         RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
         if (attributes instanceof ServletRequestAttributes servletAttributes) {
             HttpServletRequest request = servletAttributes.getRequest();
-            return "method=" + request.getMethod() + " uri=" + request.getRequestURI();
+            return "method=" + request.getMethod() + " uri=" + LoggableUri.mask(request.getRequestURI());
         }
         return "method=- uri=-";
     }

@@ -589,7 +589,7 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-          description: 이미 워크스페이스 멤버임
+          description: 이미 워크스페이스 멤버이거나 같은 주소로 초대가 진행 중임
         "502":
           content:
             '*/*':

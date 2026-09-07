@@ -16,6 +16,7 @@ import fruition.access.workspace.exception.AlreadyMemberException;
 import fruition.access.workspace.exception.InvitationAlreadyAcceptedException;
 import fruition.access.workspace.exception.InvitationEmailMismatchException;
 import fruition.access.workspace.exception.InvitationExpiredException;
+import fruition.access.workspace.exception.InvitationInProgressException;
 import fruition.access.workspace.exception.InvitationNotFoundException;
 import fruition.access.workspace.exception.WorkspaceAccessDeniedException;
 import fruition.access.workspace.exception.WorkspaceNotFoundException;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
@@ -153,11 +155,13 @@ class WorkspaceInvitationServiceTest {
         // 재발송은 역할·만료를 갱신하고 옛 토큰을 무효화한다.
         assertThat(pending.getRole()).isEqualTo(WorkspaceRole.OWNER);
         assertThat(pending.getExpiresAt()).isAfter(Instant.now().plusSeconds(60));
-        assertThatThrownBy(() -> {
-            when(invitationRepository.findByTokenHash(OpaqueTokens.sha256("old-token")))
-                    .thenReturn(Optional.empty());
-            service.preview("old-token");
-        }).isInstanceOf(InvitationNotFoundException.class);
+        // 저장된 해시가 옛 토큰의 것과 달라야 옛 링크가 더 이상 조회되지 않는다.
+        assertThat(pending.getTokenHash()).isNotEqualTo(OpaqueTokens.sha256("old-token"));
+        // 새 해시는 이번에 메일로 나간 토큰의 것이다.
+        ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
+        verify(sender).send(eq(INVITEE_EMAIL), any(), any(), url.capture());
+        String reissued = url.getValue().substring(ACCEPT_URL.length() + 1);
+        assertThat(pending.getTokenHash()).isEqualTo(OpaqueTokens.sha256(reissued));
     }
 
     @Test
@@ -339,5 +343,22 @@ class WorkspaceInvitationServiceTest {
         assertThat(service.listPending(OWNER_ID, WORKSPACE_ID).invitations())
                 .extracting(WorkspaceInvitationResponse::email)
                 .containsExactly(INVITEE_EMAIL);
+    }
+
+    @Test
+    void invite_concurrentDuplicateGets409NotServerError() {
+        ownerActor();
+        when(userRepository.findAllByEmail(INVITEE_EMAIL)).thenReturn(List.of());
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace()));
+        when(userRepository.findById(OWNER_ID)).thenReturn(Optional.of(user(OWNER_ID, "owner@example.com")));
+        // 먼저 들어온 요청이 이미 대기 중 초대를 만들어 partial unique 제약에 걸린 상황.
+        when(invitationRepository.findByWorkspaceIdAndEmailAndAcceptedAtIsNullAndRevokedAtIsNull(
+                WORKSPACE_ID, INVITEE_EMAIL)).thenReturn(Optional.empty());
+        when(invitationRepository.save(any())).thenThrow(new DataIntegrityViolationException("duplicate"));
+
+        assertThatThrownBy(() -> service.invite(OWNER_ID, WORKSPACE_ID,
+                new WorkspaceInvitationCreateRequest(INVITEE_EMAIL, WorkspaceRole.MEMBER)))
+                .isInstanceOf(InvitationInProgressException.class);
+        verifyNoInteractions(sender);
     }
 }

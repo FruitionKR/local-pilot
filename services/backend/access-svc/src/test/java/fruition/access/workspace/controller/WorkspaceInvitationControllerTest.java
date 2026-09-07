@@ -16,6 +16,8 @@ import fruition.access.workspace.dto.WorkspaceInvitationResponse;
 import fruition.access.workspace.exception.AlreadyMemberException;
 import fruition.access.workspace.exception.InvitationEmailMismatchException;
 import fruition.access.workspace.exception.InvitationExpiredException;
+import fruition.access.workspace.exception.InvitationInProgressException;
+import fruition.access.workspace.exception.InvitationSendException;
 import fruition.access.workspace.exception.InvitationNotFoundException;
 import fruition.access.workspace.exception.WorkspaceAccessDeniedException;
 import fruition.access.workspace.service.WorkspaceInvitationService;
@@ -203,5 +205,35 @@ class WorkspaceInvitationControllerTest {
                         .header("Authorization", bearerToken()))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("INVITATION_EMAIL_MISMATCH"));
+    }
+
+    /** 초대 실패인데 "인증번호 발송 실패" 문구가 나가면 사용자가 상황을 알 수 없다. */
+    @Test
+    void invite_mailSendFailure_returns502WithInvitationMessage() throws Exception {
+        when(workspaceInvitationService.invite(eq(USER_ID), eq(WORKSPACE_ID), any()))
+                .thenThrow(new InvitationSendException("초대 메일 발송에 실패했습니다. 잠시 후 다시 시도해 주세요.", null));
+
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/invitations")
+                        .header("Authorization", bearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new WorkspaceInvitationCreateRequest(EMAIL, WorkspaceRole.MEMBER))))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.error.code").value("INVITATION_SEND_FAILED"))
+                .andExpect(jsonPath("$.error.message").value("초대 메일 발송에 실패했습니다. 잠시 후 다시 시도해 주세요."));
+    }
+
+    @Test
+    void invite_concurrentDuplicate_returns409() throws Exception {
+        when(workspaceInvitationService.invite(eq(USER_ID), eq(WORKSPACE_ID), any()))
+                .thenThrow(new InvitationInProgressException(EMAIL));
+
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/invitations")
+                        .header("Authorization", bearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new WorkspaceInvitationCreateRequest(EMAIL, WorkspaceRole.MEMBER))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("INVITATION_IN_PROGRESS"));
     }
 }
