@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { fetchDocuments, type DocumentItemResponse } from "@/entities/document";
 import { authorSkill, publishSkill, type SkillAuthoringResult } from "@/entities/skill";
+import { DocumentPickerModal } from "./DocumentPickerModal";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useEscapeKey } from "@/shared/lib/useEscapeKey";
 import { menuSearchIcon, questionMarkIcon, settingScrollIcon, SvgIcon } from "@/shared/ui/SvgIcon";
@@ -13,6 +14,9 @@ import styles from "./SkillCreateWizard.module.css";
 const NAME_MAX = 63;
 
 const REFERENCE_DOC_MAX = 3;
+
+// 서버 name 검증 패턴 (docs/api/document/skills.md SkillAuthoringRequest)
+const COMMAND_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 /** 파일 크기를 kB/MB 문자열로 표시한다. */
 function formatBytes(bytes: number): string {
@@ -88,13 +92,16 @@ export function SkillCreateWizard({
 
   useEscapeKey(true, onClose);
 
+  // 서버 name 패턴에 맞을 때만 전달한다. 빈 값·비허용 문자를 보내면 400이 난다.
+  const validCommand = COMMAND_PATTERN.test(command.trim()) ? command.trim() : undefined;
+
   const authorMutation = useMutation({
     mutationFn: (body: { instruction: string }) =>
       authorSkill(workspaceId, {
         instruction: body.instruction,
-        name: command,
+        ...(validCommand ? { name: validCommand } : {}),
         scope_type: scopeType,
-        reference_document_ids: selectedDocs.map((doc) => doc.id)
+        ...(selectedDocs.length > 0 ? { reference_document_ids: selectedDocs.map((doc) => doc.id) } : {})
       }),
     onSuccess: (result) => {
       setDraft(result);
@@ -106,7 +113,7 @@ export function SkillCreateWizard({
     mutationFn: () => {
       if (draft == null) throw new Error("게시할 초안이 없습니다.");
       return publishSkill(workspaceId, {
-        name: command || draft.name,
+        name: validCommand ?? draft.name,
         description: draft.description,
         instructions_markdown: draft.instructions_markdown,
         scope_type: scopeType,
@@ -496,44 +503,21 @@ export function SkillCreateWizard({
         {step === 2 && renderStep2()}
         {step === 3 && renderStep3()}
 
-        {/* 참고 문서 선택 목록 */}
+        {/* 참고 문서 선택 — 네비게이션 검색과 동일한 중앙 모달 */}
         {docPickerOpen && (
-          <div className={styles["doc-picker"]} role="listbox" aria-label="참고 문서 선택">
-            <div className={styles["doc-picker-head"]}>
-              <span>참고 문서 선택 ({selectedDocs.length}/{REFERENCE_DOC_MAX})</span>
-              <button type="button" aria-label="문서 선택 닫기" onClick={() => setDocPickerOpen(false)}>
-                ✕
-              </button>
-            </div>
-            <div className={styles["doc-picker-list"]}>
-              {(documents ?? []).map((doc) => {
-                const isSelected = selectedDocs.some((item) => item.id === doc.id);
-                return (
-                  <button
-                    key={doc.id}
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    className={`${styles["doc-picker-item"]} ${isSelected ? styles["is-selected"] : ""}`}
-                    disabled={!isSelected && selectedDocs.length >= REFERENCE_DOC_MAX}
-                    onClick={() =>
-                      setSelectedDocs(
-                        isSelected
-                          ? selectedDocs.filter((item) => item.id !== doc.id)
-                          : [...selectedDocs, doc]
-                      )
-                    }
-                  >
-                    <span className={styles["doc-picker-name"]}>{doc.filename}</span>
-                    <span className={styles["doc-picker-meta"]}>{formatBytes(doc.byte_size)}</span>
-                  </button>
-                );
-              })}
-              {(documents ?? []).length === 0 && (
-                <p className={styles["doc-picker-empty"]}>선택할 문서가 없습니다.</p>
-              )}
-            </div>
-          </div>
+          <DocumentPickerModal
+            documents={documents ?? []}
+            selectedIds={selectedDocs.map((doc) => doc.id)}
+            maxCount={REFERENCE_DOC_MAX}
+            onToggle={(doc) =>
+              setSelectedDocs((current) =>
+                current.some((item) => item.id === doc.id)
+                  ? current.filter((item) => item.id !== doc.id)
+                  : [...current, doc]
+              )
+            }
+            onClose={() => setDocPickerOpen(false)}
+          />
         )}
       </div>
     </div>,
