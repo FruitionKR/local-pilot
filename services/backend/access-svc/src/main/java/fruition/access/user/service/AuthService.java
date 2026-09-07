@@ -9,9 +9,11 @@ import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
 import fruition.access.user.dto.DisplayNameUpdateRequest;
+import fruition.access.user.dto.EmailChangeRequest;
 import fruition.access.user.dto.PasswordChangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.dto.RefreshRequest;
+import fruition.access.user.exception.DuplicateEmailException;
 import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidVerificationTokenException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
@@ -164,6 +166,42 @@ public class AuthService {
 
         user.changePassword(passwordEncoder.encode(request.newPassword()));
 
+        int revoked = revokeOtherSessions(userId, currentRefreshToken);
+        log.info("[비밀번호 변경 성공] userId={} revokedSessions={}", userId, revoked);
+    }
+
+    /**
+     * 로그인 상태에서 이메일을 바꾼다.
+     *
+     * <p>새 주소로 받은 인증번호 토큰으로 그 메일함을 통제하는지 확인한다. 계정은
+     * {@code (email, provider)}로 유일해야 하므로 같은 provider의 기존 계정과 부딪히면 거절한다.
+     * OAuth 로그인은 {@code (provider, provider_user_id)}로 사용자를 찾으므로 이메일이 바뀌어도 끊기지 않는다.
+     */
+    @Transactional
+    public MeResponse changeEmail(String userId, EmailChangeRequest request, String currentRefreshToken) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+        String newEmail = request.newEmail().trim().toLowerCase();
+
+        emailVerificationService.consumeForEmailChange(newEmail, request.verificationToken());
+
+        if (!newEmail.equals(user.getEmail())
+                && userRepository.existsByEmailAndProvider(newEmail, user.getProvider())) {
+            log.warn("[이메일 변경 거부] reason=duplicate_email userId={} provider={}", userId, user.getProvider());
+            throw new DuplicateEmailException(newEmail);
+        }
+
+        user.changeEmail(newEmail);
+        int revoked = revokeOtherSessions(userId, currentRefreshToken);
+        log.info("[이메일 변경 성공] userId={} revokedSessions={}", userId, revoked);
+        return new MeResponse(user.getId(), user.getEmail(), user.getDisplayName(), user.getCreatedAt());
+    }
+
+    /**
+     * 현재 세션만 남기고 나머지 refresh token을 폐기한다.
+     * {@code currentRefreshToken}이 없으면 지킬 세션을 특정할 수 없어 전부 폐기한다.
+     */
+    private int revokeOtherSessions(String userId, String currentRefreshToken) {
         String keepTokenHash = currentRefreshToken == null ? null : sha256(currentRefreshToken);
         int revoked = 0;
         for (UserRefreshToken token : refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull(userId)) {
@@ -173,7 +211,7 @@ public class AuthService {
             token.revoke();
             revoked++;
         }
-        log.info("[비밀번호 변경 성공] userId={} revokedSessions={}", userId, revoked);
+        return revoked;
     }
 
     @Transactional

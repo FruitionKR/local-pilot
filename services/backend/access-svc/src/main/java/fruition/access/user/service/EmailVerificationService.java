@@ -35,6 +35,7 @@ public class EmailVerificationService {
     private static final Logger log = LoggerFactory.getLogger(EmailVerificationService.class);
     private static final String PURPOSE_SIGNUP = "signup";
     private static final String PURPOSE_PASSWORD_RESET = "password_reset";
+    private static final String PURPOSE_EMAIL_CHANGE = "email_change";
 
     private final EmailVerificationRepository verificationRepository;
     private final UserRepository userRepository;
@@ -143,6 +144,11 @@ public class EmailVerificationService {
     @Transactional
     public void consumeForPasswordReset(String email, String token) {
         consumeToken(email, token, PURPOSE_PASSWORD_RESET);
+    }
+
+    @Transactional
+    public void consumeForEmailChange(String email, String token) {
+        consumeToken(email, token, PURPOSE_EMAIL_CHANGE);
     }
 
     private void consumeToken(String email, String token, String purpose) {

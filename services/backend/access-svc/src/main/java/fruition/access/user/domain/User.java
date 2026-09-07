@@ -49,6 +49,11 @@ public class User {
         this.updatedAt = Instant.now();
     }
 
+    public void changeEmail(String email) {
+        this.email = email;
+        this.updatedAt = Instant.now();
+    }
+
     public void changePassword(String passwordHash) {
         this.passwordHash = passwordHash;
         this.updatedAt = Instant.now();

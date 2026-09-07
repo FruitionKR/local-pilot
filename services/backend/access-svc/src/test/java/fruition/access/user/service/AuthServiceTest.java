@@ -9,10 +9,12 @@ import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
 import fruition.access.user.dto.DisplayNameUpdateRequest;
 import fruition.access.user.dto.MeResponse;
+import fruition.access.user.dto.EmailChangeRequest;
 import fruition.access.user.dto.PasswordChangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.exception.UserNotFoundException;
 import fruition.access.user.dto.RefreshRequest;
+import fruition.access.user.exception.DuplicateEmailException;
 import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
 import fruition.access.user.exception.InvalidRefreshTokenException;
@@ -36,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -328,5 +331,67 @@ class AuthServiceTest {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Test
+    void changeEmail_consumesTokenAndKeepsCurrentSession() {
+        User user = localUser("password1");
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(user));
+        when(userRepository.existsByEmailAndProvider("new@example.com", User.PROVIDER_LOCAL)).thenReturn(false);
+        UserRefreshToken current = new UserRefreshToken("user_1", sha256("current-refresh"), Instant.now().plusSeconds(3600));
+        UserRefreshToken other = new UserRefreshToken("user_1", sha256("other-refresh"), Instant.now().plusSeconds(3600));
+        when(refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull("user_1")).thenReturn(List.of(current, other));
+
+        MeResponse response = authService.changeEmail("user_1",
+                new EmailChangeRequest("  New@Example.COM  ", "verification-token"), "current-refresh");
+
+        assertThat(response.email()).isEqualTo("new@example.com");
+        assertThat(user.getEmail()).isEqualTo("new@example.com");
+        // 새 주소로 받은 토큰이어야 한다.
+        verify(emailVerificationService).consumeForEmailChange("new@example.com", "verification-token");
+        assertThat(current.getRevokedAt()).isNull();
+        assertThat(other.getRevokedAt()).isNotNull();
+    }
+
+    @Test
+    void changeEmail_duplicateOnSameProviderThrows() {
+        User user = localUser("password1");
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(user));
+        when(userRepository.existsByEmailAndProvider("taken@example.com", User.PROVIDER_LOCAL)).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.changeEmail("user_1",
+                new EmailChangeRequest("taken@example.com", "verification-token"), null))
+                .isInstanceOf(DuplicateEmailException.class);
+        assertThat(user.getEmail()).isEqualTo("user@example.com");
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    /** 같은 이메일이 다른 provider에 있는 건 막지 않는다 — 계정은 (email, provider)로 유일하다. */
+    @Test
+    void changeEmail_sameEmailOnOtherProviderIsAllowed() {
+        User user = new User("user_1", "user@example.com", "google", "이름", null);
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(user));
+        when(userRepository.existsByEmailAndProvider("shared@example.com", "google")).thenReturn(false);
+        when(refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull("user_1")).thenReturn(List.of());
+
+        authService.changeEmail("user_1",
+                new EmailChangeRequest("shared@example.com", "verification-token"), null);
+
+        assertThat(user.getEmail()).isEqualTo("shared@example.com");
+    }
+
+    /** 토큰이 유효하지 않으면 이메일을 건드리지 않는다. */
+    @Test
+    void changeEmail_invalidTokenLeavesEmailUnchanged() {
+        User user = localUser("password1");
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(user));
+        doThrow(new InvalidVerificationTokenException())
+                .when(emailVerificationService).consumeForEmailChange("new@example.com", "bad-token");
+
+        assertThatThrownBy(() -> authService.changeEmail("user_1",
+                new EmailChangeRequest("new@example.com", "bad-token"), null))
+                .isInstanceOf(InvalidVerificationTokenException.class);
+        assertThat(user.getEmail()).isEqualTo("user@example.com");
+        verifyNoInteractions(refreshTokenRepository);
     }
 }

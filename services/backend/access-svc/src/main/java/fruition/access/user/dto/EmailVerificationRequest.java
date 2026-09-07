@@ -12,8 +12,10 @@ public record EmailVerificationRequest(
         String email,
 
         @NotBlank(message = "purpose는 필수입니다.")
-        @Pattern(regexp = "signup|password_reset", message = "purpose는 signup 또는 password_reset이어야 합니다.")
-        @Schema(description = "인증 목적. signup은 이미 가입된 이메일이면 409로 거절된다.",
-                allowableValues = {"signup", "password_reset"}, example = "signup")
+        @Pattern(regexp = "signup|password_reset|email_change",
+                message = "purpose는 signup, password_reset, email_change 중 하나여야 합니다.")
+        @Schema(description = "인증 목적. signup은 이미 가입된 이메일이면 409로 거절된다."
+                        + " email_change는 바꾸려는 새 이메일로 발송하며, 중복 확인은 확정 시점에 한다.",
+                allowableValues = {"signup", "password_reset", "email_change"}, example = "signup")
         String purpose
 ) {}
