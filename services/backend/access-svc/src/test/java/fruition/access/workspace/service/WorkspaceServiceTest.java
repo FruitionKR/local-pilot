@@ -168,4 +168,15 @@ class WorkspaceServiceTest {
         assertThat(response.workspaces().get(0).id()).isEqualTo("ws_deleted");
         assertThat(response.workspaces().get(0).deletedBy()).isEqualTo("user_1f9a74af");
     }
+
+    @Test
+    void list_includesIconEmoji() {
+        Workspace workspace = new Workspace("ws_aaa11111", "워크스페이스");
+        workspace.changeIcon("🌱");
+        when(workspaceMemberRepository.findAllWorkspacesByUserId("user_1f9a74af")).thenReturn(List.of(workspace));
+
+        assertThat(workspaceService.list("user_1f9a74af").workspaces())
+                .extracting(WorkspaceResponse::iconEmoji)
+                .containsExactly("🌱");
+    }
 }

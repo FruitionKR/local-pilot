@@ -23,6 +23,9 @@ import fruition.access.workspace.exception.InvitationInProgressException;
 import fruition.access.workspace.exception.InvitationSendException;
 import fruition.access.workspace.exception.InvitationNotFoundException;
 import fruition.access.workspace.exception.LastOwnerException;
+import fruition.access.workspace.exception.UnsupportedWorkspaceIconException;
+import fruition.access.workspace.exception.WorkspaceIconNotFoundException;
+import fruition.access.workspace.exception.WorkspaceIconTooLargeException;
 import fruition.access.workspace.exception.WorkspaceAccessDeniedException;
 import fruition.access.workspace.exception.WorkspaceMemberNotFoundException;
 import fruition.access.workspace.exception.WorkspaceNotFoundException;
@@ -155,6 +158,30 @@ public class AccessExceptionHandler extends BaseExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("ALREADY_MEMBER", e.getMessage()));
+    }
+
+    @ExceptionHandler(UnsupportedWorkspaceIconException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedWorkspaceIcon(UnsupportedWorkspaceIconException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "UNSUPPORTED_WORKSPACE_ICON");
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("UNSUPPORTED_WORKSPACE_ICON", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceIconTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceIconTooLarge(WorkspaceIconTooLargeException e) {
+        logHandled(e, HttpStatus.PAYLOAD_TOO_LARGE, "WORKSPACE_ICON_TOO_LARGE");
+        return ResponseEntity
+                .status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ErrorResponse.of("WORKSPACE_ICON_TOO_LARGE", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceIconNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceIconNotFound(WorkspaceIconNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "WORKSPACE_ICON_NOT_FOUND");
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("WORKSPACE_ICON_NOT_FOUND", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidOAuthCodeException.class)

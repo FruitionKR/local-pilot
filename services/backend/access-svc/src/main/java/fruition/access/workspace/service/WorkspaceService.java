@@ -182,6 +182,6 @@ public class WorkspaceService {
     }
 
     private WorkspaceResponse toResponse(Workspace workspace) {
-        return new WorkspaceResponse(workspace.getId(), workspace.getName(), workspace.getCreatedAt(), workspace.getUpdatedAt());
+        return WorkspaceResponse.from(workspace);
     }
 }
