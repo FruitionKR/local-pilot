@@ -13,6 +13,7 @@
 
 ## 진행 예정 계획
 
+- `aws-msa-deployment-readiness-plan.md` — 현재 MSA를 AWS에 실제 배포하고 장시간 AI 작업의 다중 사용자 처리·확장·보안·관측·복구를 검증하기 위한 우선순위별 보완 계획.
 - `mongodb-to-postgresql-migration-plan.md` — 문서 본문·revision·write receipt·edit outbox를 PostgreSQL 단일 transaction으로 통합하고 MongoDB를 제거하는 검증·이관 계획.
 
 ## 2026-08-10 검토 기록
@@ -72,3 +73,4 @@
 - `spec/llmpipeline-backend-api-contract.md` — dev 브랜치의 llmPipeline↔Backend API 계약 전문(2026-08-08 dev 병합으로 이관). 현행 요약은 `docs/api.md`.
 - `Fruition_MVP_API_Contract.md` — 로그인 없이 단일 기본 workspace만 쓰던 시절 API 계약. 현재 API 계약은 `docs/Fruition_MVP_API_Contract.md`.
 - `note-editor-prototype.md` — local mock 저장 전제의 노트 편집기 프로토타입 사양. 본문 저장·버전 이력·복원의 현재 계약은 `docs/spec/document-version-history.md`.
+- `settings-backend-api-proposal.md` — 설정 화면(설정 모달) 구현에서 확인한 백엔드 신설 필요 API 제안 목록(2026-09-07). 사용자 프로필·이메일·비밀번호·보안·멤버·워크스페이스 아이콘.

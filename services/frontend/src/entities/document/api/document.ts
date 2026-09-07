@@ -2,6 +2,16 @@ import { apiFetch, throwIfNotOk, parseJsonOrThrow, getWorkspaceId, workspacePath
 import { publishConvertStarted } from "@/entities/document/model/convertEvents";
 import type { DocumentItemResponse, DocumentRole, DocumentUploadResponse } from "@/entities/document/model/document";
 
+export async function fetchDocuments() {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(workspacePath(workspaceId, "documents"), { cache: "no-store" });
+  const data = await parseJsonOrThrow<{ documents: DocumentItemResponse[] }>(
+    response,
+    ERROR_MESSAGES.documentsLoadFailed
+  );
+  return data.documents ?? [];
+}
+
 export async function uploadDocumentFile(file: File) {
   const workspaceId = getWorkspaceId();
   const formData = new FormData();

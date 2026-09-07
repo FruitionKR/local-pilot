@@ -1,0 +1,104 @@
+/* 안전 검토 상태 배지 (Figma 1033:8390 / 1033:8429) */
+
+.badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.ring {
+  display: block;
+}
+
+/* 검토 중 스피너 — Figma 1033:8398 Ring Arc 원본 재현:
+   conic-gradient(from 90deg, 투명 → #00de5a 349.6deg → 투명)를 링 모양으로 마스킹하고
+   타임라인 5.42s 동안 3회전 후 잠시 멈추는 loop (times [0, 0.018, 0.686, 1], linear) */
+.ring-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+}
+
+.gradient-arc {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 90deg,
+    rgba(166, 166, 166, 0) 0deg,
+    #00de5a 349.6deg,
+    rgba(255, 255, 255, 0) 360deg
+  );
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 5.4px), #000 calc(100% - 5.3px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 5.4px), #000 calc(100% - 5.3px));
+  /* Figma 회전 속도(3.62s에 3회전 = 1.21s/회전)와 같되, 정지 구간 없는 연속 회전.
+     원본의 68.6%~100% 정지 구간은 통과 시퀀스용이라 로딩 루프에 넣으면 멈춘 것처럼 끊겨 보인다. */
+  animation: spin 1.21s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 통과: 링은 정지 상태로 남고, 아웃라인 원 페이드 인(0.1s) 후 체크 드로잉(0.48s) — Figma keyframe 그대로 */
+.ring-box {
+  position: relative;
+}
+
+.complete-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.outline-circle {
+  animation: fade-in 0.1s cubic-bezier(0.5, 0, 0.5, 1) both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.checkmark {
+  stroke-dasharray: 41;
+  stroke-dashoffset: 41;
+  animation: draw 0.48s cubic-bezier(0, 0, 0.58, 1) 0.1s forwards;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+[data-reduce-motion="true"] .gradient-arc,
+[data-reduce-motion="true"] .outline-circle,
+[data-reduce-motion="true"] .checkmark {
+  animation: none;
+  stroke-dashoffset: 0;
+}
+
+.text-loading {
+  color: #6d6d6d;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.28px;
+}
+
+.text-complete {
+  color: #00de5a;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.28px;
+}

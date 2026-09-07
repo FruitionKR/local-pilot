@@ -1,0 +1,184 @@
+/* 멤버 관리 패널 (Figma 987:10705). 백엔드 멤버 API 미지원이라 컨트롤은 전부 disabled 상태다. */
+
+/* --- 툴바 --- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.filter-accent {
+  color: var(--yellow);
+}
+
+.search-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+}
+
+.search-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.invite-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  color: var(--bg);
+  background: var(--yellow);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.filter-btn:disabled,
+.search-btn:disabled,
+.invite-btn:disabled,
+.role-chip:disabled,
+.more-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* --- 테이블 --- */
+.table {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 400px) 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+/* 헤더 행은 더보기 열이 없어 2열만 쓴다. */
+.row-head {
+  grid-template-columns: 20px minmax(0, 400px);
+  color: #c4c4c4;
+  font-weight: 500;
+}
+
+/* 사용자 정보 + 권한을 좌측 ~400px 컨테이너에 배치한다. */
+.row-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.checkbox {
+  width: 20px;
+  height: 20px;
+  border: 1px solid #a7a7a7;
+  border-radius: 4px;
+  opacity: 0.6;
+}
+
+.cell-role {
+  width: 84px;
+  flex: 0 0 auto;
+  display: flex;
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.profile-icon {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.profile-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.profile-name {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.profile-email {
+  color: var(--subdued);
+  font-size: 12px;
+}
+
+.role-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 행 우측 끝 더보기 버튼 */
+.more-btn {
+  justify-self: end;
+  padding: 0 6px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* 드롭다운 셰브론 아이콘 (svg/setting_scroll.svg) */
+.chev-icon {
+  width: 10px;
+  height: 5px;
+  flex: 0 0 auto;
+}
+
+/* 활성 필터의 셰브론은 라벨과 같은 노란색으로 맞춘다. */
+.filter-btn:has(.filter-accent) .chev-icon {
+  color: var(--yellow);
+}

@@ -20,6 +20,15 @@
 - `llmPipeline` 및 AI/LLM 처리 로직, prompt, pipeline API 코드는 수정하지 않는다.
 - 백엔드 또는 AI pipeline 변경이 필요해 보이면, 프론트엔드에서 맞출 수 있는 대안을 먼저 찾고 사용자에게 제약을 설명한다.
 
+## 빌드 검증
+
+**Never run `npm run build` while the dev server is running. Use `tsc --noEmit` for verification during development.**
+
+- dev 서버(`next dev`, :3000)가 떠 있는 동안 같은 디렉터리에서 `npm run build`를 실행하지 않는다. 프로덕션 빌드가 `.next`를 덮어써 dev 산출물과 섞이면 CSS/청크가 어긋나 화면에 스타일이 적용되지 않는다.
+- 개발 중 코드 검증은 `npx tsc --noEmit`으로 한다.
+- 프로덕션 빌드 검증이 꼭 필요하면 먼저 `scripts/front-down.sh`로 dev 서버를 내리고 빌드한 뒤, `rm -rf .next && scripts/front-up.sh`로 재기동한다.
+- `.next`가 이미 섞여 스타일이 깨진 경우: dev 서버 종료 → `rm -rf .next` → 재기동 → 브라우저 강력 새로고침.
+
 ## 허용되는 변경
 
 - `frontend/app`, `frontend/svg`, `frontend/package.json`, `frontend/next.config.mjs` 등 프론트엔드 실행과 화면 구현에 필요한 파일 수정

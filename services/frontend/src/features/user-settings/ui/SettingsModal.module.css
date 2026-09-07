@@ -69,6 +69,12 @@ button.nav-row:focus-visible {
   background: var(--soft);
 }
 
+button.nav-row:disabled {
+  background: transparent;
+  opacity: 0.45;
+  cursor: default;
+}
+
 .nav-row.is-active {
   background: var(--soft);
 }
@@ -81,7 +87,7 @@ button.nav-row:focus-visible {
   align-items: center;
   justify-content: center;
   color: #fff;
-  background: var(--bg);
+  background: var(--panel);
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
@@ -117,6 +123,12 @@ button.nav-row:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* .title > p보다 우선하도록 클래스 2개 지정자로 둔다. */
+.title > .title-note {
+  color: var(--subdued);
+  font-size: 12px;
 }
 
 .title-row {
