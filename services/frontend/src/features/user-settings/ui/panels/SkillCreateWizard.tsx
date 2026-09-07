@@ -526,16 +526,16 @@ export function SkillCreateWizard({
         {step === 2 && renderStep2()}
         {step === 3 && renderStep3()}
 
-        {/* 안전 검토 진행 오버레이 (Figma 1033:8390) — 어느 단계에서 시작하든 화면 전체를 덮는다 */}
-        {authorMutation.isPending && (
-          <div className={styles["pass-overlay"]}>
-            <SafetyReviewBadge variant="loading" />
-          </div>
-        )}
-        {/* 검토 통과 오버레이 (Figma 1033:8429) — 2초 뒤 자동 진행, 클릭 시 즉시 진행 */}
-        {passed && (
-          <button type="button" className={styles["pass-overlay"]} onClick={advanceToStep3}>
-            <SafetyReviewBadge variant="complete" />
+        {/* 안전 검토 오버레이 (Figma 1033:8390 → 1033:8429) — 진행·통과가 한 오버레이를 공유해
+            전환 시 화면이 끊기지 않는다. 통과 상태에서 클릭하면 즉시 STEP 3으로 진행한다. */}
+        {(authorMutation.isPending || passed) && (
+          <button
+            type="button"
+            className={styles["pass-overlay"]}
+            disabled={authorMutation.isPending}
+            onClick={advanceToStep3}
+          >
+            <SafetyReviewBadge variant={authorMutation.isPending ? "loading" : "complete"} />
           </button>
         )}
 

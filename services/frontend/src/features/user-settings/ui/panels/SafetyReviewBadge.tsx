@@ -8,11 +8,10 @@ export function SafetyReviewBadge({ variant }: { variant: "loading" | "complete"
   const isComplete = variant === "complete";
   return (
     <div className={styles.badge}>
-      {isComplete ? (
-        /* 통과 (Figma 1033:8429 asset 원본): 정지한 그라데이션 링 위에
-           초록 아웃라인 원이 페이드 인되고 초록 체크가 그려진다 */
-        <div className={styles["ring-box"]} aria-hidden>
-          <div className={`${styles["gradient-arc"]} ${styles["is-static"]}`} />
+      {/* 그라데이션 링은 두 상태가 공유한다 — 전환 시 리마운트되지 않아 회전이 끊기지 않는다 */}
+      <div className={styles["ring-box"]} aria-hidden>
+        <div className={styles["gradient-arc"]} />
+        {isComplete && (
           <svg className={styles["complete-overlay"]} width="64" height="64" viewBox="0 0 64 64">
             <circle
               className={styles["outline-circle"]}
@@ -32,13 +31,8 @@ export function SafetyReviewBadge({ variant }: { variant: "loading" | "complete"
               strokeLinecap="round"
             />
           </svg>
-        </div>
-      ) : (
-        /* 꼬리가 투명으로 사라지는 conic-gradient 초록 링 회전 (Figma 1033:8398 Ring Arc 원본과 동일) */
-        <div className={styles["ring-box"]} aria-hidden>
-          <div className={styles["gradient-arc"]} />
-        </div>
-      )}
+        )}
+      </div>
       <span className={isComplete ? styles["text-complete"] : styles["text-loading"]}>
         {isComplete ? "안전 검토를 통과했습니다." : "검토 중..."}
       </span>

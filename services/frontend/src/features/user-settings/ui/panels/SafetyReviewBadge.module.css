@@ -49,10 +49,6 @@
 }
 
 /* 통과: 링은 정지 상태로 남고, 아웃라인 원 페이드 인(0.1s) 후 체크 드로잉(0.48s) — Figma keyframe 그대로 */
-.is-static {
-  animation: none;
-}
-
 .ring-box {
   position: relative;
 }
