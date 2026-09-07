@@ -301,6 +301,10 @@ class AuthorSkillUseCase:
         ) != len(expected_allowed_tools):
             raise ValueError("Published Skill permissions must not contain duplicates.")
         validate_allowed_tools(expected_capabilities, expected_allowed_tools)
+        # 이미 검토를 마친 초안이므로 의도를 다시 분류하지 않는다(review_draft와 같다).
+        # 재분류하면 참조 문서 없이 초안 본문만 보게 되는데, 본문에 남아 있는 고정 출력 템플릿
+        # 섹션 때문에 분류기가 fixed-template이라 답하고, 참조 문서가 없는 요청에서는 그 응답이
+        # 허용되지 않아 author를 통과한 초안이 publish에서 거부된다.
         reviewed = self.execute(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -311,20 +315,13 @@ class AuthorSkillUseCase:
             reference_document_ids=(),
             allow_clarification=False,
             authoring_mode="preserve",
+            preserved_capabilities=expected_capabilities,
+            preserved_allowed_tools=expected_allowed_tools,
         )
         if reviewed.status != "proposal_ready" or reviewed.proposal is None:
             return reviewed
-        reviewed_proposal = reviewed.proposal
-        if (
-            set(reviewed_proposal.capabilities) != set(expected_capabilities)
-            or not set(expected_allowed_tools).issubset(reviewed_proposal.allowed_tools)
-        ):
-            raise ValueError("Skill permissions changed during final review. Review the draft again.")
-        proposal = replace(
-            reviewed_proposal,
-            capabilities=expected_capabilities,
-            allowed_tools=expected_allowed_tools,
-        )
+        # 분류를 건너뛰었으므로 검토 결과의 권한은 호출자가 확인한 권한과 같다.
+        proposal = reviewed.proposal
         skill = self._skill_manager.create_published(
             workspace_id=workspace_id,
             user_id=user_id,

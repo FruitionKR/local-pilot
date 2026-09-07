@@ -700,34 +700,61 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(result.issues[0].category, "personal_email")
         self.assertEqual(repository.skills, {})
 
-    def test_final_publish_rejects_permission_drift_without_storage(self) -> None:
-        use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
+    def test_final_publish_keeps_fixed_template_draft_publishable(self) -> None:
+        """author가 만든 고정 출력 템플릿 초안을 수정 없이 그대로 게시할 수 있어야 한다.
 
-        with self.assertRaisesRegex(ValueError, "permissions changed during final review"):
-            use_case.publish(
-                workspace_id="workspace-1",
-                user_id="user-1",
-                scope_type="personal",
-                name="rename-display-name",
-                description="문서 트리의 표시 이름을 변경합니다.",
-                instructions_markdown="문서 본문은 유지하고 표시 이름만 변경한다.",
-                expected_capabilities=("folder-organize",),
-                expected_allowed_tools=(
-                    "create_folder",
-                    "get_breadcrumb",
-                    "get_document_content",
-                    "get_document_metadata",
-                    "list_folder_children",
-                    "list_root_items",
-                    "move_document",
-                    "move_folder",
-                    "rename_document",
-                    "rename_folder",
-                    "search_hierarchy",
-                ),
-            )
+        초안 본문에는 코드펜스로 감싼 '고정 출력 템플릿' 섹션이 들어 있다. publish가 의도를
+        다시 분류하면 분류기는 참조 문서가 없는데도 fixed-template이라 답하고, 그 응답은
+        reference_mode 허용 목록에 없어 400이 된다.
+        """
+        template_draft = (
+            "# 작성 규칙\n\n"
+            "- 입력 내용을 아래 템플릿 구조에 맞춰 작성한다.\n\n"
+            "# 고정 출력 템플릿\n\n"
+            "```markdown\n"
+            "# 제목\n\n"
+            "## 요약\n"
+            "```"
+        )
+        generator = FixedGenerator(
+            draft_result(),
+            intent=intent_result(skill_kinds=["template"], reference_mode="fixed-template"),
+        )
+        use_case, repository = self.build_use_case(generator)
 
-        self.assertEqual(repository.skills, {})
+        result = use_case.publish(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            name="fixed-template-writer",
+            description="고정 템플릿 구조로 문서를 작성합니다.",
+            instructions_markdown=template_draft,
+            expected_capabilities=("template",),
+            expected_allowed_tools=("create_document", "list_folder_children", "list_root_items"),
+        )
+
+        self.assertEqual(result.status, "published")
+        self.assertEqual(len(repository.skills), 1)
+        # 초안 본문은 그대로 게시된다 — 코드펜스가 잘려나가지 않는다.
+        self.assertIn("```markdown", result.skill.enabled_version.instructions_markdown)  # type: ignore[union-attr]
+
+    def test_final_publish_does_not_reclassify_reviewed_draft(self) -> None:
+        """review_draft와 마찬가지로, 이미 검토된 초안은 의도를 다시 분류하지 않는다."""
+        generator = FixedGenerator(draft_result())
+        use_case, _ = self.build_use_case(generator)
+
+        use_case.publish(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            name="concise-document-writer",
+            description="요청한 내용을 간결한 문서로 작성합니다.",
+            instructions_markdown="# 작성 절차\n\n- 핵심 내용을 먼저 정리한다.",
+            expected_capabilities=("document-create",),
+            expected_allowed_tools=("create_document", "list_folder_children", "list_root_items"),
+        )
+
+        self.assertEqual(generator.classification_count, 0)
 
     def test_rejects_prompt_injection_in_reference_before_generation(self) -> None:
         generator = FixedGenerator(draft_result())
