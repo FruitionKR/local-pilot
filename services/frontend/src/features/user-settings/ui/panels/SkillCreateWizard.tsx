@@ -9,7 +9,7 @@ import { DocumentPickerModal } from "./DocumentPickerModal";
 import { SafetyReviewBadge } from "./SafetyReviewBadge";
 import { AlertModal } from "@/shared/ui/AlertModal";
 import { getErrorMessage } from "@/shared/lib/errors";
-import { useWorkspaceName } from "@/entities/workspace";
+import { fetchWorkspaces, useWorkspaceName } from "@/entities/workspace";
 import { useEscapeKey } from "@/shared/lib/useEscapeKey";
 import { menuSearchIcon, questionMarkIcon, settingScrollIcon, skillBackIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import styles from "./SkillCreateWizard.module.css";
@@ -101,6 +101,19 @@ export function SkillCreateWizard({
     enabled: docPickerOpen
   });
 
+  // 팀 스킬 게시 대상 워크스페이스 (기본: 현재 워크스페이스)
+  const [targetWorkspaceId, setTargetWorkspaceId] = useState(workspaceId);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const { data: workspaceList } = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: fetchWorkspaces,
+    staleTime: Infinity,
+    enabled: scopeType === "team"
+  });
+  const ownedWorkspaces = workspaceList?.workspaces ?? [];
+  const targetWorkspaceName =
+    ownedWorkspaces.find((workspace) => workspace.id === targetWorkspaceId)?.name ?? workspaceName;
+
   // STEP 2~3 초안 (author 결과, 로컬 편집 허용)
   const [draft, setDraft] = useState<SkillAuthoringResult | null>(null);
 
@@ -131,7 +144,8 @@ export function SkillCreateWizard({
   const publishMutation = useMutation({
     mutationFn: () => {
       if (draft == null) throw new Error("게시할 초안이 없습니다.");
-      return publishSkill(workspaceId, {
+      // 팀 스킬은 publish를 호출한 워크스페이스에 귀속되므로 선택된 대상으로 호출한다.
+      return publishSkill(scopeType === "team" ? targetWorkspaceId : workspaceId, {
         name: publishName,
         description: draft.description,
         instructions_markdown: draft.instructions_markdown,
@@ -449,10 +463,41 @@ export function SkillCreateWizard({
           <div className={styles.field}>
             <span className={styles["field-label"]}>실행 가능한 워크스페이스</span>
             <div className={styles["tool-chips"]}>
-              {/* 저장 범위에 따라 실제 적용 워크스페이스를 보여준다. 개인은 모든 워크스페이스에서 쓸 수 있다. */}
-              <span className={styles["tool-chip"]}>
-                {scopeType === "personal" ? "모든 워크스페이스" : `${workspaceName ?? "현재 워크스페이스"} (팀)`}
-              </span>
+              {scopeType === "personal" ? (
+                <span className={styles["tool-chip"]}>모든 워크스페이스</span>
+              ) : (
+                /* 팀 스킬은 게시할 워크스페이스를 선택한다. publish 호출 워크스페이스에 귀속된다. */
+                <div className={styles["scope-wrap"]}>
+                  <button
+                    type="button"
+                    className={styles["scope-chip"]}
+                    aria-expanded={workspaceMenuOpen}
+                    onClick={() => setWorkspaceMenuOpen(!workspaceMenuOpen)}
+                  >
+                    {targetWorkspaceName ?? "워크스페이스 선택"} (팀)
+                    <SvgIcon src={settingScrollIcon} className={styles["chev-icon"]} />
+                  </button>
+                  {workspaceMenuOpen && (
+                    <div className={styles["scope-menu"]} role="listbox" aria-label="게시할 워크스페이스 선택">
+                      {ownedWorkspaces.map((workspace) => (
+                        <button
+                          key={workspace.id}
+                          type="button"
+                          role="option"
+                          aria-selected={workspace.id === targetWorkspaceId}
+                          className={styles["scope-option"]}
+                          onClick={() => {
+                            setTargetWorkspaceId(workspace.id);
+                            setWorkspaceMenuOpen(false);
+                          }}
+                        >
+                          {workspace.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
