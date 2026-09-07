@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { fetchDocuments, type DocumentItemResponse } from "@/entities/document";
-import { authorSkill, publishSkill, type SkillAuthoringResult } from "@/entities/skill";
+import { authorSkill, fetchSkills, publishSkill, type SkillAuthoringResult } from "@/entities/skill";
 import { DocumentPickerModal } from "./DocumentPickerModal";
 import { SafetyReviewBadge } from "./SafetyReviewBadge";
 import { AlertModal } from "@/shared/ui/AlertModal";
@@ -101,6 +101,14 @@ export function SkillCreateWizard({
     enabled: docPickerOpen
   });
 
+  // 기존 스킬 커맨드와 중복되면 STEP 1에서 미리 막는다 (서버도 게시 시점에 중복을 차단한다).
+  const { data: existingSkills } = useQuery({
+    queryKey: ["skills"],
+    queryFn: () => fetchSkills(workspaceId),
+    staleTime: 60_000
+  });
+
+
   // 팀 스킬 게시 대상 워크스페이스 — 여러 개 선택 가능 (기본: 현재 워크스페이스)
   const [targetWorkspaceIds, setTargetWorkspaceIds] = useState<string[]>([workspaceId]);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
@@ -125,6 +133,13 @@ export function SkillCreateWizard({
   const validCommand = COMMAND_PATTERN.test(command.trim()) ? command.trim() : undefined;
   // STEP 3 표시·게시용 최종 커맨드명: 사용자가 넣은 유효 커맨드가 없으면 AI 초안 name을 쓴다.
   const publishName = validCommand ?? draft?.name ?? "";
+  // 기존 스킬 커맨드와 중복이면 STEP 1에서 미리 막는다.
+  const isDuplicateCommand =
+    validCommand != null && (existingSkills ?? []).some((skill) => skill.slug === validCommand);
+
+  // 검토 오버레이 상태 머신 — react-query 파생값 대신 한 상태로 관리해
+  // loading→complete 전환이 단일 setState로 이뤄져 프레임 공백(끊김)이 없다.
+  const [overlayPhase, setOverlayPhase] = useState<"loading" | "complete" | null>(null);
 
   // authoring_mode: enhance(LLM 구체화, 기본) / preserve(원문 유지 재검토) / regenerate(차단 구간 제거 후 안전 재작성)
   const authorMutation = useMutation({
@@ -136,18 +151,21 @@ export function SkillCreateWizard({
         scope_type: scopeType,
         ...(selectedDocs.length > 0 ? { reference_document_ids: selectedDocs.map((doc) => doc.id) } : {})
       }),
+    onMutate: () => setOverlayPhase("loading"),
     onSuccess: (result) => {
       setDraft(result);
       const clean = (result.issues ?? []).length === 0;
-      setJustPassed(clean);
       if (clean) {
         // 통과면 STEP 2를 건너뛰고 오버레이 후 STEP 3으로 직행한다. 이전 버튼 목적지를 위해 출발점을 기억한다.
         setSkippedStep2(step === 1);
+        setOverlayPhase("complete");
       } else {
         setSkippedStep2(false);
+        setOverlayPhase(null);
         setStep(2);
       }
-    }
+    },
+    onError: () => setOverlayPhase(null)
   });
 
   const publishMutation = useMutation({
@@ -174,24 +192,21 @@ export function SkillCreateWizard({
   });
 
   const issues = draft?.issues ?? [];
-  // 통과 오버레이는 검토 직후 1회만 보여준다. 이전/다음 이동으로는 재생하지 않는다.
-  const [justPassed, setJustPassed] = useState(false);
   // STEP1에서 통과해 STEP2를 건너뛴 경우 true — STEP3의 '이전'이 STEP1로 가야 한다.
   const [skippedStep2, setSkippedStep2] = useState(false);
-  const passed = justPassed && !authorMutation.isPending;
 
   function finishPassOverlay() {
-    setJustPassed(false);
+    setOverlayPhase(null);
     setStep(3);
   }
 
-  // 통과 오버레이를 잠시 보여준 뒤 STEP 3으로 진행한다.
+  // 통과 오버레이(complete)를 잠시 보여준 뒤 STEP 3으로 진행한다.
   useEffect(() => {
-    if (!passed) return;
+    if (overlayPhase !== "complete") return;
     const timer = setTimeout(finishPassOverlay, PASS_ADVANCE_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [passed]);
+  }, [overlayPhase]);
 
   // STEP 3 진입 시 커맨드가 비어 있으면 AI가 지은 이름을 채워 수정 가능하게 한다.
   useEffect(() => {
@@ -289,6 +304,11 @@ export function SkillCreateWizard({
               />
               <span className={styles.counter}>{command.length}/{NAME_MAX}</span>
             </div>
+            {isDuplicateCommand && (
+              <small className={styles.error} role="alert">
+                이미 사용 중인 커맨드입니다. 다른 커맨드 이름을 입력해 주세요.
+              </small>
+            )}
           </div>
 
           {/* 스킬 지침 */}
@@ -349,7 +369,7 @@ export function SkillCreateWizard({
           <button
             type="button"
             className={styles["btn-primary"]}
-            disabled={instruction.trim().length === 0 || authorMutation.isPending}
+            disabled={instruction.trim().length === 0 || isDuplicateCommand || authorMutation.isPending}
             onClick={() => authorMutation.mutate({ instruction })}
           >
             {authorMutation.isPending ? "안전 검토 중…" : "안전 검토 들어가기 ›"}
@@ -599,14 +619,14 @@ export function SkillCreateWizard({
 
         {/* 안전 검토 오버레이 (Figma 1033:8390 → 1033:8429) — 진행·통과가 한 오버레이를 공유해
             전환 시 화면이 끊기지 않는다. 통과 상태에서 클릭하면 즉시 STEP 3으로 진행한다. */}
-        {(authorMutation.isPending || passed) && (
+        {overlayPhase != null && (
           <button
             type="button"
             className={styles["pass-overlay"]}
-            disabled={authorMutation.isPending}
+            disabled={overlayPhase === "loading"}
             onClick={finishPassOverlay}
           >
-            <SafetyReviewBadge variant={authorMutation.isPending ? "loading" : "complete"} />
+            <SafetyReviewBadge variant={overlayPhase} />
           </button>
         )}
 
