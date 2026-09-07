@@ -21,7 +21,7 @@ import {
   plusIcon,
   settingIcon,
   SvgIcon,
-  userCircleIcon
+  userCircleOutlineIcon
 } from "@/shared/ui/SvgIcon";
 import { AccountPanel } from "./panels/AccountPanel";
 import { MembersPanel } from "./panels/MembersPanel";
@@ -150,7 +150,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               className={`${styles["nav-row"]} ${activeSection === "members" ? styles["is-active"] : ""}`}
               onClick={() => setActiveSection("members")}
             >
-              <SvgIcon src={userCircleIcon} className={styles["nav-icon"]} />
+              <SvgIcon src={userCircleOutlineIcon} className={styles["nav-icon"]} />
               <span>멤버 관리</span>
             </button>
             <button

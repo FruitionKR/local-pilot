@@ -24,7 +24,8 @@ import shareIcon from "../../../svg/navigation/menu_graph.svg";
 import profileToggleIcon from "../../../svg/workspace/profile_toggle.svg";
 import toggleIcon from "../../../svg/workspace/toggle.svg";
 import userCircleIcon from "../../../svg/workspace/UserCircle.svg";
-import settingScrollIcon from "../../../svg/setting_scroll.svg";
+import settingScrollIcon from "../../../svg/navigation/setting_scroll.svg";
+import userCircleOutlineIcon from "../../../svg/workspace/UserCircleOutline.svg";
 
 // svg 파일 없이 인라인 SVG로만 렌더링하는 아이콘 식별자
 const bellIcon = { inlineIcon: "bell" } as const;
@@ -46,6 +47,7 @@ export type SvgAsset =
 export {
   arrowIcon,
   settingScrollIcon,
+  userCircleOutlineIcon,
   bellIcon,
   chatBubbleIcon,
   folderPlusIcon,
