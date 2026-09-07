@@ -263,3 +263,8 @@
   color: var(--yellow);
   font-weight: 600;
 }
+
+/* 활성 필터의 셰브론은 라벨과 같은 노란색으로 맞춘다. */
+.filter-btn:has(.filter-accent) .chev-icon {
+  color: var(--yellow);
+}
