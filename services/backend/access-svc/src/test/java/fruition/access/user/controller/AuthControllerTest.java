@@ -14,8 +14,10 @@ import fruition.access.user.dto.EmailVerificationRequest;
 import fruition.access.user.dto.EmailVerificationResponse;
 import fruition.access.user.dto.LoginRequest;
 import fruition.access.user.dto.LoginResponse;
+import fruition.access.user.dto.DisplayNameUpdateRequest;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
+import fruition.access.user.dto.PasswordChangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.dto.SignupRequest;
 import fruition.access.user.dto.SignupResponse;
@@ -44,10 +46,14 @@ import jakarta.servlet.http.Cookie;
 import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -327,5 +333,91 @@ class AuthControllerTest {
                         .content(objectMapper.writeValueAsString(new OAuthExchangeRequest("bad-code"))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("INVALID_OAUTH_CODE"));
+    }
+
+    @Test
+    void updateDisplayName_authenticated_returns200() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+        when(authService.updateDisplayName(eq("user_1f9a74af"), any())).thenReturn(
+                new MeResponse("user_1f9a74af", "test@example.com", "새 이름", Instant.now()));
+
+        mockMvc.perform(patch("/api/auth/me")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new DisplayNameUpdateRequest("새 이름"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.display_name").value("새 이름"));
+    }
+
+    @Test
+    void updateDisplayName_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(patch("/api/auth/me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new DisplayNameUpdateRequest("새 이름"))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void updateDisplayName_blank_returns400() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+
+        mockMvc.perform(patch("/api/auth/me")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"display_name\":\"  \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void changePassword_authenticated_returns204() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+
+        mockMvc.perform(put("/api/auth/me/password")
+                        .header("Authorization", "Bearer " + token)
+                        .cookie(new jakarta.servlet.http.Cookie("fruition_refresh_token", "current-refresh"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new PasswordChangeRequest("oldPassword1", "newPassword1"))))
+                .andExpect(status().isNoContent());
+        verify(authService).changePassword("user_1f9a74af",
+                new PasswordChangeRequest("oldPassword1", "newPassword1"), "current-refresh");
+    }
+
+    @Test
+    void changePassword_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(put("/api/auth/me/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new PasswordChangeRequest("oldPassword1", "newPassword1"))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void changePassword_shortNewPassword_returns400() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+
+        mockMvc.perform(put("/api/auth/me/password")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new PasswordChangeRequest("oldPassword1", "short"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void changePassword_wrongCurrentPassword_returns401() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+        doThrow(new InvalidCredentialsException())
+                .when(authService).changePassword(eq("user_1f9a74af"), any(), any());
+
+        mockMvc.perform(put("/api/auth/me/password")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new PasswordChangeRequest("wrongPassword", "newPassword1"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_CREDENTIALS"));
     }
 }

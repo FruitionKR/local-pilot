@@ -7,7 +7,11 @@ import fruition.access.user.domain.UserRefreshToken;
 import fruition.access.user.dto.LoginRequest;
 import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
+import fruition.access.user.dto.DisplayNameUpdateRequest;
+import fruition.access.user.dto.MeResponse;
+import fruition.access.user.dto.PasswordChangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
+import fruition.access.user.exception.UserNotFoundException;
 import fruition.access.user.dto.RefreshRequest;
 import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
@@ -33,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -236,5 +241,92 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.exchangeOAuthCode(new OAuthExchangeRequest(code)))
                 .isInstanceOf(InvalidOAuthCodeException.class);
+    }
+
+    @Test
+    void updateDisplayName_trimsAndReturnsUpdatedProfile() {
+        User user = new User("user_1", "user@example.com", User.PROVIDER_LOCAL, "옛 이름", "hash");
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(user));
+
+        MeResponse response = authService.updateDisplayName("user_1", new DisplayNameUpdateRequest("  새 이름  "));
+
+        assertThat(response.displayName()).isEqualTo("새 이름");
+        assertThat(user.getDisplayName()).isEqualTo("새 이름");
+        assertThat(response.email()).isEqualTo("user@example.com");
+    }
+
+    @Test
+    void updateDisplayName_unknownUserThrows() {
+        when(userRepository.findById("user_none")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.updateDisplayName("user_none", new DisplayNameUpdateRequest("이름")))
+                .isInstanceOf(UserNotFoundException.class);
+    }
+
+    private User localUser(String rawPassword) {
+        return new User("user_1", "user@example.com", User.PROVIDER_LOCAL, "이름", passwordEncoder.encode(rawPassword));
+    }
+
+    @Test
+    void changePassword_replacesHashAndKeepsCurrentSession() {
+        User user = localUser("oldPassword1");
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(user));
+        // 현재 세션 토큰과 다른 기기 토큰이 하나씩 살아 있는 상태.
+        UserRefreshToken current = new UserRefreshToken("user_1", sha256("current-refresh"), Instant.now().plusSeconds(3600));
+        UserRefreshToken other = new UserRefreshToken("user_1", sha256("other-refresh"), Instant.now().plusSeconds(3600));
+        when(refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull("user_1")).thenReturn(List.of(current, other));
+
+        authService.changePassword("user_1",
+                new PasswordChangeRequest("oldPassword1", "newPassword1"), "current-refresh");
+
+        assertThat(passwordEncoder.matches("newPassword1", user.getPasswordHash())).isTrue();
+        assertThat(current.getRevokedAt()).isNull();
+        assertThat(other.getRevokedAt()).isNotNull();
+    }
+
+    @Test
+    void changePassword_withoutRefreshCookie_revokesEverySession() {
+        User user = localUser("oldPassword1");
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(user));
+        UserRefreshToken only = new UserRefreshToken("user_1", sha256("some-refresh"), Instant.now().plusSeconds(3600));
+        when(refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull("user_1")).thenReturn(List.of(only));
+
+        authService.changePassword("user_1", new PasswordChangeRequest("oldPassword1", "newPassword1"), null);
+
+        assertThat(only.getRevokedAt()).isNotNull();
+    }
+
+    @Test
+    void changePassword_wrongCurrentPasswordThrows() {
+        User user = localUser("oldPassword1");
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.changePassword("user_1",
+                new PasswordChangeRequest("wrongPassword", "newPassword1"), "current-refresh"))
+                .isInstanceOf(InvalidCredentialsException.class);
+        assertThat(passwordEncoder.matches("oldPassword1", user.getPasswordHash())).isTrue();
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    @Test
+    void changePassword_oauthOnlyAccountThrows() {
+        User user = new User("user_1", "user@example.com", "google", "이름", null);
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.changePassword("user_1",
+                new PasswordChangeRequest("anything", "newPassword1"), null))
+                .isInstanceOf(PasswordLoginUnavailableException.class);
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    /** AuthService가 refresh token을 저장할 때 쓰는 해시와 같아야 현재 세션을 짚어낼 수 있다. */
+    private static String sha256(String value) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            return java.util.HexFormat.of().formatHex(
+                    digest.digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }

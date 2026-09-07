@@ -8,6 +8,8 @@ import fruition.access.user.dto.LoginRequest;
 import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
+import fruition.access.user.dto.DisplayNameUpdateRequest;
+import fruition.access.user.dto.PasswordChangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.dto.RefreshRequest;
 import fruition.access.user.dto.SignupRequest;
@@ -36,8 +38,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -214,6 +218,40 @@ public class AuthController {
     @GetMapping("/me")
     public ResponseEntity<MeResponse> me(@AuthenticationPrincipal String userId) {
         return ResponseEntity.ok(authService.me(userId));
+    }
+
+    @Operation(summary = "표시 이름 변경", description = "인증된 사용자의 표시 이름을 변경합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "변경 성공",
+            content = @Content(schema = @Schema(implementation = MeResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "401", description = "인증되지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PatchMapping("/me")
+    public ResponseEntity<MeResponse> updateDisplayName(
+            @AuthenticationPrincipal String userId,
+            @Valid @RequestBody DisplayNameUpdateRequest request) {
+        return ResponseEntity.ok(authService.updateDisplayName(userId, request));
+    }
+
+    @Operation(summary = "비밀번호 변경",
+            description = "현재 비밀번호를 확인하고 새 비밀번호로 바꿉니다. 성공하면 현재 세션을 제외한 refresh token이 폐기됩니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "변경 성공"),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청이거나 비밀번호를 쓰지 않는 계정",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "401", description = "인증되지 않았거나 현재 비밀번호가 다름",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PutMapping("/me/password")
+    public ResponseEntity<Void> changePassword(
+            @AuthenticationPrincipal String userId,
+            @Valid @RequestBody PasswordChangeRequest request,
+            @CookieValue(name = REFRESH_COOKIE_NAME, required = false) String refreshToken) {
+        authService.changePassword(userId, request, refreshToken);
+        return ResponseEntity.noContent().build();
     }
 
     private ResponseEntity<LoginResponse> authenticatedResponse(LoginResponse response) {

@@ -6,6 +6,6 @@
 
 | 도메인 | API 수 | 역할 |
 |---|---:|---|
-| [Auth](auth.md) | 10 | 가입·인증·로그인·토큰 관리 |
+| [Auth](auth.md) | 12 | 가입·인증·로그인·토큰·프로필 관리 |
 | [Workspaces](workspaces.md) | 13 | 워크스페이스·멤버 관리와 내부 인가·AI 모델 설정 |
 | [Invitations](invitations.md) | 5 | 이메일 초대 발송·취소·수락 |

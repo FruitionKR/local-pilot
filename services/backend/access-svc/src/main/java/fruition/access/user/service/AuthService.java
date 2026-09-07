@@ -8,6 +8,8 @@ import fruition.access.user.dto.LoginRequest;
 import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
+import fruition.access.user.dto.DisplayNameUpdateRequest;
+import fruition.access.user.dto.PasswordChangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.dto.RefreshRequest;
 import fruition.access.user.exception.InvalidCredentialsException;
@@ -127,6 +129,51 @@ public class AuthService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
         return new MeResponse(user.getId(), user.getEmail(), user.getDisplayName(), user.getCreatedAt());
+    }
+
+    @Transactional
+    public MeResponse updateDisplayName(String userId, DisplayNameUpdateRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+        user.changeDisplayName(request.displayName().trim());
+        log.info("[표시 이름 변경] userId={}", userId);
+        return new MeResponse(user.getId(), user.getEmail(), user.getDisplayName(), user.getCreatedAt());
+    }
+
+    /**
+     * 로그인 상태에서 비밀번호를 바꾼다.
+     *
+     * <p>{@code currentRefreshToken}은 요청에 실려 온 refresh 쿠키다. 이 세션만 남기고
+     * 나머지를 폐기해, 비밀번호가 샜을 때 다른 기기의 세션을 끊으면서도 방금 인증을 마친
+     * 사용자를 로그아웃시키지 않는다. 쿠키가 없으면 전부 폐기한다.
+     */
+    @Transactional
+    public void changePassword(String userId, PasswordChangeRequest request, String currentRefreshToken) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+
+        // OAuth 전용 계정은 password_hash가 없어 "현재 비밀번호"라는 개념이 성립하지 않는다.
+        if (user.getPasswordHash() == null) {
+            log.warn("[비밀번호 변경 거부] reason=no_password userId={} provider={}", userId, user.getProvider());
+            throw new PasswordLoginUnavailableException(List.of(user.getProvider()));
+        }
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            log.warn("[비밀번호 변경 거부] reason=current_password_mismatch userId={}", userId);
+            throw new InvalidCredentialsException();
+        }
+
+        user.changePassword(passwordEncoder.encode(request.newPassword()));
+
+        String keepTokenHash = currentRefreshToken == null ? null : sha256(currentRefreshToken);
+        int revoked = 0;
+        for (UserRefreshToken token : refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull(userId)) {
+            if (token.getTokenHash().equals(keepTokenHash)) {
+                continue;
+            }
+            token.revoke();
+            revoked++;
+        }
+        log.info("[비밀번호 변경 성공] userId={} revokedSessions={}", userId, revoked);
     }
 
     @Transactional

@@ -4,7 +4,7 @@
 
 가입·이메일 인증·로그인·토큰 API다.
 
-- API 수: 10
+- API 수: 12
 
 ## API 목차
 
@@ -16,6 +16,8 @@
 | [`POST /api/auth/login`](#summary-post-api-auth-login) | 이메일/비밀번호를 검증하고 access token과 HttpOnly refresh 쿠키를 발급합니다. |
 | [`POST /api/auth/logout`](#summary-post-api-auth-logout) | HttpOnly refresh 쿠키를 폐기하고 제거합니다. |
 | [`GET /api/auth/me`](#summary-get-api-auth-me) | access token으로 인증된 사용자의 프로필을 반환합니다. |
+| [`PATCH /api/auth/me`](#summary-patch-api-auth-me) | 인증된 사용자의 표시 이름을 변경합니다. |
+| [`PUT /api/auth/me/password`](#summary-put-api-auth-me-password) | 현재 비밀번호를 확인하고 새 비밀번호로 바꿉니다. |
 | [`POST /api/auth/oauth/exchange`](#summary-post-api-auth-oauth-exchange) | OAuth code를 access token과 HttpOnly refresh 쿠키로 교환합니다. |
 | [`POST /api/auth/password-reset`](#summary-post-api-auth-password-reset) | verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 세션을 폐기합니다. |
 | [`POST /api/auth/refresh`](#summary-post-api-auth-refresh) | HttpOnly refresh 쿠키를 검증하고 access token과 refresh 쿠키를 회전합니다. |
@@ -606,6 +608,188 @@ curl -X GET "$ACCESS/api/auth/me" \
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: me`)
 
 [↑ 요약으로 돌아가기](#summary-get-api-auth-me)
+
+</details>
+
+<a id="summary-patch-api-auth-me"></a>
+### `PATCH /api/auth/me`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 인증된 사용자의 표시 이름을 변경합니다. |
+| 입력 | **Body** — `DisplayNameUpdateRequest` |
+| 출력 | `200` 변경 성공 — `MeResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다. |
+| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`401` 인증되지 않음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`PATCH /api/auth/me`
+
+#### 2. 목적
+
+인증된 사용자의 표시 이름을 변경한다. 이메일과 provider는 이 API로 바꿀 수 없다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- `Authorization: Bearer <access_token>`을 검증한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| body | `display_name` | `string` | 예 | 새 표시 이름(255자 이하). 서버가 앞뒤 공백을 제거한다 |
+
+```json
+{
+  "display_name": "새 이름"
+}
+```
+
+#### 5. Response body
+
+- HTTP `200`: 변경 성공 — `MeResponse`
+
+```json
+{
+  "id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
+  "email": "user@example.com",
+  "display_name": "새 이름",
+  "created_at": "2026-08-13T04:25:24.371948Z"
+}
+```
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `400` | `display_name`이 비었거나 255자를 넘음 | `INVALID_REQUEST` |
+| `401` | access token이 없거나 유효하지 않음 | — |
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 토큰의 사용자 본인만 대상이다. 경로에 사용자 ID를 받지 않으므로 남의 프로필은 바꿀 수 없다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X PATCH "$ACCESS/api/auth/me" \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  --data '{"display_name":"새 이름"}'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: updateDisplayName`)
+
+[↑ 요약으로 돌아가기](#summary-patch-api-auth-me)
+
+</details>
+
+<a id="summary-put-api-auth-me-password"></a>
+### `PUT /api/auth/me/password`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 현재 비밀번호를 확인하고 새 비밀번호로 바꿉니다. 성공하면 현재 세션을 제외한 refresh token이 폐기됩니다. |
+| 입력 | **Body** — `PasswordChangeRequest`<br>**Cookie** — `fruition_refresh_token`(선택) |
+| 출력 | `204` 변경 성공 — 본문 없음 |
+| 조건 | 인증 필요<br>비밀번호를 쓰는 계정(`provider=local`)이어야 한다. |
+| 주요 오류 | `400` 비밀번호를 쓰지 않는 계정 — `ErrorResponse`<br>`401` 인증되지 않았거나 현재 비밀번호가 다름 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`PUT /api/auth/me/password`
+
+#### 2. 목적
+
+로그인 상태에서 비밀번호를 바꾼다. 비로그인 흐름인
+[`POST /api/auth/password-reset`](#summary-post-api-auth-password-reset)과 달리 인증번호가 아니라
+**현재 비밀번호**로 본인을 확인한다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- `Authorization: Bearer <access_token>`을 검증한다.
+- refresh 쿠키(`fruition_refresh_token`)를 함께 읽어 현재 세션을 식별한다. 쿠키 path가
+  `/api/auth`라 이 경로에는 자동으로 실린다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| body | `current_password` | `string` | 예 | 현재 비밀번호 |
+| body | `new_password` | `string` | 예 | 새 비밀번호(8~72자) |
+| cookie | `fruition_refresh_token` | `string` | 아니오 | 현재 세션의 refresh token. 없으면 모든 세션이 폐기된다 |
+
+```json
+{
+  "current_password": "password1234",
+  "new_password": "newPassword1234"
+}
+```
+
+#### 5. Response body
+
+- HTTP `204`: 변경 성공, 본문 없음
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `400` | `new_password` 길이 위반 등 | `INVALID_REQUEST` |
+| `400` | OAuth로만 가입해 비밀번호가 없는 계정 | `PASSWORD_LOGIN_UNAVAILABLE` |
+| `401` | access token이 없거나 유효하지 않음 | — |
+| `401` | 현재 비밀번호가 다름 | `INVALID_CREDENTIALS` |
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 토큰의 사용자 본인만 대상이다.
+- `password_hash`가 없는 계정(OAuth 전용)은 "현재 비밀번호"가 성립하지 않아 `400`이다.
+- 성공하면 **현재 세션을 제외한** refresh token을 전부 폐기한다. 비밀번호가 샜을 때 다른 기기의
+  세션을 끊으면서, 방금 현재 비밀번호로 본인 확인을 마친 사용자는 로그아웃시키지 않기 위해서다.
+  refresh 쿠키가 없으면 지킬 세션을 특정할 수 없어 전부 폐기한다.
+- 비로그인 `password-reset`이 세션을 **전부** 폐기하는 것과 다르다. 그쪽은 요청자가 메일함만
+  통제하고 있어 지켜줄 현재 세션이 없다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X PUT "$ACCESS/api/auth/me/password" \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  -b 'fruition_refresh_token=<refresh_token>' \
+  --data '{"current_password":"password1234","new_password":"newPassword1234"}' \
+  -i
+```
+
+```
+HTTP/1.1 204 No Content
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: changePassword`)
+
+[↑ 요약으로 돌아가기](#summary-put-api-auth-me-password)
 
 </details>
 
