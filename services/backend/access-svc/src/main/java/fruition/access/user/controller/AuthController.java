@@ -13,6 +13,7 @@ import fruition.access.user.dto.EmailChangeRequest;
 import fruition.access.user.dto.PasswordChangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.dto.RefreshRequest;
+import fruition.access.user.dto.SessionListResponse;
 import fruition.access.user.dto.SignupRequest;
 import fruition.access.user.dto.SignupResponse;
 import fruition.access.user.dto.VerificationConfirmRequest;
@@ -38,6 +39,7 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -274,6 +276,39 @@ public class AuthController {
             @Valid @RequestBody EmailChangeRequest request,
             @CookieValue(name = REFRESH_COOKIE_NAME, required = false) String refreshToken) {
         return ResponseEntity.ok(authService.changeEmail(userId, request, refreshToken));
+    }
+
+    @Operation(summary = "로그인 세션 목록",
+            description = "폐기되지 않은 로그인 세션을 최근 로그인 순으로 반환합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "조회 성공",
+            content = @Content(schema = @Schema(implementation = SessionListResponse.class))),
+        @ApiResponse(responseCode = "401", description = "인증되지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/me/sessions")
+    public ResponseEntity<SessionListResponse> sessions(
+            @AuthenticationPrincipal String userId,
+            @CookieValue(name = REFRESH_COOKIE_NAME, required = false) String refreshToken) {
+        return ResponseEntity.ok(authService.sessions(userId, refreshToken));
+    }
+
+    @Operation(summary = "특정 기기 로그아웃",
+            description = "지정한 세션의 refresh token을 폐기합니다. 현재 세션도 지정할 수 있습니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "폐기 성공"),
+        @ApiResponse(responseCode = "401", description = "인증되지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "세션을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @DeleteMapping("/me/sessions/{session_id}")
+    public ResponseEntity<Void> revokeSession(
+            @AuthenticationPrincipal String userId,
+            @Parameter(description = "세션 ID", example = "42")
+            @PathVariable("session_id") Long sessionId) {
+        authService.revokeSession(userId, sessionId);
+        return ResponseEntity.noContent().build();
     }
 
     private ResponseEntity<LoginResponse> authenticatedResponse(LoginResponse response) {

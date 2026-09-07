@@ -44,6 +44,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import jakarta.servlet.http.Cookie;
 
+import fruition.access.user.dto.SessionListResponse;
+import fruition.access.user.dto.SessionResponse;
+import fruition.access.user.exception.SessionNotFoundException;
+import java.util.List;
 import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -58,10 +62,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 
 @WebMvcTest(AuthController.class)
 @Import({AccessExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
         OAuthExchangeCodeStore.class, OAuth2AuthenticationSuccessHandler.class, OAuth2AuthenticationFailureHandler.class})
+
 class AuthControllerTest {
 
     @Autowired MockMvc mockMvc;
@@ -483,5 +489,54 @@ class AuthControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"new@example.com\",\"purpose\":\"email_change\"}"))
                 .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void sessions_authenticated_returns200() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+        when(authService.sessions("user_1f9a74af", "current-refresh")).thenReturn(
+                new SessionListResponse(List.of(
+                        new SessionResponse(42L, "Mozilla/5.0 (Macintosh)", true,
+                                Instant.parse("2026-09-07T04:25:24Z"), Instant.parse("2026-09-21T04:25:24Z")),
+                        new SessionResponse(41L, null, false,
+                                Instant.parse("2026-09-01T04:25:24Z"), Instant.parse("2026-09-15T04:25:24Z")))));
+
+        mockMvc.perform(get("/api/auth/me/sessions")
+                        .header("Authorization", "Bearer " + token)
+                        .cookie(new jakarta.servlet.http.Cookie("fruition_refresh_token", "current-refresh")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessions[0].session_id").value(42))
+                .andExpect(jsonPath("$.sessions[0].current").value(true))
+                .andExpect(jsonPath("$.sessions[0].user_agent").value("Mozilla/5.0 (Macintosh)"))
+                .andExpect(jsonPath("$.sessions[1].current").value(false))
+                .andExpect(jsonPath("$.sessions[1].user_agent").doesNotExist());
+    }
+
+    @Test
+    void sessions_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(get("/api/auth/me/sessions"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void revokeSession_returns204() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+
+        mockMvc.perform(delete("/api/auth/me/sessions/42")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNoContent());
+        verify(authService).revokeSession("user_1f9a74af", 42L);
+    }
+
+    @Test
+    void revokeSession_unknownSession_returns404() throws Exception {
+        String token = jwtTokenProvider.generateAccessToken("user_1f9a74af", "test@example.com");
+        doThrow(new SessionNotFoundException(99L))
+                .when(authService).revokeSession("user_1f9a74af", 99L);
+
+        mockMvc.perform(delete("/api/auth/me/sessions/99")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("SESSION_NOT_FOUND"));
     }
 }
