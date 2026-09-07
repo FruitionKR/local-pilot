@@ -4,7 +4,7 @@
 
 가입·이메일 인증·로그인·토큰 API다.
 
-- API 수: 10
+- API 수: 11
 
 ## API 목차
 
@@ -16,6 +16,7 @@
 | [`POST /api/auth/login`](#summary-post-api-auth-login) | 이메일/비밀번호를 검증하고 access token과 HttpOnly refresh 쿠키를 발급합니다. |
 | [`POST /api/auth/logout`](#summary-post-api-auth-logout) | HttpOnly refresh 쿠키를 폐기하고 제거합니다. |
 | [`GET /api/auth/me`](#summary-get-api-auth-me) | access token으로 인증된 사용자의 프로필을 반환합니다. |
+| [`PATCH /api/auth/me`](#summary-patch-api-auth-me) | 인증된 사용자의 표시 이름을 변경합니다. |
 | [`POST /api/auth/oauth/exchange`](#summary-post-api-auth-oauth-exchange) | OAuth code를 access token과 HttpOnly refresh 쿠키로 교환합니다. |
 | [`POST /api/auth/password-reset`](#summary-post-api-auth-password-reset) | verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 세션을 폐기합니다. |
 | [`POST /api/auth/refresh`](#summary-post-api-auth-refresh) | HttpOnly refresh 쿠키를 검증하고 access token과 refresh 쿠키를 회전합니다. |
@@ -606,6 +607,91 @@ curl -X GET "$ACCESS/api/auth/me" \
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: me`)
 
 [↑ 요약으로 돌아가기](#summary-get-api-auth-me)
+
+</details>
+
+<a id="summary-patch-api-auth-me"></a>
+### `PATCH /api/auth/me`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 인증된 사용자의 표시 이름을 변경합니다. |
+| 입력 | **Body** — `DisplayNameUpdateRequest` |
+| 출력 | `200` 변경 성공 — `MeResponse` |
+| 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다. |
+| 주요 오류 | `400` 잘못된 요청 — `ErrorResponse`<br>`401` 인증되지 않음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`PATCH /api/auth/me`
+
+#### 2. 목적
+
+인증된 사용자의 표시 이름을 변경한다. 이메일과 provider는 이 API로 바꿀 수 없다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- `Authorization: Bearer <access_token>`을 검증한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| body | `display_name` | `string` | 예 | 새 표시 이름(255자 이하). 서버가 앞뒤 공백을 제거한다 |
+
+```json
+{
+  "display_name": "새 이름"
+}
+```
+
+#### 5. Response body
+
+- HTTP `200`: 변경 성공 — `MeResponse`
+
+```json
+{
+  "id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
+  "email": "user@example.com",
+  "display_name": "새 이름",
+  "created_at": "2026-08-13T04:25:24.371948Z"
+}
+```
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `400` | `display_name`이 비었거나 255자를 넘음 | `INVALID_REQUEST` |
+| `401` | access token이 없거나 유효하지 않음 | — |
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 토큰의 사용자 본인만 대상이다. 경로에 사용자 ID를 받지 않으므로 남의 프로필은 바꿀 수 없다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X PATCH "$ACCESS/api/auth/me" \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  --data '{"display_name":"새 이름"}'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: updateDisplayName`)
+
+[↑ 요약으로 돌아가기](#summary-patch-api-auth-me)
 
 </details>
 

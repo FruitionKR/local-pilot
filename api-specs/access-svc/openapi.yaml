@@ -187,6 +187,37 @@ paths:
       summary: 내 정보 조회
       tags:
       - Auth
+    patch:
+      description: 인증된 사용자의 표시 이름을 변경합니다.
+      operationId: updateDisplayName
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisplayNameUpdateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+          description: 변경 성공
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 잘못된 요청
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 인증되지 않음
+      summary: 표시 이름 변경
+      tags:
+      - Auth
   /api/auth/oauth/exchange:
     post:
       description: OAuth 로그인 성공 후 발급된 1회용 code를 access token과 HttpOnly refresh 쿠키로 교환합니다.
@@ -940,6 +971,17 @@ components:
       required:
       - model
       - provider
+    DisplayNameUpdateRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+          description: 새 표시 이름(255자 이하)
+          example: 새 이름
+          maxLength: 255
+          minLength: 0
+      required:
+      - display_name
     EmailAvailabilityRequest:
       type: object
       properties:

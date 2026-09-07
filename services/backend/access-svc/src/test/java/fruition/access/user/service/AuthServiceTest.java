@@ -7,7 +7,10 @@ import fruition.access.user.domain.UserRefreshToken;
 import fruition.access.user.dto.LoginRequest;
 import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
+import fruition.access.user.dto.DisplayNameUpdateRequest;
+import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.PasswordResetRequest;
+import fruition.access.user.exception.UserNotFoundException;
 import fruition.access.user.dto.RefreshRequest;
 import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
@@ -236,5 +239,25 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.exchangeOAuthCode(new OAuthExchangeRequest(code)))
                 .isInstanceOf(InvalidOAuthCodeException.class);
+    }
+
+    @Test
+    void updateDisplayName_trimsAndReturnsUpdatedProfile() {
+        User user = new User("user_1", "user@example.com", User.PROVIDER_LOCAL, "옛 이름", "hash");
+        when(userRepository.findById("user_1")).thenReturn(Optional.of(user));
+
+        MeResponse response = authService.updateDisplayName("user_1", new DisplayNameUpdateRequest("  새 이름  "));
+
+        assertThat(response.displayName()).isEqualTo("새 이름");
+        assertThat(user.getDisplayName()).isEqualTo("새 이름");
+        assertThat(response.email()).isEqualTo("user@example.com");
+    }
+
+    @Test
+    void updateDisplayName_unknownUserThrows() {
+        when(userRepository.findById("user_none")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.updateDisplayName("user_none", new DisplayNameUpdateRequest("이름")))
+                .isInstanceOf(UserNotFoundException.class);
     }
 }

@@ -8,6 +8,7 @@ import fruition.access.user.dto.LoginRequest;
 import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
+import fruition.access.user.dto.DisplayNameUpdateRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.dto.RefreshRequest;
 import fruition.access.user.dto.SignupRequest;
@@ -36,6 +37,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -214,6 +216,22 @@ public class AuthController {
     @GetMapping("/me")
     public ResponseEntity<MeResponse> me(@AuthenticationPrincipal String userId) {
         return ResponseEntity.ok(authService.me(userId));
+    }
+
+    @Operation(summary = "표시 이름 변경", description = "인증된 사용자의 표시 이름을 변경합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "변경 성공",
+            content = @Content(schema = @Schema(implementation = MeResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "401", description = "인증되지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PatchMapping("/me")
+    public ResponseEntity<MeResponse> updateDisplayName(
+            @AuthenticationPrincipal String userId,
+            @Valid @RequestBody DisplayNameUpdateRequest request) {
+        return ResponseEntity.ok(authService.updateDisplayName(userId, request));
     }
 
     private ResponseEntity<LoginResponse> authenticatedResponse(LoginResponse response) {

@@ -8,6 +8,7 @@ import fruition.access.user.dto.LoginRequest;
 import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.MeResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
+import fruition.access.user.dto.DisplayNameUpdateRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.dto.RefreshRequest;
 import fruition.access.user.exception.InvalidCredentialsException;
@@ -126,6 +127,15 @@ public class AuthService {
     public MeResponse me(String userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
+        return new MeResponse(user.getId(), user.getEmail(), user.getDisplayName(), user.getCreatedAt());
+    }
+
+    @Transactional
+    public MeResponse updateDisplayName(String userId, DisplayNameUpdateRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+        user.changeDisplayName(request.displayName().trim());
+        log.info("[표시 이름 변경] userId={}", userId);
         return new MeResponse(user.getId(), user.getEmail(), user.getDisplayName(), user.getCreatedAt());
     }
 
