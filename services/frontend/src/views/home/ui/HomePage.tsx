@@ -20,7 +20,7 @@ export default function HomePage() {
   const { isSuccess, isError } = useMe({ enabled: hasWorkspace });
 
   // 저장된 workspace_id가 삭제됐거나 다른 계정 것일 수 있어, 소유 목록과 대조해 검증한다.
-  const { data: workspaceList } = useQuery({
+  const { data: workspaceList, isError: isWorkspaceListError } = useQuery({
     queryKey: ["workspaces"],
     queryFn: fetchWorkspaces,
     staleTime: Infinity,
@@ -46,7 +46,8 @@ export default function HomePage() {
     if (isError) void signOut();
   }, [isError, signOut]);
 
-  if (!hasWorkspace || !isSuccess || workspaceList == null || isStaleWorkspace) {
+  // 목록 조회가 실패하면 검증을 생략하고 홈을 렌더한다(무한 로딩 방지). 잘못된 id는 화면 오류로 드러난다.
+  if (!hasWorkspace || !isSuccess || (workspaceList == null && !isWorkspaceListError) || isStaleWorkspace) {
     return <LoadingOverlay message="워크스페이스 불러오는 중…" />;
   }
   return <HomeWorkspace />;

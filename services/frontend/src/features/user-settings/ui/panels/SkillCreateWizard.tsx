@@ -103,7 +103,7 @@ export function SkillCreateWizard({
 
   // 기존 스킬 커맨드와 중복되면 STEP 1에서 미리 막는다 (서버도 게시 시점에 중복을 차단한다).
   const { data: existingSkills } = useQuery({
-    queryKey: ["skills"],
+    queryKey: ["skills", workspaceId],
     queryFn: () => fetchSkills(workspaceId),
     staleTime: 60_000
   });
@@ -133,9 +133,11 @@ export function SkillCreateWizard({
   const validCommand = COMMAND_PATTERN.test(command.trim()) ? command.trim() : undefined;
   // STEP 3 표시·게시용 최종 커맨드명: 사용자가 넣은 유효 커맨드가 없으면 AI 초안 name을 쓴다.
   const publishName = validCommand ?? draft?.name ?? "";
-  // 기존 스킬 커맨드와 중복이면 STEP 1에서 미리 막는다.
+  // 기존 스킬 커맨드와 중복이면 미리 막는다. STEP1은 입력값, STEP3 게시는 AI 이름 포함 최종값 기준.
   const isDuplicateCommand =
     validCommand != null && (existingSkills ?? []).some((skill) => skill.slug === validCommand);
+  const isDuplicatePublishName =
+    publishName !== "" && (existingSkills ?? []).some((skill) => skill.slug === publishName);
 
   // 검토 오버레이 상태 머신 — react-query 파생값 대신 한 상태로 관리해
   // loading→complete 전환이 단일 setState로 이뤄져 프레임 공백(끊김)이 없다.
@@ -179,9 +181,25 @@ export function SkillCreateWizard({
         allowed_tools: draft.allowed_tools,
         capabilities: draft.capabilities
       };
-      // 팀 스킬은 publish를 호출한 워크스페이스에 귀속된다. 여러 개 선택 시 각 워크스페이스에 게시한다.
+      // 팀 스킬은 publish를 호출한 워크스페이스에 귀속된다. 여러 개 선택 시 각 워크스페이스에 게시하되,
+      // 일부 실패 시 성공분은 유지하고 실패한 워크스페이스만 알려 재시도 중복 게시를 막는다.
       if (scopeType === "team") {
-        return Promise.all(targetWorkspaceIds.map((id) => publishSkill(id, body))).then((results) => results[0]);
+        return Promise.allSettled(targetWorkspaceIds.map((id) => publishSkill(id, body))).then((results) => {
+          const failedNames = results
+            .map((result, index) => (result.status === "rejected" ? targetWorkspaceIds[index] : null))
+            .filter((id): id is string => id != null)
+            .map((id) => ownedWorkspaces.find((workspace) => workspace.id === id)?.name ?? id);
+          if (failedNames.length > 0) {
+            // 성공한 워크스페이스는 재시도 대상에서 제외한다.
+            setTargetWorkspaceIds((current) =>
+              current.filter((id, index) => results[index]?.status === "rejected")
+            );
+            throw new Error(`일부 워크스페이스 게시에 실패했습니다: ${failedNames.join(", ")}`);
+          }
+          const first = results[0];
+          if (first.status === "rejected") throw first.reason;
+          return first.value;
+        });
       }
       return publishSkill(workspaceId, body);
     },
@@ -496,6 +514,12 @@ export function SkillCreateWizard({
             />
           </div>
 
+          {isDuplicatePublishName && (
+            <small className={styles.error} role="alert">
+              이미 사용 중인 커맨드입니다. 커맨드 이름을 수정해 주세요.
+            </small>
+          )}
+
           {/* 개인 스킬은 모든 워크스페이스에서 쓰여 선택이 무의미하므로 섹션을 표시하지 않는다 (Figma 1039:8579) */}
           {scopeType === "team" && (
             <div className={styles.field}>
@@ -574,7 +598,7 @@ export function SkillCreateWizard({
             <button
               type="button"
               className={styles["btn-primary"]}
-              disabled={publishMutation.isPending || publishName.length === 0}
+              disabled={publishMutation.isPending || publishName.length === 0 || isDuplicatePublishName}
               onClick={() => publishMutation.mutate()}
             >
               {publishMutation.isPending ? "게시 중…" : "최종 게시 ›"}

@@ -17,7 +17,7 @@ import { SkillCreateWizard } from "./SkillCreateWizard";
 import { SkillSearchModal } from "./SkillSearchModal";
 import styles from "./SkillsPanel.module.css";
 
-const SKILLS_QUERY_KEY = ["skills"] as const;
+
 
 // 저장범위·상태 필터 순환 순서
 const SCOPE_FILTERS = ["all", "personal", "team"] as const;
@@ -51,6 +51,8 @@ interface EditDraft {
 export function SkillsPanel() {
   const queryClient = useQueryClient();
   const workspaceId = getSelectedWorkspaceId();
+  // 워크스페이스별 캐시 분리 (documents 쿼리 키 관례와 동일)
+  const SKILLS_QUERY_KEY = ["skills", workspaceId] as const;
   const [toggleError, setToggleError] = useState<string | null>(null);
 
   // 필터·검색 상태 (전부 클라이언트 필터링)
