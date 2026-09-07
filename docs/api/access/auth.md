@@ -4,7 +4,7 @@
 
 가입·이메일 인증·로그인·토큰 API다.
 
-- API 수: 13
+- API 수: 15
 
 ## API 목차
 
@@ -18,6 +18,8 @@
 | [`GET /api/auth/me`](#summary-get-api-auth-me) | access token으로 인증된 사용자의 프로필을 반환합니다. |
 | [`PATCH /api/auth/me`](#summary-patch-api-auth-me) | 인증된 사용자의 표시 이름을 변경합니다. |
 | [`PUT /api/auth/me/email`](#summary-put-api-auth-me-email) | 새 이메일로 받은 인증번호 토큰으로 계정 이메일을 바꿉니다. |
+| [`GET /api/auth/me/sessions`](#summary-get-api-auth-me-sessions) | 폐기되지 않은 로그인 세션을 반환합니다. |
+| [`DELETE /api/auth/me/sessions/{session_id}`](#summary-delete-api-auth-me-sessions-session-id) | 지정한 세션의 refresh token을 폐기합니다. |
 | [`PUT /api/auth/me/password`](#summary-put-api-auth-me-password) | 현재 비밀번호를 확인하고 새 비밀번호로 바꿉니다. |
 | [`POST /api/auth/oauth/exchange`](#summary-post-api-auth-oauth-exchange) | OAuth code를 access token과 HttpOnly refresh 쿠키로 교환합니다. |
 | [`POST /api/auth/password-reset`](#summary-post-api-auth-password-reset) | verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 세션을 폐기합니다. |
@@ -707,6 +709,16 @@ curl -X PATCH "$ACCESS/api/auth/me" \
 | 출력 | `200` 변경 성공 — `MeResponse` |
 | 조건 | 인증 필요<br>`purpose=email_change`로 **새 주소에** 발급받은 토큰이어야 한다. |
 | 주요 오류 | `400` 유효하지 않은 `verification_token` — `ErrorResponse`<br>`401` 인증되지 않음 — `ErrorResponse`<br>`409` 같은 provider에 이미 그 이메일 계정이 있음 — `ErrorResponse` |
+<a id="summary-get-api-auth-me-sessions"></a>
+### `GET /api/auth/me/sessions`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 폐기되지 않은 로그인 세션을 최근 로그인 순으로 반환합니다. |
+| 입력 | **Cookie** — `fruition_refresh_token`(선택) |
+| 출력 | `200` 조회 성공 — `SessionListResponse` |
+| 조건 | 인증 필요 |
+| 주요 오류 | `401` 인증되지 않음 — `ErrorResponse` |
 
 <details>
 <summary>상세 계약 보기</summary>
@@ -724,6 +736,11 @@ curl -X PATCH "$ACCESS/api/auth/me" \
 1. `POST /api/auth/email-verifications` — `{"email": "<새 주소>", "purpose": "email_change"}`
 2. `POST /api/auth/email-verifications/{verification_id}/confirm` — 코드 검증, `verification_token` 발급
 3. `PUT /api/auth/me/email` — 토큰으로 확정
+`GET /api/auth/me/sessions`
+
+#### 2. 목적
+
+로그인된 기기 목록이다. refresh token 하나가 세션 하나에 대응한다.
 
 #### 3. Auth 필요 여부
 
@@ -758,6 +775,34 @@ curl -X PATCH "$ACCESS/api/auth/me" \
 }
 ```
 
+- refresh 쿠키를 함께 읽어 지금 요청을 보낸 세션에 `current: true`를 단다. 쿠키가 없으면 전부 `false`다.
+
+#### 4. Request body
+
+- 요청 본문 없음
+
+#### 5. Response body
+
+```json
+{
+  "sessions": [
+    {
+      "session_id": 42,
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      "current": true,
+      "created_at": "2026-09-07T04:25:24.371948Z",
+      "expires_at": "2026-09-21T04:25:24.371948Z"
+    }
+  ]
+}
+```
+
+`user_agent`는 로그인 시점의 원문이다. 이 컬럼이 생기기 전에 발급된 세션은 `null`이라
+화면에서 "알 수 없는 기기"로 보여야 한다.
+
+`created_at`이 사실상 마지막 사용 시각이다. refresh는 토큰을 회전시켜 새 세션 행을 만들고
+옛 행을 폐기하므로, 활성 세션의 `created_at`은 마지막 갱신 시점이다.
+
 #### 6. Error response
 
 | HTTP 상태 | 설명 | 코드 |
@@ -766,6 +811,83 @@ curl -X PATCH "$ACCESS/api/auth/me" \
 | `400` | 토큰이 없거나 만료·소비됐거나 `new_email`과 다른 주소로 발급됨 | `INVALID_VERIFICATION_TOKEN` |
 | `401` | access token이 없거나 유효하지 않음 | — |
 | `409` | 같은 provider에 이미 그 이메일 계정이 있음 | `DUPLICATE_EMAIL` |
+| `401` | access token이 없거나 유효하지 않음 | — |
+
+#### 7. Pagination / filtering
+
+- 페이지네이션: 지원하지 않음
+- 정렬: `created_at` 내림차순 고정
+- 폐기된 세션은 반환하지 않는다
+
+#### 8. 권한 규칙
+
+- 토큰의 사용자 본인 세션만 반환한다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl "$ACCESS/api/auth/me/sessions" \
+  -H 'Authorization: Bearer <access_token>' \
+  -b 'fruition_refresh_token=<refresh_token>'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: sessions`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-auth-me-sessions)
+
+</details>
+
+<a id="summary-delete-api-auth-me-sessions-session-id"></a>
+### `DELETE /api/auth/me/sessions/{session_id}`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 지정한 세션의 refresh token을 폐기합니다. |
+| 입력 | **Path** — `session_id`: `integer` |
+| 출력 | `204` 폐기 성공 — 본문 없음 |
+| 조건 | 인증 필요<br>본인 세션이어야 한다. |
+| 주요 오류 | `401` 인증되지 않음 — `ErrorResponse`<br>`404` 세션을 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`DELETE /api/auth/me/sessions/{session_id}`
+
+#### 2. 목적
+
+특정 기기를 로그아웃시킨다. 현재 세션을 지정하면 스스로 로그아웃하는 것이라 허용한다 —
+다만 refresh 쿠키는 지워지지 않으므로, 현재 세션을 끊을 때는
+[`POST /api/auth/logout`](#summary-post-api-auth-logout)을 쓰는 편이 낫다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| path | `session_id` | `integer` | 예 | `GET /api/auth/me/sessions`가 준 세션 ID |
+
+- 요청 본문 없음
+
+#### 5. Response body
+
+- HTTP `204`: 폐기 성공, 본문 없음
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `401` | access token이 없거나 유효하지 않음 | — |
+| `404` | 세션이 없거나, 남의 세션이거나, 이미 폐기됨 | `SESSION_NOT_FOUND` |
+
+셋을 모두 `404`로 통일한다. 남의 세션을 `403`으로 구분하면 세션 ID 존재 여부가 드러난다.
 
 #### 7. Pagination / filtering
 
@@ -781,6 +903,9 @@ curl -X PATCH "$ACCESS/api/auth/me" \
 - 성공하면 현재 세션을 제외한 refresh token을 폐기한다. 비밀번호 변경과 같은 기준이다.
 - 인증번호 발송(`POST /api/auth/email-verifications`)은 인증이 필요 없는 엔드포인트라,
   중복 확인은 여기 확정 시점에 한다. 발송 단계에서는 계정 존재 여부를 노출하지 않는다.
+- 본인 세션만 폐기할 수 있다.
+- 폐기된 세션의 refresh token으로는 더 이상 access token을 갱신할 수 없다. 이미 발급된
+  access token은 만료(기본 900초)까지 유효하다.
 
 #### 9. 예시 요청/응답
 
@@ -790,6 +915,9 @@ curl -X PUT "$ACCESS/api/auth/me/email" \
   -H 'Content-Type: application/json' \
   -b 'fruition_refresh_token=<refresh_token>' \
   --data '{"new_email":"new@example.com","verification_token":"<token>"}'
+curl -X DELETE "$ACCESS/api/auth/me/sessions/42" \
+  -H 'Authorization: Bearer <access_token>' \
+  -i
 ```
 
 #### 10. 구현 파일
@@ -798,6 +926,9 @@ curl -X PUT "$ACCESS/api/auth/me/email" \
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: changeEmail`)
 
 [↑ 요약으로 돌아가기](#summary-put-api-auth-me-email)
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: revokeSession`)
+
+[↑ 요약으로 돌아가기](#summary-delete-api-auth-me-sessions-session-id)
 
 </details>
 

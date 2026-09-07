@@ -14,11 +14,14 @@ import fruition.access.user.dto.PasswordChangeRequest;
 import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.dto.RefreshRequest;
 import fruition.access.user.exception.DuplicateEmailException;
+import fruition.access.user.dto.SessionListResponse;
+import fruition.access.user.dto.SessionResponse;
 import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidVerificationTokenException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
 import fruition.access.user.exception.InvalidRefreshTokenException;
 import fruition.access.user.exception.PasswordLoginUnavailableException;
+import fruition.access.user.exception.SessionNotFoundException;
 import fruition.access.user.exception.UserNotFoundException;
 import fruition.access.user.repository.UserRefreshTokenRepository;
 import fruition.access.user.repository.UserRepository;
@@ -30,6 +33,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -261,12 +267,56 @@ public class AuthService {
         log.info("[비밀번호 재설정 성공] userId={} email={}", user.getId(), user.getEmail());
     }
 
+    /** 폐기되지 않은 세션 목록. 지금 요청을 보낸 세션에는 {@code current} 표시를 단다. */
+    public SessionListResponse sessions(String userId, String currentRefreshToken) {
+        String currentHash = currentRefreshToken == null ? null : sha256(currentRefreshToken);
+        return new SessionListResponse(
+                refreshTokenRepository.findAllByUserIdAndRevokedAtIsNullOrderByCreatedAtDesc(userId).stream()
+                        .map(token -> new SessionResponse(
+                                token.getId(),
+                                token.getUserAgent(),
+                                token.getTokenHash().equals(currentHash),
+                                token.getCreatedAt(),
+                                token.getExpiresAt()))
+                        .toList());
+    }
+
+    /** 특정 기기 로그아웃. 현재 세션을 지정하면 스스로 로그아웃하는 것이라 허용한다. */
+    @Transactional
+    public void revokeSession(String userId, Long sessionId) {
+        UserRefreshToken token = refreshTokenRepository.findById(sessionId)
+                // 남의 세션도 존재를 드러내지 않도록 404로 통일한다.
+                .filter(found -> found.getUserId().equals(userId))
+                .filter(found -> found.getRevokedAt() == null)
+                .orElseThrow(() -> new SessionNotFoundException(sessionId));
+        token.revoke();
+        log.info("[세션 폐기] userId={} sessionId={}", userId, sessionId);
+    }
+
+    /**
+     * 요청의 User-Agent. 발급 경로가 login·refresh·OAuth 교환 셋이라 시그니처를 모두 바꾸는 대신
+     * 요청 컨텍스트에서 읽는다({@code BaseExceptionHandler}가 요청 정보를 읽는 방식과 같다).
+     * 요청 밖(테스트·비동기)에서는 null이다.
+     */
+    private String currentUserAgent() {
+        RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
+        if (!(attributes instanceof ServletRequestAttributes servletAttributes)) {
+            return null;
+        }
+        String userAgent = servletAttributes.getRequest().getHeader("User-Agent");
+        if (userAgent == null || userAgent.isBlank()) {
+            return null;
+        }
+        return userAgent.length() > 512 ? userAgent.substring(0, 512) : userAgent;
+    }
+
     private LoginResponse issueTokenPair(User user) {
         String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getEmail());
 
         String refreshTokenValue = generateOpaqueToken();
         Instant expiresAt = Instant.now().plusSeconds(refreshTokenExpirationSeconds);
-        refreshTokenRepository.save(new UserRefreshToken(user.getId(), sha256(refreshTokenValue), expiresAt));
+        refreshTokenRepository.save(new UserRefreshToken(
+                user.getId(), sha256(refreshTokenValue), expiresAt, currentUserAgent()));
 
         return new LoginResponse(accessToken, refreshTokenValue, "Bearer", jwtTokenProvider.getAccessTokenExpirationSeconds());
     }

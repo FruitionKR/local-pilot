@@ -26,12 +26,21 @@ public class UserRefreshToken {
     @Column(name = "revoked_at")
     private Instant revokedAt;
 
+    /** 발급 요청의 User-Agent 원문. 세션 목록에서 기기를 구분하는 유일한 단서다. */
+    @Column(name = "user_agent", length = 512)
+    private String userAgent;
+
     protected UserRefreshToken() {}
 
     public UserRefreshToken(String userId, String tokenHash, Instant expiresAt) {
+        this(userId, tokenHash, expiresAt, null);
+    }
+
+    public UserRefreshToken(String userId, String tokenHash, Instant expiresAt, String userAgent) {
         this.userId = userId;
         this.tokenHash = tokenHash;
         this.expiresAt = expiresAt;
+        this.userAgent = userAgent;
         this.createdAt = Instant.now();
     }
 
@@ -49,4 +58,5 @@ public class UserRefreshToken {
     public Instant getExpiresAt() { return expiresAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getRevokedAt() { return revokedAt; }
+    public String getUserAgent() { return userAgent; }
 }

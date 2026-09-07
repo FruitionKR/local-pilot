@@ -32,6 +32,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import fruition.access.user.dto.SessionResponse;
+import fruition.access.user.exception.SessionNotFoundException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -423,4 +425,61 @@ class AuthServiceTest {
         verifyNoInteractions(refreshTokenRepository);
     }
 
+    private UserRefreshToken session(String rawToken, String userAgent) {
+        return new UserRefreshToken("user_1", sha256(rawToken), Instant.now().plusSeconds(3600), userAgent);
+    }
+
+    @Test
+    void sessions_marksRequestingSessionAsCurrent() {
+        UserRefreshToken current = session("current-refresh", "Mozilla/5.0 (Macintosh)");
+        UserRefreshToken other = session("other-refresh", "Mozilla/5.0 (iPhone)");
+        when(refreshTokenRepository.findAllByUserIdAndRevokedAtIsNullOrderByCreatedAtDesc("user_1"))
+                .thenReturn(List.of(current, other));
+
+        var sessions = authService.sessions("user_1", "current-refresh").sessions();
+
+        assertThat(sessions).extracting(SessionResponse::current).containsExactly(true, false);
+        assertThat(sessions).extracting(SessionResponse::userAgent)
+                .containsExactly("Mozilla/5.0 (Macintosh)", "Mozilla/5.0 (iPhone)");
+    }
+
+    @Test
+    void sessions_withoutRefreshCookie_marksNothingCurrent() {
+        when(refreshTokenRepository.findAllByUserIdAndRevokedAtIsNullOrderByCreatedAtDesc("user_1"))
+                .thenReturn(List.of(session("some-refresh", null)));
+
+        assertThat(authService.sessions("user_1", null).sessions())
+                .extracting(SessionResponse::current).containsExactly(false);
+    }
+
+    @Test
+    void revokeSession_revokesOwnSession() {
+        UserRefreshToken token = session("some-refresh", "UA");
+        when(refreshTokenRepository.findById(7L)).thenReturn(Optional.of(token));
+
+        authService.revokeSession("user_1", 7L);
+
+        assertThat(token.getRevokedAt()).isNotNull();
+    }
+
+    @Test
+    void revokeSession_otherUsersSessionThrows() {
+        UserRefreshToken token = new UserRefreshToken(
+                "user_other", sha256("x"), Instant.now().plusSeconds(3600), "UA");
+        when(refreshTokenRepository.findById(7L)).thenReturn(Optional.of(token));
+
+        assertThatThrownBy(() -> authService.revokeSession("user_1", 7L))
+                .isInstanceOf(SessionNotFoundException.class);
+        assertThat(token.getRevokedAt()).isNull();
+    }
+
+    @Test
+    void revokeSession_alreadyRevokedThrows() {
+        UserRefreshToken token = session("some-refresh", "UA");
+        token.revoke();
+        when(refreshTokenRepository.findById(7L)).thenReturn(Optional.of(token));
+
+        assertThatThrownBy(() -> authService.revokeSession("user_1", 7L))
+                .isInstanceOf(SessionNotFoundException.class);
+    }
 }
