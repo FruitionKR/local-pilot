@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { AiModel, AiModelSelection } from "@/entities/ai";
+import { renameWorkspace } from "@/entities/workspace";
+import { getErrorMessage } from "@/shared/lib/errors";
+import { getSelectedWorkspaceId } from "@/shared/lib/auth";
 import { claudeIcon, geminiIcon, gptIcon, SvgIcon, type SvgAsset } from "@/shared/ui/SvgIcon";
 import styles from "../SettingsModal.module.css";
 import panelStyles from "./WorkspacePanel.module.css";
@@ -40,6 +44,35 @@ export function WorkspacePanel({
   // "모델 변경" 클릭 시에만 provider 선택 목록을 펼친다.
   const [isProviderListOpen, setIsProviderListOpen] = useState(false);
 
+  const queryClient = useQueryClient();
+  const [nameInput, setNameInput] = useState(wsName);
+  const [isNameSaving, setIsNameSaving] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  // 워크스페이스 목록이 늦게 로드되면 초기값을 따라잡는다(사용자가 편집 중이 아닐 때만).
+  useEffect(() => {
+    setNameInput((current) => (current === "" || current === "워크스페이스" ? wsName : current));
+  }, [wsName]);
+
+  const trimmedName = nameInput.trim();
+  const canSaveName = trimmedName.length > 0 && trimmedName.length <= 65 && trimmedName !== wsName && !isNameSaving;
+
+  async function saveWorkspaceName() {
+    const workspaceId = getSelectedWorkspaceId();
+    if (!workspaceId || !canSaveName) return;
+    setIsNameSaving(true);
+    setNameError(null);
+    try {
+      await renameWorkspace(workspaceId, trimmedName);
+      // 사이드바 등 useWorkspaceName 소비처가 새 이름을 반영하도록 캐시를 무효화한다.
+      await queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+    } catch (error: unknown) {
+      setNameError(getErrorMessage(error, "워크스페이스 이름을 변경하지 못했습니다."));
+    } finally {
+      setIsNameSaving(false);
+    }
+  }
+
   // 카탈로그에 실제로 존재하는 provider만 노출한다.
   const providers = Array.from(new Set(aiModels.map((model) => model.provider)));
   const selectedMeta = aiModelSelection ? providerMeta[aiModelSelection.provider] : undefined;
@@ -61,7 +94,26 @@ export function WorkspacePanel({
         <div className={styles.field}>
           <label htmlFor="workspace-name">워크스페이스 이름</label>
           <small>워크스페이스 이름은 최대 65자까지 입력할 수 있습니다.</small>
-          <input id="workspace-name" type="text" value={wsName} readOnly />
+          <div className={panelStyles["name-edit"]}>
+            <input
+              id="workspace-name"
+              type="text"
+              maxLength={65}
+              value={nameInput}
+              onChange={(event) => setNameInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void saveWorkspaceName();
+              }}
+            />
+            <button type="button" className={styles.btn} disabled={!canSaveName} onClick={() => void saveWorkspaceName()}>
+              {isNameSaving ? "저장 중…" : "저장"}
+            </button>
+          </div>
+          {nameError && (
+            <small className={styles["model-error"]} role="alert">
+              {nameError}
+            </small>
+          )}
         </div>
       </div>
 

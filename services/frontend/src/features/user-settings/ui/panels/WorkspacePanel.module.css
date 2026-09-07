@@ -1,5 +1,12 @@
 /* 워크스페이스 설정 패널 전용 스타일 (Figma 771:18800). */
 
+/* 이름 입력 + 저장 버튼 가로 배치 */
+.name-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* AI 모델 우측 영역: 현재 선택 pill + 변경 버튼 + 펼침 목록 */
 .model-controls {
   display: flex;
