@@ -375,7 +375,12 @@ export function SkillCreateWizard({
         </div>
 
         {authorError && (
-          <small className={styles.error} role="alert">{authorError}</small>
+          <small className={styles.error} role="alert">
+            {authorError}
+            {/* 서버가 재생성조차 거부한 경우: 위험 표현이 많아 자동 정화가 불가능한 상태 */}
+            {authorError.includes("거부") &&
+              " 위험한 표현이 많아 AI가 안전하게 재작성하지 못했습니다. 승인 우회·무확인 실행 같은 표현을 직접 고친 뒤 다시 검토해 주세요."}
+          </small>
         )}
 
         <div className={styles.footer}>
