@@ -94,8 +94,8 @@ export function SkillsPanel() {
   const toggleMutation = useMutation({
     mutationFn: ({ skill }: { skill: SkillResponse }) =>
       isSkillEnabled(skill)
-        ? disableSkill(skill.workspace_id, skill.id)
-        : enableSkill(skill.workspace_id, skill.id),
+        ? disableSkill(workspaceId ?? "", skill.id)
+        : enableSkill(workspaceId ?? "", skill.id),
     onSuccess: (updated) => {
       setToggleError(null);
       // 서버 응답으로 해당 행만 교체해 목록 재조회를 생략한다.
@@ -110,7 +110,7 @@ export function SkillsPanel() {
 
   const updateMutation = useMutation({
     mutationFn: ({ skill }: { skill: SkillResponse }) =>
-      updateSkill(skill.workspace_id, skill.id, {
+      updateSkill(workspaceId ?? "", skill.id, {
         description: editDraft.description,
         instructions_markdown: editDraft.instructionsMarkdown
       }),
