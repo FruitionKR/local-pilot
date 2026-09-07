@@ -2,8 +2,11 @@ package fruition.access.user.service;
 
 import fruition.shared.security.JwtTokenProvider;
 import fruition.access.security.oauth.OAuthExchangeCodeStore;
+import fruition.access.user.mfa.MfaService;
+import fruition.access.user.domain.UserMfaChallenge;
 import fruition.access.user.domain.User;
 import fruition.access.user.domain.UserRefreshToken;
+import fruition.access.user.dto.MfaLoginRequest;
 import fruition.access.user.dto.LoginRequest;
 import fruition.access.user.dto.LoginResponse;
 import fruition.access.user.dto.OAuthExchangeRequest;
@@ -15,11 +18,14 @@ import fruition.access.user.dto.PasswordResetRequest;
 import fruition.access.user.exception.UserNotFoundException;
 import fruition.access.user.dto.RefreshRequest;
 import fruition.access.user.exception.DuplicateEmailException;
+import fruition.access.user.exception.InvalidMfaChallengeException;
+import fruition.access.user.exception.InvalidMfaCodeException;
 import fruition.access.user.exception.InvalidCredentialsException;
 import fruition.access.user.exception.InvalidOAuthCodeException;
 import fruition.access.user.exception.InvalidRefreshTokenException;
 import fruition.access.user.exception.InvalidVerificationTokenException;
 import fruition.access.user.exception.PasswordLoginUnavailableException;
+import fruition.access.user.repository.UserMfaChallengeRepository;
 import fruition.access.user.repository.UserRefreshTokenRepository;
 import fruition.access.user.repository.UserRepository;
 import org.hibernate.exception.ConstraintViolationException;
@@ -42,6 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -52,6 +59,8 @@ class AuthServiceTest {
     @Mock UserRepository userRepository;
     @Mock UserRefreshTokenRepository refreshTokenRepository;
     @Mock EmailVerificationService emailVerificationService;
+    @Mock MfaService mfaService;
+    @Mock UserMfaChallengeRepository mfaChallengeRepository;
 
     PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     JwtTokenProvider jwtTokenProvider = new JwtTokenProvider(
@@ -80,7 +89,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(userRepository, refreshTokenRepository, passwordEncoder, jwtTokenProvider,
-                oAuthExchangeCodeStore, emailVerificationService, 1209600);
+                oAuthExchangeCodeStore, emailVerificationService, mfaService, mfaChallengeRepository, 1209600, 300);
     }
 
     private User newUser(String rawPassword) {
@@ -482,4 +491,101 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.revokeSession("user_1", 7L))
                 .isInstanceOf(SessionNotFoundException.class);
     }
+
+    /** MFA를 켠 사용자는 비밀번호만으로는 토큰을 못 받는다. */
+    @Test
+    void login_withMfaEnabled_returnsChallengeInsteadOfTokens() {
+        User user = newUser("password123");
+        when(userRepository.findByEmailAndProvider("test@example.com", User.PROVIDER_LOCAL))
+                .thenReturn(Optional.of(user));
+        when(mfaService.isEnabled(user.getId())).thenReturn(true);
+
+        LoginResponse response = authService.login(new LoginRequest("test@example.com", "password123"));
+
+        assertThat(response.mfaRequired()).isTrue();
+        assertThat(response.mfaToken()).isNotBlank();
+        assertThat(response.accessToken()).isNull();
+        // 토큰을 주지 않았으니 refresh token도 만들지 않는다.
+        verify(refreshTokenRepository, never()).save(any());
+        verify(mfaChallengeRepository).save(any(UserMfaChallenge.class));
+    }
+
+    /** MFA를 켜지 않은 사용자의 응답은 그대로다 — 기존 클라이언트가 깨지지 않는다. */
+    @Test
+    void login_withoutMfa_returnsTokensAsBefore() {
+        User user = newUser("password123");
+        when(userRepository.findByEmailAndProvider("test@example.com", User.PROVIDER_LOCAL))
+                .thenReturn(Optional.of(user));
+        when(mfaService.isEnabled(user.getId())).thenReturn(false);
+
+        LoginResponse response = authService.login(new LoginRequest("test@example.com", "password123"));
+
+        assertThat(response.accessToken()).isNotBlank();
+        assertThat(response.mfaRequired()).isNull();
+    }
+
+    @Test
+    void loginMfa_validCodeIssuesTokensAndConsumesChallenge() {
+        User user = newUser("password123");
+        UserMfaChallenge challenge = new UserMfaChallenge(
+                "mfc_1", user.getId(), sha256("mfa-token"), Instant.now().plusSeconds(300));
+        when(mfaChallengeRepository.findByTokenHash(sha256("mfa-token"))).thenReturn(Optional.of(challenge));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        LoginResponse response = authService.loginMfa(new MfaLoginRequest("mfa-token", "482917"));
+
+        assertThat(response.accessToken()).isNotBlank();
+        verify(mfaService).verify(user.getId(), "482917");
+        assertThat(challenge.isUsable()).isFalse();
+    }
+
+    /** 오타 한 번에 로그인을 처음부터 다시 하게 만들지 않는다. */
+    @Test
+    void loginMfa_wrongCodeKeepsChallengeUsable() {
+        User user = newUser("password123");
+        UserMfaChallenge challenge = new UserMfaChallenge(
+                "mfc_1", user.getId(), sha256("mfa-token"), Instant.now().plusSeconds(300));
+        when(mfaChallengeRepository.findByTokenHash(sha256("mfa-token"))).thenReturn(Optional.of(challenge));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        doThrow(new InvalidMfaCodeException()).when(mfaService).verify(user.getId(), "000000");
+
+        assertThatThrownBy(() -> authService.loginMfa(new MfaLoginRequest("mfa-token", "000000")))
+                .isInstanceOf(InvalidMfaCodeException.class);
+        assertThat(challenge.isUsable()).isTrue();
+        verify(refreshTokenRepository, never()).save(any());
+    }
+
+    @Test
+    void loginMfa_expiredChallengeThrows() {
+        UserMfaChallenge expired = new UserMfaChallenge(
+                "mfc_1", "user_1f9a74af", sha256("mfa-token"), Instant.now().minusSeconds(1));
+        when(mfaChallengeRepository.findByTokenHash(sha256("mfa-token"))).thenReturn(Optional.of(expired));
+
+        assertThatThrownBy(() -> authService.loginMfa(new MfaLoginRequest("mfa-token", "482917")))
+                .isInstanceOf(InvalidMfaChallengeException.class);
+    }
+
+    @Test
+    void loginMfa_unknownTokenThrows() {
+        when(mfaChallengeRepository.findByTokenHash(any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.loginMfa(new MfaLoginRequest("nope", "482917")))
+                .isInstanceOf(InvalidMfaChallengeException.class);
+    }
+    @Test
+    void exchangeOAuthCode_mfaEnabled_returnsChallengeWithoutTokens() {
+        User user = new User("oauth_mfa", "oauth@example.com", "google", "사용자", null);
+        when(userRepository.findById("oauth_mfa")).thenReturn(Optional.of(user));
+        when(mfaService.isEnabled("oauth_mfa")).thenReturn(true);
+        String code = oAuthExchangeCodeStore.issue("oauth_mfa");
+
+        LoginResponse response = authService.exchangeOAuthCode(new OAuthExchangeRequest(code));
+
+        assertThat(response.mfaRequired()).isTrue();
+        assertThat(response.mfaToken()).isNotBlank();
+        assertThat(response.accessToken()).isNull();
+        assertThat(response.refreshToken()).isNull();
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
 }

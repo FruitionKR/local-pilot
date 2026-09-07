@@ -4,7 +4,7 @@
 
 가입·이메일 인증·로그인·토큰 API다.
 
-- API 수: 15
+- API 수: 20
 
 ## API 목차
 
@@ -13,7 +13,7 @@
 | [`POST /api/auth/email-availability`](#summary-post-api-auth-email-availability) | 회원가입 전에 이메일로 신규 가입할 수 있는지 빠르게 확인합니다. 일반 회원가입 계정만 대상으로 확인하므로, OAuth로만 가입된 이메일은 일반 회원가입이 가능해 `available: true`를 반환합니다. |
 | [`POST /api/auth/email-verifications`](#summary-post-api-auth-email-verifications) | 회원가입/비밀번호 재설정/이메일 변경을 위한 인증번호를 발급합니다. |
 | [`POST /api/auth/email-verifications/{verification_id}/confirm`](#summary-post-api-auth-email-verifications-verification-id-confirm) | 인증번호를 검증하고 1회용 verification_token을 발급합니다. |
-| [`POST /api/auth/login`](#summary-post-api-auth-login) | 이메일/비밀번호를 검증하고 access token과 HttpOnly refresh 쿠키를 발급합니다. |
+| [`POST /api/auth/login`](#summary-post-api-auth-login) | 이메일/비밀번호를 검증하고 access token과 HttpOnly refresh 쿠키를 발급합니다. MFA를 켠 사용자에게는 `mfa_required`를 돌려줍니다. |
 | [`POST /api/auth/logout`](#summary-post-api-auth-logout) | HttpOnly refresh 쿠키를 폐기하고 제거합니다. |
 | [`GET /api/auth/me`](#summary-get-api-auth-me) | access token으로 인증된 사용자의 프로필을 반환합니다. |
 | [`PATCH /api/auth/me`](#summary-patch-api-auth-me) | 인증된 사용자의 표시 이름을 변경합니다. |
@@ -21,6 +21,11 @@
 | [`GET /api/auth/me/sessions`](#summary-get-api-auth-me-sessions) | 폐기되지 않은 로그인 세션을 반환합니다. |
 | [`DELETE /api/auth/me/sessions/{session_id}`](#summary-delete-api-auth-me-sessions-session-id) | 지정한 세션의 refresh token을 폐기합니다. |
 | [`PUT /api/auth/me/password`](#summary-put-api-auth-me-password) | 현재 비밀번호를 확인하고 새 비밀번호로 바꿉니다. |
+| [`POST /api/auth/login/mfa`](#summary-post-api-auth-login-mfa) | 다단계 인증 코드로 로그인을 마칩니다. |
+| [`GET /api/auth/me/mfa`](#summary-get-api-auth-me-mfa) | 다단계 인증 상태를 반환합니다. |
+| [`POST /api/auth/me/mfa`](#summary-post-api-auth-me-mfa) | secret과 복구 코드를 발급합니다(등록 1단계). |
+| [`POST /api/auth/me/mfa/activate`](#summary-post-api-auth-me-mfa-activate) | 코드를 확인하고 다단계 인증을 켭니다(등록 2단계). |
+| [`DELETE /api/auth/me/mfa`](#summary-delete-api-auth-me-mfa) | 코드로 본인을 확인한 뒤 다단계 인증을 해제합니다. |
 | [`POST /api/auth/oauth/exchange`](#summary-post-api-auth-oauth-exchange) | OAuth code를 access token과 HttpOnly refresh 쿠키로 교환합니다. |
 | [`POST /api/auth/password-reset`](#summary-post-api-auth-password-reset) | verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 세션을 폐기합니다. |
 | [`POST /api/auth/refresh`](#summary-post-api-auth-refresh) | HttpOnly refresh 쿠키를 검증하고 access token과 refresh 쿠키를 회전합니다. |
@@ -1026,6 +1031,415 @@ HTTP/1.1 204 No Content
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: changePassword`)
 
 [↑ 요약으로 돌아가기](#summary-put-api-auth-me-password)
+
+</details>
+
+<a id="summary-post-api-auth-login-mfa"></a>
+### `POST /api/auth/login/mfa`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 다단계 인증 코드로 로그인을 마칩니다. |
+| 입력 | **Body** — `MfaLoginRequest` |
+| 출력 | `200` 로그인 성공 — `LoginResponse` |
+| 조건 | 인증 불필요. `mfa_token`이 신원을 대신한다. |
+| 주요 오류 | `400` mfa_token 만료·소비됨<br>`401` 코드가 올바르지 않음 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`POST /api/auth/login/mfa`
+
+#### 2. 목적
+
+`POST /api/auth/login` 또는 `POST /api/auth/oauth/exchange`가 `mfa_required: true`를 돌려줬을 때 두 번째 단계를 마친다.
+
+#### 3. Auth 필요 여부
+
+- 불필요. 아직 로그인 전이며 `mfa_token`은 비밀번호 또는 OAuth 인증을 통과했다는 증거다.
+- `mfa_token`은 1회용이고 기본 300초 뒤 만료된다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| body | `mfa_token` | `string` | 예 | 로그인 1단계 응답의 토큰 |
+| body | `code` | `string` | 예 | 인증 앱의 6자리 코드 **또는** 복구 코드 |
+
+```json
+{
+  "mfa_token": "EXAMPLE-mfa-token-not-real",
+  "code": "482917"
+}
+```
+
+복구 코드도 같은 자리에 넣는다. 별도 엔드포인트를 두지 않는다.
+
+#### 5. Response body
+
+`POST /api/auth/login`의 성공 응답과 같다. refresh 토큰은 HttpOnly 쿠키로 나간다.
+
+```json
+{
+  "access_token": "<JWT>",
+  "token_type": "Bearer",
+  "expires_in": 900
+}
+```
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `400` | `mfa_token`이 없거나 만료·소비됨 | `INVALID_MFA_CHALLENGE` |
+| `401` | 코드가 올바르지 않음 | `INVALID_MFA_CODE` |
+
+일반·OAuth 로그인 모두 MFA가 켜져 있으면 challenge만 반환하며 access/refresh 토큰과 refresh 쿠키는 발급하지 않는다.
+
+MFA 활성화·로그인·해제의 코드 검증은 사용자별로 300초 동안 총 5회까지 허용한다. 초과하면 `429 MFA_RATE_LIMITED`와 `Retry-After`를 반환한다. 실패한 요청의 롤백이나 challenge 재발급으로 횟수가 초기화되지 않는다.
+
+코드와 challenge 소비는 DB 잠금으로 직렬화한다. 같은 TOTP·복구 코드·challenge를 동시에 제출해도 하나만 성공한다.
+
+**코드가 틀려도 `mfa_token`은 살아 있다.** 오타 한 번에 비밀번호부터 다시 넣게 만들지 않는다.
+TOTP인지 복구 코드인지는 구분해 알려주지 않는다.
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 같은 30초 창의 TOTP 코드는 두 번 쓸 수 없다. 가로챈 코드의 재사용을 막는다.
+- 시계 오차를 감안해 앞뒤 한 창(±30초)까지 받아준다.
+- 복구 코드는 한 번 쓰면 소멸한다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X POST "$ACCESS/api/auth/login/mfa" \
+  -H 'Content-Type: application/json' \
+  --data '{"mfa_token":"<token>","code":"482917"}'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: loginMfa`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-auth-login-mfa)
+
+</details>
+
+<a id="summary-get-api-auth-me-mfa"></a>
+### `GET /api/auth/me/mfa`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 다단계 인증 상태를 반환합니다. |
+| 입력 | 없음 |
+| 출력 | `200` 조회 성공 — `MfaStatusResponse` |
+| 조건 | 인증 필요 |
+| 주요 오류 | `401` 인증되지 않음 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`GET /api/auth/me/mfa`
+
+#### 2. 목적
+
+설정 화면이 "2단계 인증: 켜짐/꺼짐"과 남은 복구 코드 수를 보여주는 데 쓴다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+
+#### 4. Request body
+
+- 요청 본문 없음
+
+#### 5. Response body
+
+```json
+{
+  "enabled": true,
+  "activated_at": "2026-09-07T21:40:11.204813Z",
+  "remaining_recovery_codes": 9
+}
+```
+
+`enabled`는 **활성화까지 끝난 경우에만** true다. 등록만 하고 코드 검증을 통과하지 않았으면 false다 —
+그 상태는 로그인을 막지 않으므로 화면에도 "켜짐"으로 보이면 안 된다.
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `401` | access token이 없거나 유효하지 않음 | — |
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 본인 상태만 조회한다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl "$ACCESS/api/auth/me/mfa" -H 'Authorization: Bearer <access_token>'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: mfaStatus`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-auth-me-mfa)
+
+</details>
+
+<a id="summary-post-api-auth-me-mfa"></a>
+### `POST /api/auth/me/mfa`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | secret과 복구 코드를 발급합니다(등록 1단계). |
+| 입력 | 없음 |
+| 출력 | `200` 발급 성공 — `MfaRegistrationResponse` |
+| 조건 | 인증 필요 |
+| 주요 오류 | `401` 인증되지 않음<br>`409` 이미 켜져 있음 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`POST /api/auth/me/mfa`
+
+#### 2. 목적
+
+QR로 보여줄 secret과 복구 코드를 만든다. **이 단계로는 켜지지 않는다** —
+로그인은 그대로 비밀번호만으로 통과한다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+
+#### 4. Request body
+
+- 요청 본문 없음
+
+#### 5. Response body
+
+```json
+{
+  "secret": "JBSWY3DPEHPK3PXP",
+  "otpauth_uri": "otpauth://totp/Fruition%3Auser%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Fruition",
+  "recovery_codes": ["A3F2K9QZ", "..."]
+}
+```
+
+`recovery_codes`는 **이 응답에서만** 볼 수 있다. 서버에는 SHA-256 해시만 남아 다시 조회할 수 없다.
+`otpauth_uri`를 QR로 만들면 인증 앱이 바로 읽는다. `secret`은 QR을 못 쓸 때 수동 입력용이다.
+
+이미 등록만 해둔 상태에서 다시 호출하면 새 secret으로 갈아끼우고 복구 코드도 새로 발급한다 —
+옛 복구 코드는 옛 secret과 짝이라 함께 버린다.
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `401` | access token이 없거나 유효하지 않음 | — |
+| `409` | 이미 활성화됨. 해제 후 다시 등록해야 한다 | `MFA_ALREADY_ENABLED` |
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 본인 계정에만 등록한다.
+- secret은 AES-GCM으로 암호화해 저장한다. 검증에 원문이 필요해 해시로 둘 수 없기 때문이며,
+  평문으로 두면 DB 유출 시 MFA가 통째로 무력화된다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X POST "$ACCESS/api/auth/me/mfa" -H 'Authorization: Bearer <access_token>'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: registerMfa`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-auth-me-mfa)
+
+</details>
+
+<a id="summary-post-api-auth-me-mfa-activate"></a>
+### `POST /api/auth/me/mfa/activate`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 코드를 확인하고 다단계 인증을 켭니다(등록 2단계). |
+| 입력 | **Body** — `MfaCodeRequest` |
+| 출력 | `204` 활성화 성공 — 본문 없음 |
+| 조건 | 인증 필요 |
+| 주요 오류 | `401` 코드가 올바르지 않음<br>`404` 등록된 설정 없음<br>`409` 이미 켜져 있음 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`POST /api/auth/me/mfa/activate`
+
+#### 2. 목적
+
+인증 앱이 만든 코드가 맞는지 확인하고 실제로 켠다. **이 단계를 통과해야 로그인에 코드가 요구된다.**
+
+두 단계로 나눈 이유: 등록 즉시 켜버리면 QR을 잘못 스캔했거나 앱 시계가 틀어진 사용자가
+다음 로그인에서 자기 계정에 못 들어간다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| body | `code` | `string` | 예 | 인증 앱의 6자리 코드 |
+
+```json
+{
+  "code": "482917"
+}
+```
+
+#### 5. Response body
+
+- HTTP `204`: 활성화 성공, 본문 없음
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `401` | 코드가 올바르지 않음 | `INVALID_MFA_CODE` |
+| `404` | `POST /api/auth/me/mfa`를 먼저 호출하지 않음 | `MFA_NOT_ENABLED` |
+| `409` | 이미 활성화됨 | `MFA_ALREADY_ENABLED` |
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 활성화에 쓴 시간 창은 소비 처리한다. 같은 코드로 바로 로그인할 수 없다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X POST "$ACCESS/api/auth/me/mfa/activate" \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  --data '{"code":"482917"}'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: activateMfa`)
+
+[↑ 요약으로 돌아가기](#summary-post-api-auth-me-mfa-activate)
+
+</details>
+
+<a id="summary-delete-api-auth-me-mfa"></a>
+### `DELETE /api/auth/me/mfa`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 코드로 본인을 확인한 뒤 다단계 인증을 해제합니다. |
+| 입력 | **Body** — `MfaCodeRequest` |
+| 출력 | `204` 해제 성공 — 본문 없음 |
+| 조건 | 인증 필요 |
+| 주요 오류 | `401` 코드가 올바르지 않음<br>`404` 켜져 있지 않음 |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`DELETE /api/auth/me/mfa`
+
+#### 2. 목적
+
+다단계 인증을 끈다. secret과 남은 복구 코드가 모두 지워진다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- access token만으로는 부족하다. 토큰을 탈취한 쪽이 MFA를 그냥 꺼버릴 수 있기 때문에
+  코드를 한 번 더 요구한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| body | `code` | `string` | 예 | 인증 앱의 6자리 코드 **또는** 복구 코드 |
+
+```json
+{
+  "code": "482917"
+}
+```
+
+복구 코드도 받는 이유: 기기를 잃은 사용자가 MFA를 끄고 다시 등록할 수 있어야 한다.
+OAuth 전용 계정은 비밀번호가 없으므로 코드가 유일한 확인 수단이다.
+
+#### 5. Response body
+
+- HTTP `204`: 해제 성공, 본문 없음
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `401` | 코드가 올바르지 않음 | `INVALID_MFA_CODE` |
+| `404` | 켜져 있지 않음 | `MFA_NOT_ENABLED` |
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 본인 계정만 해제한다.
+- 해제 후에는 `POST /api/auth/login`이 다시 토큰을 바로 돌려준다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X DELETE "$ACCESS/api/auth/me/mfa" \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  --data '{"code":"482917"}'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/user/controller/AuthController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: disableMfa`)
+
+[↑ 요약으로 돌아가기](#summary-delete-api-auth-me-mfa)
 
 </details>
 
