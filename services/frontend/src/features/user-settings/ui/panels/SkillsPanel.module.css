@@ -130,3 +130,10 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* 로딩·빈 목록 안내 */
+.empty {
+  padding: 16px 12px;
+  color: var(--subdued);
+  font-size: 13px;
+}
