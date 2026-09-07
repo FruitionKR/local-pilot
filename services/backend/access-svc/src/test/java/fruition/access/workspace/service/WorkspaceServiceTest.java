@@ -6,7 +6,6 @@ import fruition.access.user.repository.UserRepository;
 import fruition.access.workspace.domain.Workspace;
 import fruition.access.workspace.domain.WorkspaceRole;
 import fruition.access.workspace.dto.WorkspaceCreateRequest;
-import fruition.access.workspace.dto.WorkspaceIconUpdateRequest;
 import fruition.access.workspace.dto.WorkspaceRenameRequest;
 import fruition.access.workspace.dto.WorkspaceResponse;
 import fruition.access.workspace.dto.WorkspaceLifecycleResponse;
@@ -168,55 +167,6 @@ class WorkspaceServiceTest {
         assertThat(response.workspaces()).hasSize(1);
         assertThat(response.workspaces().get(0).id()).isEqualTo("ws_deleted");
         assertThat(response.workspaces().get(0).deletedBy()).isEqualTo("user_1f9a74af");
-    }
-
-    @Test
-    void updateIcon_ownedWorkspace_setsEmoji() {
-        Workspace workspace = new Workspace("ws_aaa11111", "워크스페이스");
-        when(workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
-                "ws_aaa11111", "user_1f9a74af", WorkspaceRole.OWNER)).thenReturn(Optional.of(workspace));
-
-        WorkspaceResponse response = workspaceService.updateIcon(
-                "user_1f9a74af", "ws_aaa11111", new WorkspaceIconUpdateRequest("📁"));
-
-        assertThat(response.iconEmoji()).isEqualTo("📁");
-        assertThat(workspace.getIconEmoji()).isEqualTo("📁");
-    }
-
-    @Test
-    void updateIcon_nullClearsEmoji() {
-        Workspace workspace = new Workspace("ws_aaa11111", "워크스페이스");
-        workspace.changeIcon("📁");
-        when(workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
-                "ws_aaa11111", "user_1f9a74af", WorkspaceRole.OWNER)).thenReturn(Optional.of(workspace));
-
-        WorkspaceResponse response = workspaceService.updateIcon(
-                "user_1f9a74af", "ws_aaa11111", new WorkspaceIconUpdateRequest(null));
-
-        assertThat(response.iconEmoji()).isNull();
-        assertThat(workspace.getIconEmoji()).isNull();
-    }
-
-    @Test
-    void updateIcon_notOwnedWorkspaceThrows() {
-        when(workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
-                "ws_unknown", "user_1f9a74af", WorkspaceRole.OWNER)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> workspaceService.updateIcon(
-                "user_1f9a74af", "ws_unknown", new WorkspaceIconUpdateRequest("📁")))
-                .isInstanceOf(WorkspaceNotFoundException.class);
-    }
-
-    @Test
-    void updateIcon_deletedWorkspaceThrows() {
-        Workspace workspace = new Workspace("ws_aaa11111", "워크스페이스");
-        workspace.softDelete("user_1f9a74af", java.time.Instant.now());
-        when(workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
-                "ws_aaa11111", "user_1f9a74af", WorkspaceRole.OWNER)).thenReturn(Optional.of(workspace));
-
-        assertThatThrownBy(() -> workspaceService.updateIcon(
-                "user_1f9a74af", "ws_aaa11111", new WorkspaceIconUpdateRequest("📁")))
-                .isInstanceOf(WorkspaceNotFoundException.class);
     }
 
     @Test

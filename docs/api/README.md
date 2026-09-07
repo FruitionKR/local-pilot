@@ -55,7 +55,7 @@ export PIPELINE=http://localhost:8000  # ai-svc pipeline: 내부 전용
 
 | 서비스 | Gateway `/api/**` | 내부·운영 | 합계 | 역할 |
 |---|---:|---:|---:|---|
-| [access-svc](access/README.md) | 27 | 4 | 31 | 인증·프로필과 워크스페이스·멤버·초대 관리 |
+| [access-svc](access/README.md) | 29 | 4 | 33 | 인증·프로필과 워크스페이스·멤버·초대 관리 |
 | [document-svc](document/README.md) | 78 | 6 | 84 | 문서 저장과 사용자용 AI·Wiki·Agent Gateway |
 | [ai-svc](ai/README.md) | 0 | 43 | 43 | 내부 Query·Agent·Wiki·Skill pipeline |
 

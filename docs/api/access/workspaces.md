@@ -4,7 +4,7 @@
 
 워크스페이스 관리와 서비스 간 인가·AI 모델 설정 API다.
 
-- API 수: 14
+- API 수: 16
 
 ## API 목차
 
@@ -16,6 +16,8 @@
 | [`PATCH /api/workspaces/{workspace_id}`](#summary-patch-api-workspaces-workspace-id) | 로그인한 사용자가 소유한 워크스페이스의 이름을 변경합니다. |
 | [`DELETE /api/workspaces/{workspace_id}`](#summary-delete-api-workspaces-workspace-id) | 소유한 워크스페이스를 하위 데이터 변경 없이 소프트 삭제합니다. |
 | [`PUT /api/workspaces/{workspace_id}/icon`](#summary-put-api-workspaces-workspace-id-icon) | 소유한 워크스페이스의 아이콘 이모지를 설정하거나 지웁니다. |
+| [`PUT /api/workspaces/{workspace_id}/icon/image`](#summary-put-api-workspaces-workspace-id-icon-image) | 아이콘으로 쓸 이미지를 업로드합니다. |
+| [`GET /api/workspaces/{workspace_id}/icon/image`](#summary-get-api-workspaces-workspace-id-icon-image) | 멤버에게 아이콘 이미지 bytes를 반환합니다. |
 | [`GET /api/workspaces/{workspace_id}/members`](#summary-get-api-workspaces-workspace-id-members) | 워크스페이스의 활성 멤버를 합류 순으로 반환합니다. 멤버만 조회할 수 있습니다. |
 | [`PATCH /api/workspaces/{workspace_id}/members/{user_id}`](#summary-patch-api-workspaces-workspace-id-members-user-id) | 멤버의 역할을 OWNER 또는 MEMBER로 변경합니다. OWNER만 호출할 수 있습니다. |
 | [`DELETE /api/workspaces/{workspace_id}/members/{user_id}`](#summary-delete-api-workspaces-workspace-id-members-user-id) | OWNER는 다른 멤버를 제거할 수 있고, 멤버는 자신을 제거해 탈퇴할 수 있습니다. |
@@ -597,6 +599,7 @@ curl -X DELETE "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a" \
 ```
 
 지우려면 `null`을 명시한다. 빈 문자열은 `400`이다 — 지우는 방법을 하나로 둔다.
+이모지와 이미지는 배타적이라, 이모지를 설정하면 기존 이미지가 지워지고 `null`은 둘 다 지운다.
 
 ```json
 {
@@ -657,6 +660,181 @@ curl -X PUT "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/icon" \
 - 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: updateIcon`)
 
 [↑ 요약으로 돌아가기](#summary-put-api-workspaces-workspace-id-icon)
+
+</details>
+
+<a id="summary-put-api-workspaces-workspace-id-icon-image"></a>
+### `PUT /api/workspaces/{workspace_id}/icon/image`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 아이콘으로 쓸 이미지를 업로드합니다. 이모지가 설정돼 있었다면 함께 사라집니다. |
+| 입력 | **Path** — `workspace_id`: `string`<br>**Multipart** — `file` |
+| 출력 | `200` 업로드 성공 — `WorkspaceResponse` |
+| 조건 | 인증 필요<br>호출자의 역할이 `OWNER`여야 한다. |
+| 주요 오류 | `400` 지원하지 않는 이미지 형식 — `ErrorResponse`<br>`404` 워크스페이스를 찾을 수 없음 — `ErrorResponse`<br>`413` 이미지가 너무 큼 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`PUT /api/workspaces/{workspace_id}/icon/image`
+
+#### 2. 목적
+
+아이콘 이미지를 올린다. 이모지와 이미지는 배타적이라, 업로드에 성공하면 기존 이모지는 지워진다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- `Authorization: Bearer <access_token>`을 검증한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| path | `workspace_id` | `string` | 예 | 워크스페이스 ID |
+| multipart | `file` | binary | 예 | PNG·JPEG·WebP·GIF, 1MB 이하 |
+
+- Content-Type: `multipart/form-data`
+
+형식은 **매직 바이트로 판별한다.** 선언된 Content-Type은 클라이언트가 정하는 값이라 믿지 않는다.
+픽셀 크기는 보지 않는다 — 서버가 이미지를 디코딩하지 않고 그대로 저장·스트리밍하므로 디코딩 폭탄이
+서버에 영향을 주지 않고, 바이트 상한만으로 저장량이 묶인다.
+
+#### 5. Response body
+
+- HTTP `200`: 업로드 성공 — `WorkspaceResponse`
+
+```json
+{
+  "id": "ws_9d47a0e9a6324341b47562553b75f92a",
+  "name": "내 워크스페이스",
+  "icon_url": "/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/icon/image",
+  "created_at": "2026-08-13T04:25:24.371948Z",
+  "updated_at": "2026-09-07T21:40:11.204813Z"
+}
+```
+
+`icon_emoji`는 지워져 응답에서 빠진다.
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `400` | PNG·JPEG·WebP·GIF가 아니거나 파일이 비어 있음 | `UNSUPPORTED_WORKSPACE_ICON` |
+| `400` | multipart 요청이 아니거나 `file` part가 없음 | `INVALID_REQUEST` |
+| `404` | 워크스페이스를 찾을 수 없거나 소유자가 아님 | `WORKSPACE_NOT_FOUND` |
+| `413` | 1MB를 넘음 | `WORKSPACE_ICON_TOO_LARGE` |
+
+2MB를 넘는 요청은 Spring multipart 한도(`spring.servlet.multipart.max-file-size`)에서 먼저 잘려
+`400 INVALID_REQUEST`가 된다. 의미 있는 경계인 1MB에서는 `413`이 나간다.
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 소유(`OWNER`)한 워크스페이스만 대상이다. 소프트 삭제된 워크스페이스는 `404`다.
+- 재업로드는 기존 바이너리 row를 덮어쓴다. 고아 이미지가 남지 않는다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -X PUT "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/icon/image" \
+  -H 'Authorization: Bearer <access_token>' \
+  -F 'file=@icon.png'
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: updateIconImage`)
+
+[↑ 요약으로 돌아가기](#summary-put-api-workspaces-workspace-id-icon-image)
+
+</details>
+
+<a id="summary-get-api-workspaces-workspace-id-icon-image"></a>
+### `GET /api/workspaces/{workspace_id}/icon/image`
+
+| 항목 | 내용 |
+|---|---|
+| 목적 | 멤버에게 아이콘 이미지 bytes를 반환합니다. |
+| 입력 | **Path** — `workspace_id`: `string` |
+| 출력 | `200` 이미지 bytes / `304` 캐시된 이미지 사용 |
+| 조건 | 인증 필요<br>역할과 무관하게 멤버면 조회할 수 있다. |
+| 주요 오류 | `404` 워크스페이스 또는 아이콘 이미지를 찾을 수 없음 — `ErrorResponse` |
+
+<details>
+<summary>상세 계약 보기</summary>
+
+#### 1. Method + Path
+
+`GET /api/workspaces/{workspace_id}/icon/image`
+
+#### 2. 목적
+
+`WorkspaceResponse.icon_url`이 가리키는 경로다. 아이콘은 모든 멤버가 화면에서 보므로
+설정과 달리 조회는 역할을 가리지 않는다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| path | `workspace_id` | `string` | 예 | 워크스페이스 ID |
+
+- 요청 본문 없음
+
+#### 5. Response body
+
+- HTTP `200`: 이미지 bytes. `Content-Type`은 업로드 시 판별한 형식이다
+- HTTP `304`: `If-None-Match`가 현재 `ETag`와 같을 때
+
+응답 헤더:
+
+| 헤더 | 값 |
+|---|---|
+| `ETag` | 이미지 SHA-256 |
+| `Cache-Control` | `max-age=3600, private` |
+| `X-Content-Type-Options` | `nosniff` |
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 코드 |
+|---|---|---|
+| `404` | 워크스페이스를 찾을 수 없거나 멤버가 아님 | `WORKSPACE_NOT_FOUND` |
+| `404` | 이미지를 설정하지 않음(이모지만 있거나 아이콘 없음) | `WORKSPACE_ICON_NOT_FOUND` |
+
+#### 7. Pagination / filtering
+
+- 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 멤버면 역할과 무관하게 조회할 수 있다. 비멤버는 `404`로 존재를 숨긴다.
+- `private` 캐시라 공유 캐시에 남지 않는다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/icon/image" \
+  -H 'Authorization: Bearer <access_token>' \
+  -o icon.png
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/access-svc/src/main/java/fruition/access/workspace/controller/WorkspaceController.java`
+- 기계 판독 계약: `api-specs/access-svc/openapi.yaml` (`operationId: getIconImage`)
+
+[↑ 요약으로 돌아가기](#summary-get-api-workspaces-workspace-id-icon-image)
 
 </details>
 

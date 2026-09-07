@@ -618,6 +618,94 @@ paths:
       summary: 워크스페이스 아이콘 변경
       tags:
       - Workspaces
+  /api/workspaces/{workspace_id}/icon/image:
+    get:
+      description: 멤버에게 아이콘 이미지 bytes를 반환합니다.
+      operationId: getIconImage
+      parameters:
+      - description: 워크스페이스 ID
+        example: ws_9d47a0e9a6324341b47562553b75f92a
+        in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+          default: ws_9d47a0e9a6324341b47562553b75f92a
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
+          description: 이미지 반환
+        "304":
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
+          description: 캐시된 이미지 사용
+        "404":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 워크스페이스 또는 아이콘 이미지를 찾을 수 없음
+      summary: 워크스페이스 아이콘 이미지 조회
+      tags:
+      - Workspaces
+    put:
+      description: 아이콘으로 쓸 이미지를 업로드합니다. 이모지가 설정돼 있었다면 함께 사라집니다.
+      operationId: updateIconImage
+      parameters:
+      - description: 워크스페이스 ID
+        example: ws_9d47a0e9a6324341b47562553b75f92a
+        in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+          default: ws_9d47a0e9a6324341b47562553b75f92a
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+              - file
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: 업로드 성공
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 지원하지 않는 이미지 형식
+        "404":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 워크스페이스를 찾을 수 없음
+        "413":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 이미지가 너무 큼
+      summary: 워크스페이스 아이콘 이미지 업로드
+      tags:
+      - Workspaces
   /api/workspaces/{workspace_id}/invitations:
     get:
       description: 아직 수락되지 않은 초대를 반환합니다. OWNER만 호출할 수 있습니다.
@@ -1556,6 +1644,10 @@ components:
           type: string
           description: 아이콘 이모지. 설정하지 않았으면 null이다.
           example: 📁
+        icon_url:
+          type: string
+          description: 아이콘 이미지 조회 경로. 이미지를 설정하지 않았으면 null이다.
+          example: /api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/icon/image
         id:
           type: string
           description: 워크스페이스 ID. 이후 대부분의 API 경로에 들어간다.
