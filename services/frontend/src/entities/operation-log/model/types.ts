@@ -51,6 +51,7 @@ export interface OperationChange {
   resource_type: string;
   resource_id: string;
   resource_display_name: string | null;
+  page_type?: "concept" | "source";
   before_revision: number | null;
   after_revision: number | null;
   change_type: string;

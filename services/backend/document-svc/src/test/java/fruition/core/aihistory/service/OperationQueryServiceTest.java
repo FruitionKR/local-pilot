@@ -12,9 +12,12 @@ import fruition.core.aihistory.repository.OperationChangeRepository;
 import fruition.core.aihistory.repository.OperationLogRepository;
 import fruition.core.authz.WorkspaceNotFoundException;
 import fruition.core.authz.WorkspaceAccessGuard;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
@@ -46,13 +49,14 @@ class OperationQueryServiceTest {
     @Mock OperationChangeRepository operationChangeRepository;
     @Mock WorkspaceAccessGuard workspaceAccessGuard;
     @Mock ChangeDiffLoader diffLoader;
+    @Mock PipelineWikiStateRequester wikiStateRequester;
 
     private OperationQueryService service;
 
     @BeforeEach
     void setUp() {
         service = new OperationQueryService(operationLogRepository, operationChangeRepository,
-                workspaceAccessGuard, diffLoader, new ObjectMapper());
+                workspaceAccessGuard, diffLoader, new ObjectMapper(), wikiStateRequester);
     }
 
     @Test
@@ -80,39 +84,93 @@ class OperationQueryServiceTest {
         assertThat(response.nextCursor()).isNull();
     }
 
-    @Test
-    void detail_returnsLintRevisionAndDiff() {
+    @ParameterizedTest
+    @EnumSource(value = OperationType.class, names = {"ingest", "lint"})
+    void detail_returnsWikiTitlesWithoutLoadingDiff(OperationType type) throws Exception {
         doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
         OperationLog lint = OperationLog.completed(
-                OPERATION_ID, WORKSPACE_ID, USER_ID, OperationType.lint, null,
+                OPERATION_ID, WORKSPACE_ID, USER_ID, type, null,
                 "Wiki lint로 페이지 1개를 변경했습니다.", 1, Instant.now());
         OperationChange change = org.mockito.Mockito.mock(OperationChange.class);
         when(change.getId()).thenReturn(1L);
         when(change.getResourceType()).thenReturn(ResourceType.wiki_page);
         when(change.getResourceId()).thenReturn("page_1");
-        when(change.getBeforeRevision()).thenReturn(3L);
-        when(change.getAfterRevision()).thenReturn(4L);
-        when(change.getChangeType()).thenReturn(ChangeType.updated);
-        when(change.getAdditions()).thenReturn(2);
-        when(change.getDeletions()).thenReturn(1);
+        when(change.getResourceDisplayName()).thenReturn("변경 시점 제목");
+        when(change.getChangeType()).thenReturn(ChangeType.created);
         when(operationLogRepository.findByOperationIdAndWorkspaceId(OPERATION_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(lint));
         when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID))
                 .thenReturn(List.of(change));
-        when(diffLoader.load(List.of(change)))
-                .thenReturn(List.of(new ChangeDiffLoader.Diff(List.of(), false)));
+        when(wikiStateRequester.lookup(List.of("page_1"), WORKSPACE_ID)).thenReturn(List.of(
+                new PipelineWikiStateRequester.WikiPageSnapshot(
+                        "page_1", "concept", "이후 바뀐 제목", "slug", WORKSPACE_ID, "active")));
 
         var response = service.detail(WORKSPACE_ID, USER_ID, OPERATION_ID);
 
-        assertThat(response.operationType()).isEqualTo("lint");
+        assertThat(response.operationType()).isEqualTo(type.name());
         assertThat(response.targetDocumentId()).isNull();
         assertThat(response.changes()).singleElement().satisfies(item -> {
             assertThat(item.resourceType()).isEqualTo("wiki_page");
-            assertThat(item.beforeRevision()).isEqualTo(3L);
-            assertThat(item.afterRevision()).isEqualTo(4L);
-            assertThat(item.changeType()).isEqualTo("updated");
-            assertThat(item.hunks()).isEmpty();
+            assertThat(item.resourceDisplayName()).isEqualTo("변경 시점 제목");
+            assertThat(item.pageType()).isEqualTo("concept");
+            assertThat(item.changeType()).isEqualTo("created");
+            assertThat(item.hunks()).isNull();
         });
+        verify(diffLoader, never()).load(any());
+        assertThat(new ObjectMapper().writeValueAsString(response.changes()))
+                .doesNotContain("hunks", "diff_too_large", "before_revision", "after_revision",
+                        "additions", "deletions", "change_summary");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = OperationType.class, names = {"ingest", "lint"})
+    void detail_returnsOnlyCreatedAndDeletedWikiTitles(OperationType type) {
+        OperationLog ingest = OperationLog.completed(OPERATION_ID, WORKSPACE_ID, USER_ID,
+                type, "doc_A", "Wiki 반영", 4, Instant.now());
+        OperationChange source = new OperationChange(OPERATION_ID, ResourceType.wiki_page,
+                "source_1", "원문 제목", null, 1L, ChangeType.created, null, 10, 0);
+        OperationChange deleted = new OperationChange(OPERATION_ID, ResourceType.wiki_page,
+                "gone", "삭제된 Wiki 제목", 1L, null, ChangeType.deleted, null, 0, 1);
+        OperationChange updated = new OperationChange(OPERATION_ID, ResourceType.wiki_page,
+                "updated_1", "수정된 Wiki 제목", 1L, 2L, ChangeType.updated, null, 1, 0);
+        OperationChange link = new OperationChange(OPERATION_ID, ResourceType.relation_link,
+                "source_1|supports|gone", null, null, ChangeType.link_removed, null, null, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(source, "id", 1L);
+        org.springframework.test.util.ReflectionTestUtils.setField(deleted, "id", 2L);
+        when(operationLogRepository.findByOperationIdAndWorkspaceId(OPERATION_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(ingest));
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID))
+                .thenReturn(List.of(source, deleted, updated, link));
+        when(wikiStateRequester.lookup(List.of("source_1", "gone"), WORKSPACE_ID)).thenReturn(List.of(
+                new PipelineWikiStateRequester.WikiPageSnapshot(
+                        "source_1", "source", "원문 제목", "slug", WORKSPACE_ID, "active")));
+
+        var response = service.detail(WORKSPACE_ID, USER_ID, OPERATION_ID);
+
+        assertThat(response.changes()).extracting(OperationLogDetailResponse.Change::resourceDisplayName)
+                .containsExactly("원문 제목", "삭제된 Wiki 제목");
+        assertThat(response.changes()).extracting(OperationLogDetailResponse.Change::pageType)
+                .containsExactly("source", null);
+        assertThat(response.changes()).extracting(OperationLogDetailResponse.Change::changeType)
+                .containsExactly("created", "deleted");
+        verify(diffLoader, never()).load(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = OperationType.class, names = {"ingest", "lint"})
+    void detail_withOnlyUpdatesReturnsEmptyTitlesWithoutLoadingWiki(OperationType type) {
+        OperationLog log = OperationLog.completed(OPERATION_ID, WORKSPACE_ID, USER_ID,
+                type, "doc_A", "Wiki 반영", 1, Instant.now());
+        OperationChange updated = new OperationChange(OPERATION_ID, ResourceType.wiki_page,
+                "updated_1", "수정된 Wiki 제목", 1L, 2L, ChangeType.updated, null, 1, 0);
+        when(operationLogRepository.findByOperationIdAndWorkspaceId(OPERATION_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(log));
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID))
+                .thenReturn(List.of(updated));
+
+        assertThat(service.detail(WORKSPACE_ID, USER_ID, OPERATION_ID).changes()).isEmpty();
+        verify(wikiStateRequester, never()).lookup(any(), any());
+        verify(diffLoader, never()).load(any());
     }
 
     @Test

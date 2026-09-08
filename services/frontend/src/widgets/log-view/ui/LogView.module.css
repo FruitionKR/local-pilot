@@ -196,6 +196,14 @@
   font-size: 12px;
 }
 
+.wiki-titles {
+  margin: 0;
+  padding: 0 var(--log-pad-x) 8px calc(var(--log-pad-x) + 20px);
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
 .hunk {
   display: flex;
   flex-direction: column;

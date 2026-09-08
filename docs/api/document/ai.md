@@ -15,7 +15,7 @@
 | [`GET /api/workspaces/{workspace_id}/ai-model-settings`](#summary-get-api-workspaces-workspace-id-ai-model-settings) | ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와 MEMBER 모두 조회할 수 있습니다. |
 | [`PUT /api/workspaces/{workspace_id}/ai-model-settings`](#summary-put-api-workspaces-workspace-id-ai-model-settings) | ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있고, 활성 model catalog에 있는 조합만 허용합니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-operation-logs`](#summary-get-api-workspaces-workspace-id-ai-operation-logs) | 최신순으로 반환합니다. 바꾼 것이 없는 성공 작업은 제외하고, 문서 편집은 실제 변경에 성공한 작업만 포함하며, status를 생략하면 진행 중인 작업과 반영에 실패한 작업은 제외합니다. status=processing 명시 조회는 활성 작업 탐지에, status=failed와 status=conflict 명시 조회는 실패 감지에 사용할 수 있습니다. 로그 테이블만 읽고 diff를 계산하지 않습니다. |
-| [`GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}`](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id) | 그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다. |
+| [`GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}`](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id) | ingest·lint는 생성·삭제된 Wiki의 제목과 page_type(concept/source)을 반환하며 본문·diff는 계산하거나 전달하지 않습니다. 그 외 작업은 리소스별 변경분을 반환합니다. |
 | [`POST /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore`](#summary-post-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore) | 복구 대상에 따라 처리 방식이 다릅니다. 문서 편집 복구는 즉시 완료되어 200을 반환하고, Wiki 복구는 queued 상태로 등록되어 202를 반환합니다. 미리보기와 같은 계산을 다시 하고 Wiki에 반영합니다. 받치는 기여가 남지 않은 페이지는 삭제하고, 되돌릴 버전이 그대로 있는 페이지는 그 내용으로 복원하며, 남은 조각을 합쳐야 하는 페이지는 llmPipeline에 재작성을 맡깁니다. 재작성이 있으면 status가 rebuilding으로 돌아오며 결과는 로그 상세로 확인합니다. ingest 되돌리기는 Wiki만 되돌리고 원문 문서는 건드리지 않습니다. |
 | [`GET /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore-preview`](#summary-get-api-workspaces-workspace-id-ai-operation-logs-operation-id-restore-preview) | 이 작업을 되돌리면 무엇이 삭제·복원·재작성되는지 계산합니다. 지목한 작업과 그 이후 같은 문서의 작업을 전부 걷어내며, 그 과정에서 만들어진 페이지는 삭제됩니다. 문서 편집 복구는 canonical 편집 revision을 확인하며, 응답의 preview_token은 복구 실행에 그대로 전달해야 합니다. |
 | [`POST /api/workspaces/{workspace_id}/documents/{document_id}/convert-markdown`](#summary-post-api-workspaces-workspace-id-documents-document-id-convert-markdown) | PDF 원본 문서를 Markdown 문서로 변환합니다. 변환 결과를 담을 편집 가능 placeholder 문서를 즉시 만들어 반환하고, 실제 변환은 백그라운드에서 진행됩니다. |
@@ -481,7 +481,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다. |
+| 목적 | ingest·lint는 생성·삭제된 Wiki의 제목과 page_type(concept/source)을 반환하며 본문·diff는 계산하거나 전달하지 않습니다. 그 외 작업은 리소스별 변경분을 반환합니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `operation_id`: `string` |
 | 출력 | `200` 조회 성공 — `OperationLogDetailResponse` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
@@ -499,9 +499,11 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 
 #### 2. 목적
 
-그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다.
+ingest·lint는 생성·삭제된 Wiki의 제목과 page_type(concept/source)을 반환하며 본문·diff는 계산하거나 전달하지 않습니다. 그 외 작업은 리소스별 변경분을 반환합니다.
 
-`changes[].resource_display_name`은 변경 시점 snapshot이다. Lint는 workspace 작업 operation 하나를 유지하면서 실제로 수정한 Wiki 페이지를 `resource_type=wiki_page` child entry로 반환하며, 이후 페이지 rename/delete에도 이 이름은 유지된다.
+`changes[].resource_display_name`은 변경 시점 snapshot이다. Lint는 workspace 작업 operation 하나를 유지하면서 생성·삭제한 Wiki 페이지를 `resource_type=wiki_page` child entry로 반환하며, 이후 페이지 rename/delete에도 이 이름은 유지된다.
+
+`ingest`·`lint`의 `changes`는 생성(`created`)·삭제(`deleted`)된 Wiki 페이지만 포함한다. 수정(`updated`)된 페이지는 제외한다. 각 항목은 `id`, `resource_type`, `resource_id`, `resource_display_name`, `change_type`, `page_type`을 제공하며 revision·줄 수·요약·diff 필드는 생략한다. `page_type`은 현재 Wiki 메타데이터로 조회한다. 정상 삭제는 `status=deleted`로 표시하고 행을 유지하므로 유형도 유지된다. 메타데이터 행 자체가 없는 경우에만 생략한다. 저장된 제목은 유지하며 화면에서는 ‘유형 정보 없음’으로 표시한다. 화면에는 페이지 유형별 제목과 생성·삭제 구분을 표시한다. 이 조회 필터는 기록된 `created`·`deleted`를 반환하는 계약이며, pipeline의 페이지 삭제나 삭제 기록 생성을 추가하지 않는다. 현재 ingest 적재 경로는 `created`·`updated`를 기록한다. 생성·삭제가 없으면 `changes`는 빈 배열이다. `changed_resource_count`는 수정까지 포함한 작업 전체 변경 수를 유지하므로 `changes` 길이와 다를 수 있다.
 
 #### 3. Auth 필요 여부
 
@@ -524,63 +526,29 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 
 ```json
 {
-  "changed_resource_count": 3,
+  "changed_resource_count": 2,
   "changes": [
     {
-      "additions": 12,
-      "after_revision": 3,
-      "before_revision": 2,
-      "change_summary": "string",
-      "change_type": "updated",
-      "deletions": 4,
-      "diff_too_large": true,
-      "hunks": [
-        {
-          "lines": [
-            {
-              "content": "string",
-              "new_line": 10,
-              "old_line": 10,
-              "type": "CONTEXT"
-            }
-          ],
-          "new_lines": 5,
-          "new_start": 10,
-          "old_lines": 3,
-          "old_start": 10
-        }
-      ],
       "id": 1,
-      "resource_id": "string",
-      "resource_display_name": "Wiki 페이지 제목"
+      "resource_type": "wiki_page",
+      "resource_id": "wp_concept",
+      "resource_display_name": "사용자 인증",
+      "change_type": "created",
+      "page_type": "concept"
+    },
+    {
+      "id": 2,
+      "resource_type": "wiki_page",
+      "resource_id": "wp_source",
+      "resource_display_name": "서비스 요구사항",
+      "change_type": "created",
+      "page_type": "source"
     }
   ],
   "completed_at": "2026-08-14T10:00:00Z",
   "created_at": "2026-08-13T04:25:24.371948Z",
   "operation_id": "op_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "operation_type": "ingest",
-  "restore": {
-    "plan": {
-      "delete_count": 1,
-      "pages": [
-        {
-          "action": "rebuild",
-          "contribution_count": 2,
-          "page_id": "string"
-        }
-      ],
-      "rebuild_count": 3,
-      "restore_count": 2
-    },
-    "result": {
-      "deleted_count": 1,
-      "failed_count": 0,
-      "rebuilt_count": 3,
-      "removed_link_count": 4,
-      "restored_count": 2,
-      "restored_link_count": 2
-    }
-  },
   "restored_from": "string",
   "status": "succeeded",
   "summary": "string",
@@ -623,63 +591,29 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-ope
 
 ```json
 {
-  "changed_resource_count": 3,
+  "changed_resource_count": 2,
   "changes": [
     {
-      "additions": 12,
-      "after_revision": 3,
-      "before_revision": 2,
-      "change_summary": "string",
-      "change_type": "updated",
-      "deletions": 4,
-      "diff_too_large": true,
-      "hunks": [
-        {
-          "lines": [
-            {
-              "content": "string",
-              "new_line": 10,
-              "old_line": 10,
-              "type": "CONTEXT"
-            }
-          ],
-          "new_lines": 5,
-          "new_start": 10,
-          "old_lines": 3,
-          "old_start": 10
-        }
-      ],
       "id": 1,
-      "resource_id": "string",
-      "resource_display_name": "Wiki 페이지 제목"
+      "resource_type": "wiki_page",
+      "resource_id": "wp_concept",
+      "resource_display_name": "사용자 인증",
+      "change_type": "created",
+      "page_type": "concept"
+    },
+    {
+      "id": 2,
+      "resource_type": "wiki_page",
+      "resource_id": "wp_source",
+      "resource_display_name": "서비스 요구사항",
+      "change_type": "created",
+      "page_type": "source"
     }
   ],
   "completed_at": "2026-08-14T10:00:00Z",
   "created_at": "2026-08-13T04:25:24.371948Z",
   "operation_id": "op_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "operation_type": "ingest",
-  "restore": {
-    "plan": {
-      "delete_count": 1,
-      "pages": [
-        {
-          "action": "rebuild",
-          "contribution_count": 2,
-          "page_id": "string"
-        }
-      ],
-      "rebuild_count": 3,
-      "restore_count": 2
-    },
-    "result": {
-      "deleted_count": 1,
-      "failed_count": 0,
-      "rebuilt_count": 3,
-      "removed_link_count": 4,
-      "restored_count": 2,
-      "restored_link_count": 2
-    }
-  },
   "restored_from": "string",
   "status": "succeeded",
   "summary": "string",

@@ -1,10 +1,12 @@
 package fruition.core.aihistory.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import fruition.core.aihistory.domain.ChangeType;
 import fruition.core.aihistory.domain.OperationChange;
 import fruition.core.aihistory.domain.OperationLog;
 import fruition.core.aihistory.domain.OperationStatus;
 import fruition.core.aihistory.domain.OperationType;
+import fruition.core.aihistory.domain.ResourceType;
 import fruition.core.aihistory.dto.OperationLogDetailResponse;
 import fruition.core.aihistory.dto.OperationLogListResponse;
 import fruition.core.aihistory.exception.InvalidRestoreRequestException;
@@ -12,6 +14,7 @@ import fruition.core.aihistory.exception.OperationNotFoundException;
 import fruition.core.aihistory.repository.OperationChangeRepository;
 import fruition.core.aihistory.repository.OperationLogRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,10 +23,12 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
- * AI 작업 로그 조회. 목록과 상세 모두 저장된 값만 읽고 diff를 계산하지 않는다.
+ * AI 작업 로그 조회. ingest·lint 상세는 생성·삭제된 Wiki 제목과 유형만 반환한다.
  */
 @Service
 public class OperationQueryService {
@@ -54,17 +59,20 @@ public class OperationQueryService {
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final ChangeDiffLoader diffLoader;
     private final ObjectMapper objectMapper;
+    private final PipelineWikiStateRequester wikiStateRequester;
 
     public OperationQueryService(OperationLogRepository operationLogRepository,
                                  OperationChangeRepository operationChangeRepository,
                                  WorkspaceAccessGuard workspaceAccessGuard,
                                  ChangeDiffLoader diffLoader,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 PipelineWikiStateRequester wikiStateRequester) {
         this.operationLogRepository = operationLogRepository;
         this.operationChangeRepository = operationChangeRepository;
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.diffLoader = diffLoader;
         this.objectMapper = objectMapper;
+        this.wikiStateRequester = wikiStateRequester;
     }
 
     @Transactional(readOnly = true)
@@ -94,8 +102,23 @@ public class OperationQueryService {
         OperationLog log = operationLogRepository
                 .findByOperationIdAndWorkspaceId(operationId, workspaceId)
                 .orElseThrow(() -> new OperationNotFoundException(operationId));
-        // 상세를 한 번 부르면 변경분까지 다 받도록 여기서 계산한다.
         List<OperationChange> found = operationChangeRepository.findByOperationIdOrderByIdAsc(operationId);
+        if (log.getOperationType() == OperationType.ingest || log.getOperationType() == OperationType.lint) {
+            List<OperationChange> pages = found.stream()
+                    .filter(change -> change.getResourceType() == ResourceType.wiki_page)
+                    .filter(change -> change.getChangeType() == ChangeType.created
+                            || change.getChangeType() == ChangeType.deleted)
+                    .toList();
+            List<String> pageIds = pages.stream().map(OperationChange::getResourceId).distinct().toList();
+            Map<String, String> pageTypes = pageIds.isEmpty() ? Map.of()
+                    : wikiStateRequester.lookup(pageIds, workspaceId).stream()
+                            .collect(Collectors.toMap(PipelineWikiStateRequester.WikiPageSnapshot::id,
+                                    PipelineWikiStateRequester.WikiPageSnapshot::pageType));
+            return OperationLogDetailResponse.from(log, pages.stream()
+                    .map(change -> OperationLogDetailResponse.Change.wikiTitle(
+                            change, pageTypes.get(change.getResourceId())))
+                    .toList(), objectMapper);
+        }
         List<ChangeDiffLoader.Diff> diffs = diffLoader.load(found);
 
         List<OperationLogDetailResponse.Change> changes = new ArrayList<>(found.size());

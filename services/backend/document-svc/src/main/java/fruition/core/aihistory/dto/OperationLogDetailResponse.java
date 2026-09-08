@@ -20,10 +20,10 @@ import java.util.List;
  * 작업 상세. 그 작업이 바꾼 리소스를 함께 반환한다.
  *
  * <p>{@code additions}·{@code deletions}는 저장 시점에 계산해 둔 값이라 다시 세지 않는다.
- * {@code hunks}는 저장된 본문 두 벌을 읽어 조회 시점에 계산한다.
+ * ingest·lint는 생성·삭제된 Wiki 제목과 유형만 전달한다. 그 외 작업의 {@code hunks}는 조회 시점에 계산한다.
  */
 @Schema(description = "AI 작업 상세. 그 작업이 바꾼 리소스를 함께 반환한다. "
-        + "additions·deletions는 저장 시점 값이고 hunks는 조회 시점에 계산한다.")
+        + "ingest·lint는 생성·삭제된 Wiki 제목과 유형만 전달하고 그 외 작업은 변경분을 포함한다.")
 public record OperationLogDetailResponse(
         @JsonProperty("operation_id")
         @Schema(description = "작업 ID", example = "op_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")
@@ -134,7 +134,12 @@ public record OperationLogDetailResponse(
             @JsonProperty("diff_too_large")
             @Schema(description = "두 본문 차이가 너무 커서 계산하지 못한 경우 true. 개별 diff로도 볼 수 없다.",
                     example = "true")
-            Boolean diffTooLarge
+            Boolean diffTooLarge,
+
+            @JsonProperty("page_type")
+            @Schema(description = "ingest·lint Wiki의 유형. 페이지 메타데이터가 없으면 생략된다.",
+                    allowableValues = {"concept", "source"})
+            String pageType
     ) {
         public static Change from(OperationChange change, ChangeDiffLoader.Diff diff) {
             return new Change(
@@ -149,7 +154,15 @@ public record OperationLogDetailResponse(
                     change.getAdditions(),
                     change.getDeletions(),
                     diff.hunks(),
-                    diff.tooLarge() ? Boolean.TRUE : null);
+                    diff.tooLarge() ? Boolean.TRUE : null, null);
+        }
+
+        /** Wiki 작업은 제목과 분류만 전달하고 본문·변경분은 읽지 않는다. */
+        public static Change wikiTitle(OperationChange change, String pageType) {
+            return new Change(change.getId(), change.getResourceType().name(),
+                    change.getResourceId(), change.getResourceDisplayName(),
+                    null, null, change.getChangeType().name(), null,
+                    null, null, null, null, pageType);
         }
     }
 

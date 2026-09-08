@@ -529,7 +529,7 @@ paths:
       - AI Operation Logs
   /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}:
     get:
-      description: 그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다.
+      description: ingest·lint는 생성·삭제된 Wiki의 제목과 page_type(concept/source)을 반환하며 본문·diff는 계산하거나 전달하지 않습니다. 그 외 작업은 리소스별 변경분을 반환합니다.
       operationId: detail
       parameters:
       - example: ws_9d47a0e9a6324341b47562553b75f92a
@@ -4007,6 +4007,12 @@ components:
           format: int64
           description: 변경 내역 ID
           example: 1
+        page_type:
+          type: string
+          description: ingest·lint Wiki의 유형. 페이지 메타데이터가 없으면 생략된다.
+          enum:
+          - concept
+          - source
         resource_display_name:
           type: string
           description: 변경 시점의 리소스 표시 이름
@@ -5515,7 +5521,7 @@ components:
             $ref: "#/components/schemas/ModelResponse"
     OperationLogDetailResponse:
       type: object
-      description: AI 작업 상세. 그 작업이 바꾼 리소스를 함께 반환한다. additions·deletions는 저장 시점 값이고 hunks는 조회 시점에 계산한다.
+      description: AI 작업 상세. 그 작업이 바꾼 리소스를 함께 반환한다. ingest·lint는 생성·삭제된 Wiki 제목과 유형만 전달하고 그 외 작업은 변경분을 포함한다.
       properties:
         changed_resource_count:
           type: integer

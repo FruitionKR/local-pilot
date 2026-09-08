@@ -116,21 +116,22 @@ class OperationQueryControllerTest {
     }
 
     @Test
-    @DisplayName("상세는 변경분까지 함께 내려간다")
-    void detailIncludesHunks() throws Exception {
+    @DisplayName("Wiki 작업 상세는 유형과 제목을 전달하고 변경분을 생략한다")
+    void detailIncludesWikiTitles() throws Exception {
         when(queryService.detail(WORKSPACE_ID, USER_ID, OPERATION_ID))
                 .thenReturn(new OperationLogDetailResponse(OPERATION_ID, "ingest", "succeeded",
                         "doc_A", "요약", 1, null, NOW, NOW,
                         List.of(new OperationLogDetailResponse.Change(1L, "wiki_page", "wp_C3",
-                                "개념 C3", 3L, 4L, "updated", null, 8, 1, List.of(), null))));
+                                "개념 C3", null, null, "created", null, null, null, null, null, "concept"))));
 
         mockMvc.perform(get(BASE + "/" + OPERATION_ID).header("Authorization", bearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.changes[0].resource_id").value("wp_C3"))
                 .andExpect(jsonPath("$.changes[0].resource_display_name").value("개념 C3"))
-                .andExpect(jsonPath("$.changes[0].before_revision").value(3))
-                .andExpect(jsonPath("$.changes[0].change_type").value("updated"))
-                .andExpect(jsonPath("$.changes[0].hunks").isArray())
+                .andExpect(jsonPath("$.changes[0].page_type").value("concept"))
+                .andExpect(jsonPath("$.changes[0].before_revision").doesNotExist())
+                .andExpect(jsonPath("$.changes[0].change_type").value("created"))
+                .andExpect(jsonPath("$.changes[0].hunks").doesNotExist())
                 // 값이 없으면 응답에서 생략한다.
                 .andExpect(jsonPath("$.changes[0].diff_too_large").doesNotExist())
                 .andExpect(jsonPath("$.restore").doesNotExist());
@@ -150,7 +151,7 @@ class OperationQueryControllerTest {
                 .thenReturn(new OperationLogDetailResponse(OPERATION_ID, "restore", "rebuilding",
                         "doc_A", null, "복구 중", 2, "op_a1", NOW, null,
                         List.of(new OperationLogDetailResponse.Change(1L, "wiki_page", "wp_delete",
-                                null, 3L, null, "deleted", null, null, null, null, null)), restore));
+                                null, 3L, null, "deleted", null, null, null, null, null, null)), restore));
 
         mockMvc.perform(get(BASE + "/" + OPERATION_ID).header("Authorization", bearer()))
                 .andExpect(status().isOk())

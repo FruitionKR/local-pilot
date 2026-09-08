@@ -73,7 +73,8 @@ public class OperationQueryController {
     }
 
     @Operation(summary = "AI 작업 로그 상세",
-            description = "그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다.")
+            description = "ingest·lint는 생성·삭제된 Wiki의 제목과 page_type(concept/source)을 반환하며 본문·diff는 계산하거나 전달하지 않습니다. "
+                    + "그 외 작업은 리소스별 변경분을 반환합니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "404", description = "작업 또는 워크스페이스를 찾을 수 없음",
