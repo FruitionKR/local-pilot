@@ -4,5 +4,6 @@ public enum QueryRunStatus {
     PENDING,
     RUNNING,
     COMPLETED,
+    CANCELLED,
     FAILED
 }

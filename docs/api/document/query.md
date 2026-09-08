@@ -2,8 +2,11 @@
 
 [API 문서](../README.md) / [document-svc](README.md)
 
-동기·비동기 질의와 실행 상태·SSE Gateway API다. 동기 요청은 ai-svc 내부 HTTP,
-비동기 요청은 Kafka `ai.query.command`로 전달한다.
+동기·비동기 질의 모두 Kafka `ai.query.command`로 전달하며 같은 취소·복구 경로를 사용한다.
+동기는 결과를 기다려 기존 응답 body를 반환한다. 선택 query parameter `run_id`로 실행 ID를
+미리 지정하면 대기 중에도 [취소 API](../ai/tasks.md)를 호출할 수 있다. 성공 응답의
+`X-AI-Run-Id` 헤더에도 실행 ID를 담는다. ID 재사용과 취소 완료된 질의는 `409`이며,
+대기 시간 초과 시 취소를 요청한 뒤 `503`을 반환한다. SSE의 `query.cancelled`는 복구 완료 후의 종결 이벤트다.
 
 - API 수: 4
 

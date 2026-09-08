@@ -90,6 +90,30 @@ public class ConverterClient {
         }
     }
 
+    public String convertPdf(String filename, byte[] pdfBytes, String provider, String model,
+                             java.util.function.BooleanSupplier active) {
+        try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            var request = executor.submit(() -> convertPdf(filename, pdfBytes, provider, model));
+            try {
+                while (active.getAsBoolean()) {
+                    try {
+                        return request.get(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    } catch (java.util.concurrent.TimeoutException pending) {
+                        // 취소 확인을 위해 응답을 짧게 기다린다.
+                    }
+                }
+                throw new java.util.concurrent.CancellationException("변환 작업이 취소되었습니다.");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new DocumentConvertException("변환 대기가 중단되었습니다.", e);
+            } catch (java.util.concurrent.ExecutionException e) {
+                throw new DocumentConvertException("변환에 실패했습니다.", e.getCause());
+            } finally {
+                request.cancel(true);
+            }
+        }
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     record ConvertResponse(String markdown) {}
 }

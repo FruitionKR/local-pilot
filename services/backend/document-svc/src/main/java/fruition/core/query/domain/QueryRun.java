@@ -40,6 +40,11 @@ public record QueryRun(
                 QueryRunStatus.COMPLETED, question, result, null, createdAt, completedAt);
     }
 
+    public QueryRun cancelled(Instant completedAt) {
+        return new QueryRun(requestId, workspaceId, sessionId, provider, model, webSearchEnabled,
+                QueryRunStatus.CANCELLED, question, null, null, createdAt, completedAt);
+    }
+
     public QueryRun failed(String errorMessage, Instant completedAt) {
         return new QueryRun(requestId, workspaceId, sessionId, provider, model, webSearchEnabled,
                 QueryRunStatus.FAILED, question, null, errorMessage, createdAt, completedAt);
@@ -48,6 +53,6 @@ public record QueryRun(
     // 파생 값이라 Redis 저장 JSON에 필드로 직렬화되지 않게 한다.
     @JsonIgnore
     public boolean isFinished() {
-        return status == QueryRunStatus.COMPLETED || status == QueryRunStatus.FAILED;
+        return status == QueryRunStatus.CANCELLED || status == QueryRunStatus.COMPLETED || status == QueryRunStatus.FAILED;
     }
 }

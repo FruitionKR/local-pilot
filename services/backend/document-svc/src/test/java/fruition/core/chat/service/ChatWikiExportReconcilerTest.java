@@ -30,6 +30,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ChatWikiExportReconcilerTest {
 
+    @Mock fruition.core.document.repository.AiCommandOutboxWriter taskWriter;
     @Mock DocumentRepository documentRepository;
     @Mock PipelineWikiStateRequester wikiStateRequester;
     @Mock ChatPartialWikiRepository chatPartialWikiRepository;
@@ -39,6 +40,7 @@ class ChatWikiExportReconcilerTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(taskWriter.join(any())).thenReturn(true);
         // 트랜잭션 경계는 테스트 범위 밖이라 콜백을 그대로 실행한다.
         org.springframework.transaction.support.TransactionTemplate transactionTemplate =
                 new org.springframework.transaction.support.TransactionTemplate() {
@@ -49,7 +51,7 @@ class ChatWikiExportReconcilerTest {
                 };
         reconciler = new ChatWikiExportReconciler(
                 documentRepository, wikiStateRequester, chatPartialWikiRepository, documentService,
-                transactionTemplate, new ObjectMapper());
+                transactionTemplate, new ObjectMapper(), taskWriter);
     }
 
     /** export 시점에 documents.pipeline_input_blocks에 저장되는 형식 그대로. */

@@ -3,8 +3,8 @@
 [API 문서](../README.md) / [ai-svc](README.md)
 
 Wiki 기반 질의 실행 내부 API다. 공개 Gateway 계약은
-[`document-svc Query API`](../document/query.md)다. 동기 Query는 Backend가 이 API를 호출하고,
-비동기 Query는 Kafka `ai.query.command` worker가 같은 application 로직을 실행한다.
+[`document-svc Query API`](../document/query.md)다. 공개 동기·비동기 Query는 Kafka `ai.query.command` worker가 같은 application 로직을 실행한다.
+이 HTTP API는 운영용 단발 호출이며 공통 작업 취소에 등록되지 않는다.
 
 - API 수: 1
 

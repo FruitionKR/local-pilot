@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 
 from minio import Minio
 
+from app.core.pipeline_control import task_run_id
+
 
 def _endpoint() -> str:
     endpoint = os.environ.get("S3_ENDPOINT") or "http://localhost:9000"
@@ -62,6 +64,10 @@ def write_text_object(
     minio_client = client()
     if not minio_client.bucket_exists(bucket):
         minio_client.make_bucket(bucket)
+    if task_run_id.get() is not None:
+        from app.modules.task_cancellation.infrastructure.object_change_journal import change_object
+        change_object(task_run_id.get(), minio_client, bucket, key, {"text": text, "content_type": content_type})
+        return storage_uri(key, bucket)
     minio_client.put_object(
         bucket,
         key,
@@ -74,4 +80,8 @@ def write_text_object(
 
 def delete_object(object_name: str) -> None:
     bucket, key = split_storage_uri(object_name)
+    if task_run_id.get() is not None:
+        from app.modules.task_cancellation.infrastructure.object_change_journal import change_object
+        change_object(task_run_id.get(), client(), bucket, key, None)
+        return
     client().remove_object(bucket, key)

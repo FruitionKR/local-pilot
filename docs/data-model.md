@@ -45,6 +45,7 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | ai_command_outbox | document-svc | AI command의 transactional outbox | `run_id` UK, Kafka topic·key·payload |
 | ai_operation_logs | document-svc | 문서·Wiki AI 작업 및 복구 감사 로그 | `target_display_name`은 작업 시작 시점 대상 이름 snapshot이다. `document_restore_blocked`는 V39 당시 기존 `document_edit`만 true로 표시하며 해당 감사 행의 복구를 차단한다. 새 작업과 ingest/lint는 false; 복구는 `restore_token_hash`(미리보기 토큰 SHA-256)와 `(restored_from, restore_token_hash)` partial unique로 동일 실행을 DB에서 1회만 선점 |
 | ai_operation_changes | document-svc | 작업별 변경 리소스 감사 내역 | `resource_display_name`은 변경 시점 리소스 이름 snapshot이며 이후 Wiki rename/delete와 무관하게 유지된다. |
+| ai_task_runs·ai_task_changes | document-svc | 공개 AI 작업 상태·업무 행의 변경 전후 값·복구 완료 기록 | run ID와 actor, trigger로 같은 트랜잭션에 기록; V47 |
 | ai_task_result_receipts | document-svc | `ai.task.event` 멱등 반영 영수증 | `event_id` PK, `run_id`, `task_kind` |
 | agent_apply_projections | document-svc | Markdown Agent 적용 예약·결과 projection | `run_id` PK, `apply_operation_id` UK, `base_version`, V33 `apply_revision_write_id`, V35 `ready_markdown`, queued→ready/failed→consumed. V36은 기존 ready를 backfill하고 복구 불가 건을 `failed`로 전환 |
 | wiki_page_versions | document-svc | Wiki 본문 revision 이력 | 복합 PK `(page_id, revision)`, 페이지 ID는 ai_db 논리 참조 |
@@ -82,6 +83,7 @@ V45는 원문을 복제하지 않고 `agent_apply_projections`와 `chat_messages
 | source_blocks | ai-svc | 문서 block 텍스트 | 복합 PK `(block_id, document_id)` |
 | pipeline_runs | ai-svc | pipeline 실행 상태 | Spring이 만든 `run_id`, `user_id`·`workspace_id` 보존. ingest manifest의 `post_ingest.status`는 `running/retrying/ready/needs_review` 품질 진단 상태를 보존 |
 | wiki_page_embeddings·wiki_embedding_vectors·wiki_embedding_units | ai-svc | 검색용 embedding과 페이지 embedding 재처리 예약 | `wiki_page_embeddings.status`의 `pending`·`failed`는 maintenance worker가 재처리, page FK는 ai_db 내부, document ID는 논리 참조 |
+| ai_task_runs·ai_task_changes | ai-svc | 비 Agent 작업·부모/자식·AI DB/객체 저장소 변경 기록 | command hash, 취소 상태, 역순 복구 기록 |
 | skills·skill_versions·skill_version_sources | ai-svc | 개인·팀 Skill과 게시 version·생성 근거 | 개인은 `owner_user_id`, 팀은 `workspace_id`; 팀 권한은 access-svc 조회 |
 | agent_runs·agent_plans·agent_plan_operations | ai-svc | Agent 실행·승인 대상 plan·operation | Markdown command는 Spring이 공급한 run ID와 envelope hash를 영속. 완료 `result`는 route를, 실패 `result`는 error code·예외 유형과 route 계약 교정 사유를 보존 |
 | agent_approvals·agent_jobs·agent_tool_executions·agent_run_artifacts | ai-svc | 승인·lease/retry·Tool 멱등 실행·비동기 artifact | run/plan/operation FK, Tool 호출 수 40회 제한 |
@@ -128,4 +130,6 @@ erDiagram
 
 - Wiki·Agent·Skill·checkpoint는 ID를 보존해 ai_db로 이전한다. core의 기존 source 테이블은 rollback 안정화 기간 동안 read-only로 보존하고 별도 migration에서 제거한다.
 - Agent/Skill/checkpoint DDL의 단일 소유자는 Python `ai_schema.sql`이다. 팀 멤버십은 `workspace_members`를 직접 join하지 않고 access-svc 내부 권한 API로 조회한다.
-- Markdown Agent는 ai_db의 기존 `agent_runs`·`agent_jobs`를 재사용하며 별도 공통 run 테이블을 두지 않는다. document-svc에는 적용 예약 projection·outbox·result receipt·document audit만 남긴다.
+- Markdown Agent는 ai_db의 `agent_runs`·`agent_jobs`로 실행·취소하고, core_db의 `ai_task_runs`가 채팅·업무 변경까지 복구를 조율한다. 비 Agent 작업은 ai_db의 `ai_task_runs`·`ai_task_changes`를 사용한다. Agent Tool 실행의 역작업은 `agent_tool_executions`에 별도 멱등키로 기록하며, 적용 projection의 `autonomous_tool`은 일반 턴 적용과 도구 역작업의 인가 경계를 구분한다.
+
+취소로 본문을 복구한 뒤에도 `document_edit_states.revision`은 증가한다. 복구 outbox 이벤트를 AI 파생 상태에 동기 반영해 늦은 기존 편집 이벤트가 복구를 뒤집지 못하게 한다. 생성 문서 삭제의 파생 상태 tombstone과 작업·멱등 기록은 운영 기록으로 유지한다.

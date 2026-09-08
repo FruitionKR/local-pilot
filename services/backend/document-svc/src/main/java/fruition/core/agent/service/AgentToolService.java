@@ -1,6 +1,8 @@
 package fruition.core.agent.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import fruition.core.aitask.service.AiTaskCancellationService;
+import fruition.core.document.dto.DocumentLifecycleRequest;
 import fruition.core.agent.dto.AgentToolExecuteRequest;
 import fruition.core.agent.dto.AgentToolReadRequest;
 import fruition.core.agent.repository.PipelineAgentToolAuthorizationClient;
@@ -52,6 +54,8 @@ public class AgentToolService {
             "get_breadcrumb", Set.of("folder_id", "document_id"));
     private static final Map<String, Set<String>> EXECUTE_TOOL_ARGUMENTS = Map.of(
             "create_folder", Set.of("name", "parent_folder_id"),
+            "delete_folder", Set.of("folder_id", "base_version", "require_empty"),
+            "delete_document", Set.of("document_id", "base_version"),
             "rename_folder", Set.of("folder_id", "name", "base_version"),
             "move_folder", Set.of("folder_id", "parent_folder_id", "position", "base_version"),
             "move_document", Set.of("document_id", "folder_id", "position", "base_version"),
@@ -73,6 +77,7 @@ public class AgentToolService {
     private final DocumentEditStateInitializer editStateInitializer;
     private final IdempotencyService idempotencyService;
     private final TransactionTemplate transactionTemplate;
+    private final AiTaskCancellationService taskCancellationClient;
 
     public AgentToolService(
             PipelineAgentToolAuthorizationClient authorizationClient,
@@ -87,7 +92,8 @@ public class AgentToolService {
             DocumentEditStateRepository editStateRepository,
             DocumentEditStateInitializer editStateInitializer,
             IdempotencyService idempotencyService,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate,
+            AiTaskCancellationService taskCancellationClient) {
         this.authorizationClient = authorizationClient;
         this.artifactClient = artifactClient;
         this.runCommandRepository = runCommandRepository;
@@ -101,6 +107,7 @@ public class AgentToolService {
         this.editStateInitializer = editStateInitializer;
         this.idempotencyService = idempotencyService;
         this.transactionTemplate = transactionTemplate;
+        this.taskCancellationClient = taskCancellationClient;
     }
 
     public Object read(String toolName, AgentToolReadRequest request) {
@@ -125,7 +132,7 @@ public class AgentToolService {
     }
 
     public Object execute(String toolName, AgentToolExecuteRequest request) {
-        if ("apply_document_edit".equals(toolName)) {
+        if ("apply_document_edit".equals(toolName) || "delete_document".equals(toolName)) {
             return dispatchExecute(toolName, request);
         }
         return transactionTemplate.execute(status -> dispatchExecute(toolName, request));
@@ -139,6 +146,13 @@ public class AgentToolService {
             case "create_folder" -> folderService.create(
                     request.workspaceId(), request.userId(), request.idempotencyKey(),
                     new FolderCreateRequest(text(arguments, "name"), nullableUuid(arguments, "parent_folder_id")));
+            case "delete_folder" -> {
+                if (!arguments.path("require_empty").isBoolean() || !arguments.path("require_empty").booleanValue()) {
+                    throw badRequest("취소 삭제는 require_empty=true가 필요합니다.");
+                }
+                yield folderService.deleteEmpty(request.workspaceId(), request.userId(), uuid(arguments, "folder_id"),
+                        request.idempotencyKey(), positiveLong(arguments, "base_version"));
+            }
             case "rename_folder" -> folderService.rename(
                     request.workspaceId(), request.userId(), uuid(arguments, "folder_id"), request.idempotencyKey(),
                     new FolderRenameRequest(text(arguments, "name"), positiveLong(arguments, "base_version")));
@@ -153,9 +167,31 @@ public class AgentToolService {
                             positiveLong(arguments, "base_version")));
             case "rename_document" -> renameDocument(request);
             case "create_document" -> createDocument(request);
+            case "delete_document" -> deleteDocument(request);
             case "apply_document_edit" -> applyDocumentEdit(request);
             default -> throw badRequest("지원하지 않는 mutation Tool입니다.");
         };
+    }
+
+    private Object deleteDocument(AgentToolExecuteRequest request) {
+        String documentId = text(request.arguments(), "document_id");
+        workspaceAccessGuard.requireMember(request.workspaceId(), request.userId());
+        Document document = documentRepository.findById(documentId)
+                .filter(value -> request.workspaceId().equals(value.getWorkspaceId()))
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        if (!request.userId().equals(document.getUserId()))
+            throw new DocumentWriteForbiddenException("문서 소유자만 변경할 수 있습니다.");
+        long baseVersion = positiveLong(request.arguments(), "base_version");
+        if (document.getDeletedAt() == null && document.getCurrentVersion() != baseVersion)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "문서가 변경되어 취소 삭제할 수 없습니다.");
+        // 파생 작업과 늦은 결과를 먼저 차단·복구한다. 삭제 이벤트가 복구할 데이터를 먼저 지우지 않게 한다.
+        if (document.getDeletedAt() == null
+                && !taskCancellationClient.cancelDocumentTasks(documentId, request.workspaceId(), request.userId())) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "문서 파생 작업을 복구하고 있습니다.");
+        }
+        var deleted = documentService.delete(request.workspaceId(), request.userId(), documentId,
+                request.idempotencyKey(), new DocumentLifecycleRequest(positiveLong(request.arguments(), "base_version")));
+        return Map.of("id", deleted.id(), "current_version", deleted.currentVersion(), "cleanup_complete", true);
     }
 
     private Object createDocument(AgentToolExecuteRequest request) {

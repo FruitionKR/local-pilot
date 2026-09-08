@@ -49,7 +49,7 @@ public class AiTaskResultConsumer {
             // 진행 이벤트는 종류와 무관하게 중계만 한다. kind 분기보다 먼저 걸러야 한다 —
             // 뒤에 두면 agent 진행 이벤트가 applyAgent로 들어가 최종 결과로 오인된다.
             if ("progress".equals(event.path("status").asText())) {
-                relayRunProgress(event, flowId);
+                if (applier.acceptsProgress(flowId)) relayRunProgress(event, flowId);
                 return;
             }
             if ("ingest".equals(kind)) {
@@ -81,6 +81,7 @@ public class AiTaskResultConsumer {
                 return;
             }
             var projection = applier.applyQuery(event);
+            if (projection == null) return;
             if (projection.error() == null) {
                 if (queryRunStore.markCompleted(projection.runId(), projection.response())) {
                     queryEventBroker.complete(projection.runId());

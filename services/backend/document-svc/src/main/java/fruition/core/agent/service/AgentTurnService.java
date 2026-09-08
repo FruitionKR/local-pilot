@@ -51,6 +51,8 @@ public class AgentTurnService {
     private final ChatConversationReader chatConversationReader;
     private final ChatTurnRecorder chatTurnRecorder;
     private final String commandTopic;
+    private final fruition.core.aitask.service.AiTaskCancellationService cancellation;
+    private final com.fasterxml.jackson.databind.ObjectMapper mapper;
 
     public AgentTurnService(DocumentService documentService,
                             DocumentEditLockService editLockService,
@@ -63,7 +65,9 @@ public class AgentTurnService {
                             ChatSessionService chatSessionService,
                             ChatConversationReader chatConversationReader,
                             ChatTurnRecorder chatTurnRecorder,
-                            @Value("${app.agent.command-topic}") String commandTopic) {
+                            @Value("${app.agent.command-topic}") String commandTopic,
+                            fruition.core.aitask.service.AiTaskCancellationService cancellation,
+                            com.fasterxml.jackson.databind.ObjectMapper mapper) {
         this.documentService = documentService;
         this.editLockService = editLockService;
         this.workspaceAccessGuard = workspaceAccessGuard;
@@ -76,6 +80,8 @@ public class AgentTurnService {
         this.chatConversationReader = chatConversationReader;
         this.chatTurnRecorder = chatTurnRecorder;
         this.commandTopic = commandTopic;
+        this.cancellation = cancellation;
+        this.mapper = mapper;
     }
 
     @Transactional
@@ -105,6 +111,7 @@ public class AgentTurnService {
                 workspaceId, userId, request.skillDraftSources());
 
         String runId = "agent_" + UUID.randomUUID().toString().replace("-", "");
+        outboxWriter.begin(runId, workspaceId, userId, "agent");
         // 편집안을 적용할 때 되돌려받을 표. source=agent 문자열 대신 이 값으로 AI 작업 여부를 가린다.
         // 적용할 문서가 없으면 표도 만들지 않는다.
         String applyOperationId = request.hasDocumentContext() ? applyOperationStore.newOperationId() : null;
@@ -173,7 +180,7 @@ public class AgentTurnService {
         if (!RUN_ID_PATTERN.matcher(runId).matches()) {
             throw new InvalidAgentTurnRequestException("Agent run ID 형식이 올바르지 않습니다.");
         }
-        runRepository.find(workspaceId, userId, runId)
+        cancellation.findStatus(runId, workspaceId, userId)
                 .orElseThrow(() -> new AgentRunNotFoundException(runId));
     }
 
@@ -181,6 +188,12 @@ public class AgentTurnService {
         workspaceAccessGuard.requireMember(workspaceId, userId);
         if (!RUN_ID_PATTERN.matcher(runId).matches()) {
             throw new InvalidAgentTurnRequestException("Agent run ID 형식이 올바르지 않습니다.");
+        }
+        var cancelling = cancellation.findStatus(runId, workspaceId, userId)
+                .filter(row -> Set.of("cancel_requested", "rolling_back", "rollback_failed", "cancelled").contains(row.get("status")));
+        if (cancelling.isPresent()) {
+            var row = cancelling.get();
+            return new AgentTurnResponse(null, null, runId, null, (String) row.get("status"), null, (String) row.get("error_code"));
         }
         var aiRun = statusRequester.find(workspaceId, userId, runId);
         if (aiRun.isPresent()) {
@@ -223,6 +236,9 @@ public class AgentTurnService {
 
     public JsonNode cancel(String workspaceId, String userId, String runId) {
         workspaceAccessGuard.requireMember(workspaceId, userId);
+        if (cancellation.findStatus(runId, workspaceId, userId).isPresent()) {
+            return mapper.valueToTree(cancellation.cancel(runId, workspaceId, userId));
+        }
         return statusRequester.cancel(workspaceId, userId, runId);
     }
 

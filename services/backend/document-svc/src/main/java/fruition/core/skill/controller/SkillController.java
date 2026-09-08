@@ -59,8 +59,10 @@ public class SkillController {
     public ResponseEntity<JsonNode> author(
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
-            @Valid @RequestBody SkillAuthoringRequest request) {
-        return ResponseEntity.ok(skillService.author(workspaceId, userId, request));
+            @Valid @RequestBody SkillAuthoringRequest request,
+            @org.springframework.web.bind.annotation.RequestParam(value = "run_id", required = false) String runId) {
+        runId = runId == null ? "skill_" + java.util.UUID.randomUUID() : runId;
+        return ResponseEntity.ok(skillService.author(workspaceId, userId, request, runId));
     }
 
     @Operation(summary = "Skill 게시", description = "작성된 Skill 정의를 검토 후 게시합니다.")
@@ -86,8 +88,10 @@ public class SkillController {
     public ResponseEntity<JsonNode> publish(
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
-            @Valid @RequestBody SkillPublishRequest request) {
-        return ResponseEntity.ok(skillService.publish(workspaceId, userId, request));
+            @Valid @RequestBody SkillPublishRequest request,
+            @org.springframework.web.bind.annotation.RequestParam(value = "run_id", required = false) String runId) {
+        runId = runId == null ? "skill_" + java.util.UUID.randomUUID() : runId;
+        return ResponseEntity.ok(skillService.publish(workspaceId, userId, request, runId));
     }
 
     @Operation(summary = "Skill 목록 조회", description = "현재 사용자가 사용할 수 있는 워크스페이스 Skill 목록을 반환합니다.")
@@ -157,8 +161,10 @@ public class SkillController {
             @Parameter(description = "수정할 Skill ID", required = true)
             @PathVariable("skill_id") String skillId,
             @AuthenticationPrincipal String userId,
-            @Valid @RequestBody SkillUpdateRequest request) {
-        return ResponseEntity.ok(skillService.update(workspaceId, userId, skillId, request));
+            @Valid @RequestBody SkillUpdateRequest request,
+            @org.springframework.web.bind.annotation.RequestParam(value = "run_id", required = false) String runId) {
+        runId = runId == null ? "skill_" + java.util.UUID.randomUUID() : runId;
+        return ResponseEntity.ok(skillService.update(workspaceId, userId, skillId, request, runId));
     }
 
     @Operation(summary = "Skill 활성화", description = "Skill을 Agent 실행 대상에 포함합니다.")

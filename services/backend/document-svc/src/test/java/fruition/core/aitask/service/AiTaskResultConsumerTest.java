@@ -30,6 +30,7 @@ class AiTaskResultConsumerTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(applier.acceptsProgress(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
         consumer = new AiTaskResultConsumer(
                 new ObjectMapper(), applier, queryRunStore, queryEventBroker);
     }
@@ -85,7 +86,9 @@ class AiTaskResultConsumerTest {
                 "wiki_loaded",
                 "Wiki 데이터를 불러왔습니다.",
                 java.util.Map.of("page_count", 3));
-        verifyNoInteractions(applier, queryRunStore);
+        verify(applier).acceptsProgress(org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.verifyNoMoreInteractions(applier);
+        verifyNoInteractions(queryRunStore);
     }
 
     /**
@@ -107,7 +110,9 @@ class AiTaskResultConsumerTest {
                  "payload":{"stage":"wiki_loaded","message":"불러왔습니다.","data":{}}}
                 """);
 
-        verifyNoInteractions(applier, queryRunStore);
+        verify(applier).acceptsProgress(org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.verifyNoMoreInteractions(applier);
+        verifyNoInteractions(queryRunStore);
     }
 
     /**
@@ -132,7 +137,9 @@ class AiTaskResultConsumerTest {
                 "wiki_loaded",
                 "Wiki 데이터를 불러왔습니다.",
                 java.util.Map.of());
-        verifyNoInteractions(applier, queryRunStore);
+        verify(applier).acceptsProgress(org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.verifyNoMoreInteractions(applier);
+        verifyNoInteractions(queryRunStore);
     }
 
     /**

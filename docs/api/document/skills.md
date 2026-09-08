@@ -7,6 +7,11 @@ workspace AI 모델을 확인한 뒤 ai-svc 내부 HTTP로 전달한다.
 
 - API 수: 8
 
+작성·게시·수정 요청은 선택 query parameter `run_id`를 받고 응답에도 `run_id`를 반환한다.
+호출자가 ID를 미리 지정하면 HTTP 응답을 기다리는 중에도 [공통 취소 API](../ai/tasks.md)를
+호출할 수 있다. Backend는 `/skills/tasks` 내부 API에 원래 body와 검증한 actor·모델을 전달하며,
+취소는 생성한 Skill 삭제 또는 이전 게시 버전·설정 복구까지 확인한다.
+
 ## API 목차
 
 | API | 목적 |

@@ -13,6 +13,7 @@ from app.modules.skill.interfaces.http.dependencies import (
     get_skill_repository,
 )
 from app.modules.skill.interfaces.http.schemas import (
+    SkillTaskRequest,
     PublishAuthoredSkillRequest,
     SkillAuthoringRequest,
     SkillAuthoringResponse,
@@ -29,7 +30,32 @@ router = APIRouter(prefix="/skills", tags=["skills"])
 agent_router = APIRouter(prefix="/skills", tags=["skills"])
 
 
-@router.post("/author", response_model=SkillAuthoringResponse)
+@router.post("/tasks")
+def execute_skill_task(task: SkillTaskRequest):
+    from app.modules.task_cancellation.infrastructure import postgres_task_journal as journal
+    if any(task.payload.get(key) != getattr(task, key) for key in ("workspace_id", "user_id")):
+        raise HTTPException(409, "Skill task actor mismatch.")
+    def execute():
+        if task.kind == "skill_author":
+            result = author_skill(SkillAuthoringRequest.model_validate(task.payload))
+        elif task.kind == "skill_publish":
+            result = publish_authored_skill(PublishAuthoredSkillRequest.model_validate(task.payload))
+        else:
+            if not task.skill_id:
+                raise HTTPException(400, "skill_id is required.")
+            result = update_skill(task.skill_id, UpdateSkillRequest.model_validate(task.payload))
+        if isinstance(result, JSONResponse):
+            import json
+            raise HTTPException(result.status_code, json.loads(result.body))
+        return {**result.model_dump(mode="json"), "run_id": task.run_id}
+    try:
+        return journal.execute(task.model_dump(mode="json", exclude_none=True), execute)
+    except HTTPException as exc:
+        if exc.status_code == 413:
+            return JSONResponse(status_code=413, content=exc.detail)
+        raise
+
+
 def author_skill(
     payload: SkillAuthoringRequest,
 ) -> SkillAuthoringResponse | JSONResponse:
@@ -56,7 +82,6 @@ def author_skill(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/author/publish", response_model=SkillAuthoringResponse)
 def publish_authored_skill(
     payload: PublishAuthoredSkillRequest,
 ) -> SkillAuthoringResponse:
@@ -141,7 +166,6 @@ def get_skill(
     return SkillResponse.from_domain(skill)
 
 
-@router.patch("/{skill_id}", response_model=SkillAuthoringResponse)
 def update_skill(
     skill_id: str,
     payload: UpdateSkillRequest,

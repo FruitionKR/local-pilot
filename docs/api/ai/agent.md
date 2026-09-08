@@ -521,10 +521,10 @@ curl -X POST "$PIPELINE/agent/runs/run_123/approve" \
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 아직 terminal 상태가 아닌 Agent run을 취소합니다. |
+| 목적 | Agent run의 후속 실행을 막고 이미 실행한 변경의 역순 복구를 요청합니다. |
 | 입력 | **Path** — `run_id`<br>**Body** — `workspace_id`, `user_id` |
-| 출력 | `200` — `status=cancelled`인 `AgentRunResponse` |
-| 조건 | completed·failed·partial_failed·conflicted·rejected·cancelled 상태는 취소할 수 없습니다. |
+| 출력 | `200` — 현재 취소·복구 상태를 담은 `AgentRunResponse` |
+| 조건 | 일반 completed·rejected는 거절합니다. markdown_turn은 completed여도 연결된 하위 작업과 Skill 게시의 복구를 요청합니다. failed·partial_failed·conflicted·rollback_failed는 복구를 요청할 수 있고, 취소 진행·완료 상태의 재요청은 멱등입니다. |
 | 주요 오류 | `409` run 없음 또는 취소할 수 없는 상태 |
 
 <details>
@@ -539,7 +539,13 @@ curl -X POST "$PIPELINE/agent/runs/run_123/approve" \
 
 #### 2. 목적
 
-대기 job과 아직 시작하지 않은 operation을 함께 취소합니다.
+대기 job과 아직 시작하지 않은 operation을 함께 취소하고 `rollback` job을 등록합니다. Python worker가 변경 전 상태와 실행 결과를 이용해 역작업을 역순으로 실행합니다. 복구 도구 호출에는 별도 멱등키와 기록된 정확한 인자의 승인 검사를 적용합니다.
+
+상위 `markdown_turn`과 하위 run의 연결은 하위 생성과 같은 DB 트랜잭션에서 `result.run_id`에 기록합니다. 상위 취소는 이미 완료된 하위 작업도 복구 대상으로 삼으며, 하위가 `cancelled`가 된 뒤 상위 취소를 완료합니다. 실행 중인 상위 턴의 늦은 결과는 외부에 발행하지 않습니다.
+
+상태는 `cancel_requested` → `rolling_back` → `cancelled`로 진행합니다. 실제 결과를 확인할 수 없거나 다른 사용자의 후속 변경과 충돌하거나 복구 도구가 실패하면 `rollback_failed`와 `error_code`를 남깁니다. 재요청하면 기존 복구 기록과 멱등키로 재시도합니다. 내용·이름·위치·순서를 복원하며 버전과 감사 기록은 이전 숫자로 되감지 않습니다.
+
+Backend는 `delete_folder(require_empty=true)`로 빈 폴더를 잠금 상태에서 확인해 삭제하고, `delete_document`는 연결된 수집·Wiki 작업의 복구가 끝난 뒤 삭제합니다. Query·수집·변환·Skill 게시 등 공개 AI 기능의 전체 취소는 [공통 작업 취소 API](tasks.md)를 사용합니다. 이 내부 Agent API만 직접 호출하면 core DB의 채팅·업무 변경까지 복구하지 않습니다.
 
 #### 3. Auth 필요 여부
 
@@ -553,8 +559,8 @@ curl -X POST "$PIPELINE/agent/runs/run_123/approve" \
 
 #### 5. Response body
 
-- HTTP `200`: 취소 성공
-- `AgentRunResponse`; 성공 시 `status=cancelled`
+- HTTP `200`: 취소 요청 접수 또는 현재 상태 반환
+- 신규 요청은 `status=cancel_requested`; `cancelled`는 복구 확인이 끝난 상태입니다.
 
 ```json
 {
@@ -562,7 +568,7 @@ curl -X POST "$PIPELINE/agent/runs/run_123/approve" \
   "workspace_id": "workspace_123",
   "action": "workspace_workflow",
   "skill_version_id": null,
-  "status": "cancelled",
+  "status": "cancel_requested",
   "request_summary": "현재 문서에 편집안을 반영해줘",
   "error_code": null,
   "plan": null

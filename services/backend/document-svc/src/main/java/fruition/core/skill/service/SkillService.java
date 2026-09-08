@@ -23,14 +23,14 @@ public class SkillService {
         this.workspaceAiModelClient = workspaceAiModelClient;
     }
 
-    public JsonNode author(String workspaceId, String userId, SkillAuthoringRequest request) {
+    public JsonNode author(String workspaceId, String userId, SkillAuthoringRequest request, String runId) {
         requireMember(workspaceId, userId);
-        return requester.author(workspaceId, userId, request, workspaceAiModelClient.get(workspaceId));
+        return requester.author(workspaceId, userId, request, workspaceAiModelClient.get(workspaceId), runId);
     }
 
-    public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request) {
+    public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request, String runId) {
         requireMember(workspaceId, userId);
-        return requester.publish(workspaceId, userId, request, workspaceAiModelClient.get(workspaceId));
+        return requester.publish(workspaceId, userId, request, workspaceAiModelClient.get(workspaceId), runId);
     }
 
     public JsonNode list(String workspaceId, String userId) {
@@ -43,9 +43,9 @@ public class SkillService {
         return requester.get(workspaceId, userId, skillId);
     }
 
-    public JsonNode update(String workspaceId, String userId, String skillId, SkillUpdateRequest request) {
+    public JsonNode update(String workspaceId, String userId, String skillId, SkillUpdateRequest request, String runId) {
         requireMember(workspaceId, userId);
-        return requester.update(workspaceId, userId, skillId, request, workspaceAiModelClient.get(workspaceId));
+        return requester.update(workspaceId, userId, skillId, request, workspaceAiModelClient.get(workspaceId), runId);
     }
 
     public JsonNode setEnabled(String workspaceId, String userId, String skillId, boolean enabled) {

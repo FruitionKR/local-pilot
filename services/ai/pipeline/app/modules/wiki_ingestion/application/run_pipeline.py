@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import Any
 
-from app.core.pipeline_control import PipelineRunCancelledError
+from app.core.pipeline_control import PipelineRunCancelledError, task_cancellation_scope
 from app.modules.wiki_ingestion.application.models import (
     PipelineRunCommand,
     PipelineRunRegistration,
@@ -66,7 +66,8 @@ class RunPipelineUseCase:
             }
             if command.source_document_id is not None:
                 runner_kwargs["finalization_callback"] = finish_after_heavy_phase
-            manifest = self._runner.run(command, **runner_kwargs)
+            with task_cancellation_scope(lambda: self._repository.touch(run_id)):
+                manifest = self._runner.run(command, **runner_kwargs)
             if not finished:
                 if command.source_document_id is None:
                     self._ensure_active(run_id)

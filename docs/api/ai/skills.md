@@ -4,25 +4,23 @@
 
 Skill 조회·작성·게시·설정 내부 API다. 공개 Gateway 계약은
 [`document-svc Skills API`](../document/skills.md)다. Backend가 사용자·워크스페이스·모델 정보를
-검증해 추가한 뒤 7개 관리 API를 내부 HTTP로 호출한다. draft-from-runs·preview는 ai-svc 내부 기능이다.
+검증해 추가한 뒤 5개 관리 API를 내부 HTTP로 호출한다. draft-from-runs·preview는 ai-svc 내부 기능이다.
 
-- API 수: 9
+- API 수: 7
 
 ## API 목차
 
 | API | 목적 |
 |---|---|
+| [`POST /skills/tasks`](#summary-post-skills-tasks) | 작성·게시·수정을 취소 가능한 작업으로 실행합니다. |
 | [`GET /skills`](#summary-get-skills) | 사용 가능한 Skill 목록을 조회합니다. |
-| [`POST /skills/author`](#summary-post-skills-author) | 사용자 요청과 참조 문서로 Skill 초안을 작성합니다. |
-| [`POST /skills/author/publish`](#summary-post-skills-author-publish) | 검토한 Skill 초안을 게시합니다. |
 | [`POST /skills/draft-from-runs/preview`](#summary-post-skills-draft-from-runs-preview) | 완료된 Agent 실행 결과로 게시 전 Skill 초안을 만듭니다. |
 | [`POST /skills/preview`](#summary-post-skills-preview) | Skill 지침과 권한을 게시 전에 미리 검증합니다. |
 | [`GET /skills/{skill_id}`](#summary-get-skills-skill-id) | Skill 상세 정보를 조회합니다. |
-| [`PATCH /skills/{skill_id}`](#summary-patch-skills-skill-id) | Skill 지침과 실행 설정을 변경합니다. |
 | [`POST /skills/{skill_id}/disable`](#summary-post-skills-skill-id-disable) | Skill을 비활성화합니다. |
 | [`POST /skills/{skill_id}/enable`](#summary-post-skills-skill-id-enable) | Skill을 활성화합니다. |
 
-실행 결과 기반 초안 API는 `AGENT_SKILLS_ENABLED=true`, 나머지 8개 API는
+실행 결과 기반 초안 API는 `AGENT_SKILLS_ENABLED=true`, 나머지 6개 API는
 `SKILL_API_ENABLED=true`일 때 노출된다. 모두 `X-Agent-Service-Token`으로 보호한다.
 Skill 작성 분류는 완성된 동작에 필요한 capability를 모두 반환하며, 서버가 각 capability의
 canonical Tool 집합을 합쳐 `allowed_tools`를 확정한다. 따라서 문서 편집 후 이동처럼 복합적인
@@ -218,333 +216,58 @@ curl -X GET "$PIPELINE/skills?workspace_id=<value>&user_id=<value>" \
 
 </details>
 
-<a id="summary-post-skills-author"></a>
-### `POST /skills/author`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 사용자 요청과 참조 문서로 Skill 초안을 작성합니다. |
-| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `SkillAuthoringRequest` |
-| 출력 | `200` 성공 — `SkillAuthoringResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-<details>
-<summary>상세 계약 보기</summary>
-
-<a id="detail-post-skills-author"></a>
-### `POST /skills/author` 상세
+<a id="summary-post-skills-tasks"></a>
+### `POST /skills/tasks`
 
 #### 1. Method + Path
 
-`POST /skills/author`
+`POST /skills/tasks`
 
 #### 2. 목적
 
-사용자 요청과 참조 문서로 Skill 초안을 작성합니다.
+Skill 작성·게시·수정을 작업 ID로 기록하고 취소 시 게시 전 상태를 복원합니다.
 
 #### 3. Auth 필요 여부
 
-- 필요
-- 서비스 간 내부 인증 토큰을 검증한다.
+`X-Agent-Service-Token`이 필요합니다. Backend가 사용자와 workspace 권한을 검증합니다.
 
 #### 4. Request body
 
-| 위치 | 이름 | 타입 | 필수 | 설명 |
-|---|---|---|---|---|
-| header | `X-Agent-Service-Token` | `X-Agent-Service-Token` | 예 (인증 계층 검증) | - |
-
-- Content-Type: `application/json` (`SkillAuthoringRequest`)
-
-```json
-{
-  "authoring_mode": "preserve",
-  "description": "string",
-  "instruction": "string",
-  "model": "string",
-  "name": "example",
-  "provider": "string",
-  "reference_document_ids": [
-    "string"
-  ],
-  "scope_type": "personal",
-  "user_id": "string",
-  "workspace_id": "string"
-}
-```
+공통 envelope는 `run_id`, `workspace_id`, `user_id`, `kind`, `payload`입니다.
+`kind`는 `skill_author`, `skill_publish`, `skill_update` 중 하나이고 수정에는 `skill_id`도 필요합니다.
+`payload`는 [공개 Skill API](../document/skills.md)의 해당 body에 backend가 검증한
+`workspace_id`, `user_id`, `provider`, `model`을 넣은 값입니다. envelope와 payload의 actor는 같아야 합니다.
+게시에는 초안의 `capabilities`, `allowed_tools`를 전달하며 서버가 다시 검증합니다.
 
 #### 5. Response body
 
-- HTTP `200`: Successful Response
-- Content-Type: `application/json` (`SkillAuthoringResponse`)
-
-```json
-{
-  "allowed_tools": [
-    "list_root_items"
-  ],
-  "capabilities": [
-    "document-create"
-  ],
-  "description": "string",
-  "instructions_markdown": "string",
-  "issues": [
-    {
-    }
-  ],
-  "name": "string",
-  "question": "string",
-  "scope_type": "personal",
-  "skill_id": "string",
-  "skill_markdown": "string",
-  "status": "clarification_required",
-  "version_id": "string"
-}
-```
+작성은 초안, 게시·수정은 Skill 응답에 `run_id`를 추가해 `200`으로 반환합니다.
 
 #### 6. Error response
 
-- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
-- HTTP `503`: 내부 인증 미설정
-
-| HTTP 상태 | 설명 | 응답 스키마 |
-|---|---|---|
-| `422` | Validation Error | `HTTPValidationError` |
-
-```json
-{
-  "detail": [
-    {
-      "ctx": {
-      },
-      "input": {
-      },
-      "loc": [
-        "string"
-      ],
-      "msg": "string",
-      "type": "string"
-    }
-  ]
-}
-```
+입력 검증은 `422`, 참조 길이 초과는 `413`, 권한·게시 검증 실패는 해당 Skill 오류를 반환합니다.
+취소·충돌 상태는 [작업 상태 API](tasks.md)에서 확인합니다.
 
 #### 7. Pagination / filtering
 
-- 페이지네이션: 지원하지 않음
-- 필터링: 지원하지 않음
+없음.
 
 #### 8. 권한 규칙
 
-- 올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.
-- 요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다.
+같은 `run_id`는 actor·kind·payload가 모두 같을 때만 재사용할 수 있습니다.
+완료 응답은 재생하며, 취소한 작업은 다시 실행하지 않습니다.
 
 #### 9. 예시 요청/응답
 
-```bash
-curl -X POST "$PIPELINE/skills/author" \
-  -H 'X-Agent-Service-Token: <value>' \
-  -H 'Content-Type: application/json' \
-  --data '{"authoring_mode":"preserve","description":"회의록 요약 Skill","instruction":"회의 내용을 결정 사항과 할 일로 정리한다.","model":"gpt-5-nano","name":"meeting-summary","provider":"openai","reference_document_ids":["<value>"],"scope_type":"personal","user_id":"<value>","workspace_id":"<value>"}'
+```json
+{"run_id":"skill_example","kind":"skill_author","workspace_id":"ws_example","user_id":"user_example","payload":{"workspace_id":"ws_example","user_id":"user_example","scope_type":"personal","instruction":"문서를 주제별로 정리하는 Skill을 만들어 줘","provider":"openai","model":"gpt-5-nano"}}
 ```
 
-```json
-{
-  "allowed_tools": [
-    "list_root_items"
-  ],
-  "capabilities": [
-    "document-create"
-  ],
-  "description": "string",
-  "instructions_markdown": "string",
-  "issues": [
-    {
-    }
-  ],
-  "name": "string",
-  "question": "string",
-  "scope_type": "personal",
-  "skill_id": "string",
-  "skill_markdown": "string",
-  "status": "clarification_required",
-  "version_id": "string"
-}
-```
+각 payload의 필수 필드와 응답 스키마는 생성 OpenAPI 및 공개 Skill 계약을 따릅니다.
 
 #### 10. 구현 파일
 
-- 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
-- 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: author_skill_skills_author_post`)
-
-[↑ 요약으로 돌아가기](#summary-post-skills-author)
-
-</details>
-
-<a id="summary-post-skills-author-publish"></a>
-### `POST /skills/author/publish`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | 검토한 Skill 초안을 게시합니다. |
-| 입력 | **Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `PublishAuthoredSkillRequest` |
-| 출력 | `200` 성공 — `SkillAuthoringResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-<details>
-<summary>상세 계약 보기</summary>
-
-<a id="detail-post-skills-author-publish"></a>
-### `POST /skills/author/publish` 상세
-
-#### 1. Method + Path
-
-`POST /skills/author/publish`
-
-#### 2. 목적
-
-검토한 Skill 초안을 게시합니다.
-
-#### 3. Auth 필요 여부
-
-- 필요
-- 서비스 간 내부 인증 토큰을 검증한다.
-
-#### 4. Request body
-
-| 위치 | 이름 | 타입 | 필수 | 설명 |
-|---|---|---|---|---|
-| header | `X-Agent-Service-Token` | `X-Agent-Service-Token` | 예 (인증 계층 검증) | - |
-
-- Content-Type: `application/json` (`PublishAuthoredSkillRequest`)
-
-```json
-{
-  "allowed_tools": [
-    "list_root_items"
-  ],
-  "capabilities": [
-    "document-create"
-  ],
-  "description": "string",
-  "instructions_markdown": "string",
-  "model": "string",
-  "name": "example",
-  "provider": "string",
-  "scope_type": "personal",
-  "user_id": "string",
-  "workspace_id": "string"
-}
-```
-
-#### 5. Response body
-
-- HTTP `200`: Successful Response
-- Content-Type: `application/json` (`SkillAuthoringResponse`)
-
-```json
-{
-  "allowed_tools": [
-    "list_root_items"
-  ],
-  "capabilities": [
-    "document-create"
-  ],
-  "description": "string",
-  "instructions_markdown": "string",
-  "issues": [
-    {
-    }
-  ],
-  "name": "string",
-  "question": "string",
-  "scope_type": "personal",
-  "skill_id": "string",
-  "skill_markdown": "string",
-  "status": "clarification_required",
-  "version_id": "string"
-}
-```
-
-#### 6. Error response
-
-- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
-- HTTP `503`: 내부 인증 미설정
-
-| HTTP 상태 | 설명 | 응답 스키마 |
-|---|---|---|
-| `422` | Validation Error | `HTTPValidationError` |
-
-```json
-{
-  "detail": [
-    {
-      "ctx": {
-      },
-      "input": {
-      },
-      "loc": [
-        "string"
-      ],
-      "msg": "string",
-      "type": "string"
-    }
-  ]
-}
-```
-
-#### 7. Pagination / filtering
-
-- 페이지네이션: 지원하지 않음
-- 필터링: 지원하지 않음
-
-#### 8. 권한 규칙
-
-- 올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.
-- 요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다.
-
-#### 9. 예시 요청/응답
-
-```bash
-curl -X POST "$PIPELINE/skills/author/publish" \
-  -H 'X-Agent-Service-Token: <value>' \
-  -H 'Content-Type: application/json' \
-  --data '{"allowed_tools":["list_root_items"],"capabilities":["document-create"],"description":"회의록 요약 Skill","instructions_markdown":"회의 내용을 결정 사항과 할 일로 정리한다.","model":"gpt-5-nano","name":"meeting-summary","provider":"openai","scope_type":"personal","user_id":"<value>","workspace_id":"<value>"}'
-```
-
-```json
-{
-  "allowed_tools": [
-    "list_root_items"
-  ],
-  "capabilities": [
-    "document-create"
-  ],
-  "description": "string",
-  "instructions_markdown": "string",
-  "issues": [
-    {
-    }
-  ],
-  "name": "string",
-  "question": "string",
-  "scope_type": "personal",
-  "skill_id": "string",
-  "skill_markdown": "string",
-  "status": "clarification_required",
-  "version_id": "string"
-}
-```
-
-#### 10. 구현 파일
-
-- 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
-- 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: publish_authored_skill_skills_author_publish_post`)
-
-[↑ 요약으로 돌아가기](#summary-post-skills-author-publish)
-
-</details>
+`app/modules/skill/interfaces/http/routes.py`, `api-specs/pipeline/openapi.yaml`.
 
 <a id="summary-post-skills-draft-from-runs-preview"></a>
 ### `POST /skills/draft-from-runs/preview`
@@ -652,7 +375,7 @@ workspace·user 소유권과 완료 상태를 확인한 canonical run 결과만 
 
 #### 9. 예시 요청/응답
 
-위 request·response 예시와 같습니다. 실제 게시에는 별도로 `POST /skills/author/publish` 승인이 필요합니다.
+위 request·response 예시와 같습니다. 실제 게시에는 별도로 `POST /skills/tasks` (`kind=skill_publish`) 승인이 필요합니다.
 
 #### 10. 구현 파일
 
@@ -972,153 +695,6 @@ curl -X GET "$PIPELINE/skills/<value>?workspace_id=<value>&user_id=<value>" \
 - 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: get_skill_skills__skill_id__get`)
 
 [↑ 요약으로 돌아가기](#summary-get-skills-skill-id)
-
-</details>
-
-<a id="summary-patch-skills-skill-id"></a>
-### `PATCH /skills/{skill_id}`
-
-| 항목 | 내용 |
-|---|---|
-| 목적 | Skill 지침과 실행 설정을 변경합니다. |
-| 입력 | **Path** — `skill_id`: `string`<br>**Header** — `X-Agent-Service-Token`(필수, 인증 계층 검증): `string` / `null`<br>**Body** — `UpdateSkillRequest` |
-| 출력 | `200` 성공 — `SkillAuthoringResponse` |
-| 조건 | 인증 필요<br>서비스 간 내부 인증 토큰을 검증한다.<br>올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.<br>요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다. |
-| 주요 오류 | `422` 요청 검증 실패 — `HTTPValidationError`<br>`401` 내부 인증 토큰 누락 또는 불일치<br>`503` 내부 인증 미설정 |
-
-<details>
-<summary>상세 계약 보기</summary>
-
-<a id="detail-patch-skills-skill-id"></a>
-### `PATCH /skills/{skill_id}` 상세
-
-#### 1. Method + Path
-
-`PATCH /skills/{skill_id}`
-
-#### 2. 목적
-
-Skill 지침과 실행 설정을 변경합니다.
-
-#### 3. Auth 필요 여부
-
-- 필요
-- 서비스 간 내부 인증 토큰을 검증한다.
-
-#### 4. Request body
-
-| 위치 | 이름 | 타입 | 필수 | 설명 |
-|---|---|---|---|---|
-| path | `skill_id` | `string` | 예 | - |
-| header | `X-Agent-Service-Token` | `X-Agent-Service-Token` | 예 (인증 계층 검증) | - |
-
-- Content-Type: `application/json` (`UpdateSkillRequest`)
-
-```json
-{
-  "description": "string",
-  "instructions_markdown": "string",
-  "model": "string",
-  "name": "example",
-  "provider": "string",
-  "user_id": "string",
-  "workspace_id": "string"
-}
-```
-
-#### 5. Response body
-
-- HTTP `200`: Successful Response
-- Content-Type: `application/json` (`SkillAuthoringResponse`)
-
-```json
-{
-  "description": "string",
-  "instructions_markdown": "string",
-  "issues": [
-    {
-    }
-  ],
-  "name": "string",
-  "question": "string",
-  "scope_type": "personal",
-  "skill_id": "string",
-  "skill_markdown": "string",
-  "status": "clarification_required",
-  "version_id": "string"
-}
-```
-
-#### 6. Error response
-
-- HTTP `401`: 내부 인증 토큰 누락 또는 불일치
-- HTTP `503`: 내부 인증 미설정
-
-| HTTP 상태 | 설명 | 응답 스키마 |
-|---|---|---|
-| `422` | Validation Error | `HTTPValidationError` |
-
-```json
-{
-  "detail": [
-    {
-      "ctx": {
-      },
-      "input": {
-      },
-      "loc": [
-        "string"
-      ],
-      "msg": "string",
-      "type": "string"
-    }
-  ]
-}
-```
-
-#### 7. Pagination / filtering
-
-- 페이지네이션: 지원하지 않음
-- 필터링: 지원하지 않음
-
-#### 8. 권한 규칙
-
-- 올바른 내부 서비스 토큰을 가진 서비스만 호출할 수 있다.
-- 요청에 포함된 workspace/user scope는 해당 route의 서비스 계층에서 추가 검증한다.
-
-#### 9. 예시 요청/응답
-
-```bash
-curl -X PATCH "$PIPELINE/skills/<value>" \
-  -H 'X-Agent-Service-Token: <value>' \
-  -H 'Content-Type: application/json' \
-  --data '{"description":"회의록 요약 Skill","instructions_markdown":"회의 내용을 결정 사항과 할 일로 정리한다.","model":"gpt-5-nano","name":"meeting-summary","provider":"openai","user_id":"<value>","workspace_id":"<value>"}'
-```
-
-```json
-{
-  "description": "string",
-  "instructions_markdown": "string",
-  "issues": [
-    {
-    }
-  ],
-  "name": "string",
-  "question": "string",
-  "scope_type": "personal",
-  "skill_id": "string",
-  "skill_markdown": "string",
-  "status": "clarification_required",
-  "version_id": "string"
-}
-```
-
-#### 10. 구현 파일
-
-- 진입점: `services/ai/pipeline/app/modules/skill/interfaces/http/routes.py`
-- 기계 판독 계약: `api-specs/pipeline/openapi.yaml` (`operationId: update_skill_skills__skill_id__patch`)
-
-[↑ 요약으로 돌아가기](#summary-patch-skills-skill-id)
 
 </details>
 

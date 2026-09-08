@@ -93,7 +93,7 @@ class DocumentPlacementServiceTest {
         UUID targetFolderId = UUID.randomUUID();
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(DOCUMENT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(document()));
-        when(folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(targetFolderId, WORKSPACE_ID))
+        when(folderRepository.findActiveForUpdate(targetFolderId, WORKSPACE_ID))
                 .thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.move(WORKSPACE_ID, USER_ID, DOCUMENT_ID, "k1",
                 new DocumentPositionRequest(targetFolderId, null, 1L)))
@@ -122,7 +122,7 @@ class DocumentPlacementServiceTest {
         UUID targetFolderId = UUID.randomUUID();
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(DOCUMENT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(document()));
-        when(folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(targetFolderId, WORKSPACE_ID))
+        when(folderRepository.findActiveForUpdate(targetFolderId, WORKSPACE_ID))
                 .thenReturn(Optional.of(new fruition.core.document.domain.Folder(
                         targetFolderId, WORKSPACE_ID, null, "대상", 0)));
         when(siblingReorderer.placeDocument(WORKSPACE_ID, targetFolderId, DOCUMENT_ID, 1)).thenReturn(1L);

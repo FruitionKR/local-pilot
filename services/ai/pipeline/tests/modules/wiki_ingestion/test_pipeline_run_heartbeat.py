@@ -47,7 +47,9 @@ def test_finish_pipeline_run_writes_only_ai_owned_tables() -> None:
         "user_id": "user-1",
         "workspace_id": "ws-1",
     }
-    connection.execute.side_effect = [run_cursor, Mock()]
+    active_cursor = Mock()
+    active_cursor.fetchone.return_value = {"status": "running"}
+    connection.execute.side_effect = [run_cursor, active_cursor, Mock()]
 
     with (
         patch.object(database, "connect", return_value=connection),
@@ -615,3 +617,22 @@ def test_delete_only_restore_invalidates_deleted_page_owner(monkeypatch) -> None
         )
 
     invalidate.assert_called_once_with("user-1", "ws-1")
+
+
+@pytest.mark.parametrize("status", ["cancel_requested", "rolling_back", "rollback_failed", "cancelled", "failed", "succeeded"])
+def test_finish_rejects_inactive_run_before_persisting_outputs(status):
+    from app.core.pipeline_control import PipelineRunCancelledError
+    connection = Mock()
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+    connection.execute.return_value.fetchone.return_value = {
+        "document_id": "doc", "user_id": "user", "workspace_id": "ws", "status": status,
+    }
+    with (patch.object(database, "connect", return_value=connection),
+          patch.object(database, "concept_write_lock", return_value=nullcontext()),
+          patch.object(database, "_persist_wiki_outputs") as persist,
+          patch.object(database, "_mark_derived_state_ingested") as derived):
+        with pytest.raises(PipelineRunCancelledError):
+            database.finish_pipeline_run("run", {})
+    persist.assert_not_called()
+    derived.assert_not_called()

@@ -120,6 +120,8 @@ public class RestoreExecuteService {
         // 반영 전에 확인한다. 뒤에서 걸리면 이미 DB가 바뀐 뒤라 되돌릴 수 없다.
         PageRestorePlan sourcePage = validator.requireApplicable(target, plan);
 
+        String runId = java.util.UUID.randomUUID().toString();
+        outboxWriter.begin(runId, workspaceId, userId, target.getOperationType() == OperationType.lint ? "restore_lint" : "restore_ingest");
         Instant now = Instant.now();
         Map<String, List<String>> expected = contributionSignatures(contributions);
         OperationLog restore = lifecycle.startQueued(
@@ -127,7 +129,6 @@ public class RestoreExecuteService {
                         restoreTokenHash, now)
                 .orElseThrow(() -> new InvalidRestoreRequestException(
                         "같은 미리보기 토큰으로 복구가 이미 접수되었습니다."));
-        String runId = java.util.UUID.randomUUID().toString();
         outboxWriter.enqueue(runId, commandTopic, workspaceId,
                 restoreCommand(runId, restore, target, excluded, plan, sourcePage, expected));
         return RestoreExecuteResponse.queued(runId, restore.getOperationId(), operationId, plan);

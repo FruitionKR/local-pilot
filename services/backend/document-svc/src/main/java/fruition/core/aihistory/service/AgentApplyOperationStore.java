@@ -33,11 +33,13 @@ public class AgentApplyOperationStore {
      *
      * @return 이 사용자·문서에 발급된 유효한 표면 {@code true}
      */
+    @org.springframework.transaction.annotation.Transactional
     public boolean consume(String operationId, String userId, String documentId, String revisionWriteId) {
         if (operationId == null || operationId.isBlank()
                 || revisionWriteId == null || revisionWriteId.isBlank() || revisionWriteId.length() > 255) {
             return false;
         }
+        if (!authorizeSave(operationId, userId, documentId)) return false;
         if (jdbcTemplate.update("""
                 UPDATE agent_apply_projections
                 SET status = 'consumed', apply_revision_write_id = ?, apply_consumed_at = now(), updated_at = now()
@@ -63,6 +65,7 @@ public class AgentApplyOperationStore {
                 """, Boolean.class, operationId, userId, documentId, revisionWriteId));
     }
 
+    @org.springframework.transaction.annotation.Transactional
     public boolean consume(String operationId, String userId, String documentId, String revisionWriteId,
                            long baseRevision, String markdown) {
         if (operationId == null || operationId.isBlank()
@@ -70,6 +73,7 @@ public class AgentApplyOperationStore {
                 || markdown == null) {
             return false;
         }
+        if (!authorizeSave(operationId, userId, documentId)) return false;
         if (jdbcTemplate.update("""
                 UPDATE agent_apply_projections
                 SET status = 'consumed', apply_revision_write_id = ?, apply_consumed_at = now(), updated_at = now()
@@ -97,6 +101,20 @@ public class AgentApplyOperationStore {
                       AND apply_revision_write_id = ?
                 )
                 """, Boolean.class, operationId, userId, documentId, baseRevision, markdown, revisionWriteId));
+    }
+
+    public boolean authorizeSave(String operationId, String userId, String documentId) {
+        var tools = jdbcTemplate.queryForList("SELECT autonomous_tool FROM agent_apply_projections "
+                + "WHERE apply_operation_id = ? AND user_id = ? AND document_id = ?", Boolean.class, operationId, userId, documentId);
+        if (!tools.isEmpty() && Boolean.TRUE.equals(tools.getFirst())) return true;
+        var tasks = jdbcTemplate.queryForList("""
+                SELECT task.id FROM ai_task_runs task JOIN agent_apply_projections projection ON projection.run_id = task.id
+                WHERE projection.apply_operation_id = ? AND projection.user_id = ? AND projection.document_id = ?
+                AND task.status IN ('running', 'completed') FOR UPDATE OF task
+                """, String.class, operationId, userId, documentId);
+        if (tasks.isEmpty()) return false;
+        jdbcTemplate.queryForObject("SELECT set_config('app.ai_task_run_id', ?, true)", String.class, tasks.getFirst());
+        return true;
     }
 
     private String randomSuffix() {

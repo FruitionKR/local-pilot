@@ -125,8 +125,14 @@ class DocumentServiceBlocksTest {
     PlatformTransactionManager transactionManager;
     DocumentService documentService;
 
+    private final fruition.core.document.repository.AiCommandOutboxWriter taskWriter =
+            org.mockito.Mockito.mock(fruition.core.document.repository.AiCommandOutboxWriter.class);
+
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(applyOperationStore.authorizeSave(anyString(), anyString(), anyString())).thenReturn(true);
+        org.mockito.Mockito.lenient().when(taskWriter.active(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        org.mockito.Mockito.lenient().when(taskWriter.join(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
         documentService = new DocumentService(documentRepository, folderRepository,
                 workspaceAccessGuard, minioClient, storageProps,
                 ingestCommandOutbox, pipelineWikiStateRequester,
@@ -141,7 +147,7 @@ class DocumentServiceBlocksTest {
                 applyOperationStore,
                 operationRecorder,
                 ingestOperationStarter,
-                workspaceAiModelClient);
+                workspaceAiModelClient, taskWriter);
         lenient().when(pipelineWikiStateRequester.documentContext(anyString(), anyString()))
                 .thenReturn(new PipelineWikiStateRequester.DocumentWikiContext(List.of(), List.of()));
         // 직접 생성·복제·변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.
@@ -1497,6 +1503,8 @@ class DocumentServiceBlocksTest {
                 "doc_source", WORKSPACE_ID, USER_ID, "보고서.md", "text/markdown", 10,
                 null, null, "direct");
         source.initializeDuplicate("doc_origin", folderId, "old-hash", 10, 2);
+        when(folderRepository.findActiveForUpdate(folderId, WORKSPACE_ID))
+                .thenReturn(Optional.of(org.mockito.Mockito.mock(fruition.core.document.domain.Folder.class)));
         Document existingCopy = new Document(
                 "doc_existing", WORKSPACE_ID, USER_ID, "보고서 복사본.md",
                 "text/markdown", 10, null, null, "duplicate");

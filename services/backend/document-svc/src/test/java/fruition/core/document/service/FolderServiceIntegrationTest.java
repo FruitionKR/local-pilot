@@ -440,4 +440,59 @@ class FolderServiceIntegrationTest {
                 sortOrder,
                 folderId);
     }
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    @Test
+    void deleteEmpty_rejectsOwnerCascadeAndReplaysSuccessfulDelete() {
+        FolderResponse folder = folderService.create(workspaceId, userId, "empty-parent",
+                new FolderCreateRequest("정리 폴더", null));
+        FolderResponse child = folderService.create(workspaceId, userId, "empty-child",
+                new FolderCreateRequest("다른 작업 폴더", folder.id()));
+        assertThatThrownBy(() -> folderService.deleteEmpty(workspaceId, userId, folder.id(), "undo", 1))
+                .isInstanceOf(HierarchyVersionConflictException.class);
+        assertThat(folderService.children(workspaceId, userId, folder.id()).items()).hasSize(1);
+        folderService.deleteEmpty(workspaceId, userId, child.id(), "undo-child", 1);
+        var deleted = folderService.deleteEmpty(workspaceId, userId, folder.id(), "undo", 1);
+        assertThat(folderService.deleteEmpty(workspaceId, userId, folder.id(), "undo", 1)).isEqualTo(deleted);
+    }
+
+    @Test
+    void deleteEmpty_serializesConcurrentChildCreation() throws Exception {
+        FolderResponse folder = folderService.create(workspaceId, userId, "race-parent",
+                new FolderCreateRequest("정리 폴더", null));
+        var locked = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var started = new java.util.concurrent.CountDownLatch(1);
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var deletion = executor.submit(() -> new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                    .execute(status -> {
+                        var result = folderService.deleteEmpty(workspaceId, userId, folder.id(), "race-delete", 1);
+                        locked.countDown();
+                        try {
+                            if (!release.await(5, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("test timeout");
+                        } catch (InterruptedException e) { throw new RuntimeException(e); }
+                        return result;
+                    }));
+            assertThat(locked.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var creation = executor.submit(() -> {
+                started.countDown();
+                return folderService.create(workspaceId, userId, "race-create", new FolderCreateRequest("늦은 항목", folder.id()));
+            });
+            assertThat(started.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThatThrownBy(() -> creation.get(100, java.util.concurrent.TimeUnit.MILLISECONDS))
+                    .isInstanceOf(java.util.concurrent.TimeoutException.class);
+            release.countDown();
+            deletion.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            assertThatThrownBy(() -> creation.get(5, java.util.concurrent.TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(HierarchyItemNotFoundException.class);
+            assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM folders WHERE parent_folder_id = ?", Integer.class, folder.id()))
+                    .isZero();
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+    }
+
 }

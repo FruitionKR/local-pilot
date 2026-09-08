@@ -53,10 +53,10 @@ class PipelineSkillRequesterTest {
         requester().author("ws_1", "user_1", new SkillAuthoringRequest(
                 "personal", "meeting-notes", null,
                 "회의록을 작성해줘", "enhance", List.of("doc_1")),
-                new WorkspaceAiModelClient.AiModelSelection("gemini", "gemini-3.1-flash-lite"));
+                new WorkspaceAiModelClient.AiModelSelection("gemini", "gemini-3.1-flash-lite"), "run-author");
 
         assertThat(method.get()).isEqualTo("POST");
-        assertThat(uri.get()).isEqualTo("/skills/author");
+        assertThat(uri.get()).isEqualTo("/skills/tasks");
         assertThat(token.get()).isEqualTo("agent-token");
         assertThat(body.get())
                 .contains("\"workspace_id\":\"ws_1\"")
@@ -73,10 +73,10 @@ class PipelineSkillRequesterTest {
                 new SkillPublishRequest("team", "meeting-notes", "회의록 작성", "# 작성 절차",
                         List.of("document-create"),
                         List.of("list_root_items", "list_folder_children", "create_document")),
-                new WorkspaceAiModelClient.AiModelSelection("claude", "claude-sonnet-5"));
+                new WorkspaceAiModelClient.AiModelSelection("claude", "claude-sonnet-5"), "run-publish");
 
         assertThat(method.get()).isEqualTo("POST");
-        assertThat(uri.get()).isEqualTo("/skills/author/publish");
+        assertThat(uri.get()).isEqualTo("/skills/tasks");
         assertThat(body.get())
                 .contains("\"provider\":\"claude\"")
                 .contains("\"model\":\"claude-sonnet-5\"")
@@ -97,10 +97,10 @@ class PipelineSkillRequesterTest {
     void update_usesSkillPathAndScopePayload() {
         requester().update("ws_1", "user_1", "skill_1",
                 new SkillUpdateRequest("meeting-notes", "회의록 작성", "# 작성 절차"),
-                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
+                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"), "run-update");
 
-        assertThat(method.get()).isEqualTo("PATCH");
-        assertThat(uri.get()).isEqualTo("/skills/skill_1");
+        assertThat(method.get()).isEqualTo("POST");
+        assertThat(uri.get()).isEqualTo("/skills/tasks");
         assertThat(body.get())
                 .contains("\"workspace_id\":\"ws_1\"")
                 .contains("\"user_id\":\"user_1\"")
@@ -113,6 +113,8 @@ class PipelineSkillRequesterTest {
     private PipelineSkillRequester requester() {
         return new PipelineSkillRequester(
                 new PipelineClientFactory("unused-internal-token"),
-                "http://localhost:" + server.getAddress().getPort() + "/skills", "agent-token", 5);
+                "http://localhost:" + server.getAddress().getPort() + "/skills", "agent-token", 5,
+                org.mockito.Mockito.mock(fruition.core.aitask.service.AiTaskCancellationService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper());
     }
 }

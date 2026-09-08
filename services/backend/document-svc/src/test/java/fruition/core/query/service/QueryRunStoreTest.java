@@ -75,7 +75,25 @@ class QueryRunStoreTest {
         }).when(valueOperations).set(anyString(), anyString(), any(Duration.class));
         when(valueOperations.get(anyString()))
                 .thenAnswer(invocation -> redisData.get(invocation.<String>getArgument(0)));
+        when(redisTemplate.execute(any(org.springframework.data.redis.core.script.RedisScript.class),
+                any(java.util.List.class), anyString(), anyString(), anyString())).thenAnswer(invocation -> {
+            String key = ((java.util.List<String>) invocation.getArgument(1)).getFirst();
+            if (!java.util.Objects.equals(redisData.get(key), invocation.getArgument(2))) return 0L;
+            redisData.put(key, invocation.getArgument(3));
+            redisTtls.put(key, Duration.ofSeconds(Long.parseLong(invocation.getArgument(4))));
+            return 1L;
+        });
         return redisTemplate;
+    }
+
+    @Test
+    void cancelledRunRejectsLateResults() {
+        QueryRun run = store.create("ws", "session", "질문");
+        assertThat(store.markCancelled(run.requestId())).isTrue();
+        store.markRunning(run.requestId());
+        assertThat(store.markFailed(run.requestId(), "late")).isFalse();
+        assertThat(store.markCompleted(run.requestId(), null)).isFalse();
+        assertThat(store.find(run.requestId()).orElseThrow().status()).isEqualTo(QueryRunStatus.CANCELLED);
     }
 
     @Test

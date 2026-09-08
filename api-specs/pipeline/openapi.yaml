@@ -812,6 +812,28 @@ components:
       - operation_hash
       title: ApproveAgentPlanRequest
       type: object
+    CancelTaskRequest:
+      additionalProperties: false
+      properties:
+        command:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Command
+        user_id:
+          minLength: 1
+          title: User Id
+          type: string
+        workspace_id:
+          minLength: 1
+          title: Workspace Id
+          type: string
+      required:
+      - workspace_id
+      - user_id
+      title: CancelTaskRequest
+      type: object
     ChatSourceBlockIn:
       description: 채팅 문답 1쌍. block_id는 `session_id:pair_id` provenance이고 text에는 그 id가 들어가지 않는다.
       properties:
@@ -1113,6 +1135,15 @@ components:
       required:
       - wiki_schema
       title: CreateWikiSchemaDraftResponse
+      type: object
+    DocumentCleanupResponse:
+      properties:
+        cleanup_complete:
+          title: Cleanup Complete
+          type: boolean
+      required:
+      - cleanup_complete
+      title: DocumentCleanupResponse
       type: object
     EvidenceSnippetResponse:
       properties:
@@ -1605,91 +1636,6 @@ components:
       - log_path
       title: PipelineRunOut
       type: object
-    PublishAuthoredSkillRequest:
-      additionalProperties: false
-      properties:
-        allowed_tools:
-          items:
-            enum:
-            - list_root_items
-            - list_folder_children
-            - search_hierarchy
-            - get_breadcrumb
-            - get_document_metadata
-            - get_document_content
-            - create_folder
-            - rename_folder
-            - move_folder
-            - move_document
-            - rename_document
-            - create_document
-            - apply_document_edit
-            type: string
-          minItems: 1
-          title: Allowed Tools
-          type: array
-        capabilities:
-          items:
-            enum:
-            - document-create
-            - document-edit
-            - folder-organize
-            - template
-            type: string
-          minItems: 1
-          title: Capabilities
-          type: array
-        description:
-          maxLength: 500
-          minLength: 1
-          title: Description
-          type: string
-        instructions_markdown:
-          maxLength: 30000
-          minLength: 1
-          title: Instructions Markdown
-          type: string
-        model:
-          minLength: 1
-          title: Model
-          type: string
-        name:
-          maxLength: 63
-          minLength: 1
-          pattern: ^[a-z0-9][a-z0-9-]{0,62}$
-          title: Name
-          type: string
-        provider:
-          minLength: 1
-          title: Provider
-          type: string
-        scope_type:
-          enum:
-          - personal
-          - team
-          title: Scope Type
-          type: string
-        user_id:
-          minLength: 1
-          title: User Id
-          type: string
-        workspace_id:
-          minLength: 1
-          title: Workspace Id
-          type: string
-      required:
-      - provider
-      - model
-      - workspace_id
-      - user_id
-      - scope_type
-      - name
-      - description
-      - instructions_markdown
-      - capabilities
-      - allowed_tools
-      title: PublishAuthoredSkillRequest
-      type: object
     QueryRequest:
       properties:
         allow_web_search:
@@ -2113,74 +2059,6 @@ components:
       - user_id
       title: SkillActorRequest
       type: object
-    SkillAuthoringRequest:
-      additionalProperties: false
-      properties:
-        authoring_mode:
-          default: enhance
-          enum:
-          - preserve
-          - enhance
-          - regenerate
-          title: Authoring Mode
-          type: string
-        description:
-          anyOf:
-          - maxLength: 500
-            minLength: 1
-            type: string
-          - type: 'null'
-          title: Description
-        instruction:
-          maxLength: 30000
-          minLength: 1
-          title: Instruction
-          type: string
-        model:
-          minLength: 1
-          title: Model
-          type: string
-        name:
-          anyOf:
-          - maxLength: 63
-            minLength: 1
-            pattern: ^[a-z0-9][a-z0-9-]{0,62}$
-            type: string
-          - type: 'null'
-          title: Name
-        provider:
-          minLength: 1
-          title: Provider
-          type: string
-        reference_document_ids:
-          items:
-            type: string
-          maxItems: 3
-          title: Reference Document Ids
-          type: array
-        scope_type:
-          enum:
-          - personal
-          - team
-          title: Scope Type
-          type: string
-        user_id:
-          minLength: 1
-          title: User Id
-          type: string
-        workspace_id:
-          minLength: 1
-          title: Workspace Id
-          type: string
-      required:
-      - provider
-      - model
-      - workspace_id
-      - user_id
-      - scope_type
-      - instruction
-      title: SkillAuthoringRequest
-      type: object
     SkillAuthoringResponse:
       properties:
         allowed_tools:
@@ -2524,6 +2402,45 @@ components:
       - latest_version
       title: SkillResponse
       type: object
+    SkillTaskRequest:
+      properties:
+        kind:
+          enum:
+          - skill_author
+          - skill_publish
+          - skill_update
+          title: Kind
+          type: string
+        payload:
+          additionalProperties: true
+          title: Payload
+          type: object
+        run_id:
+          maxLength: 120
+          minLength: 1
+          title: Run Id
+          type: string
+        skill_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Skill Id
+        user_id:
+          minLength: 1
+          title: User Id
+          type: string
+        workspace_id:
+          minLength: 1
+          title: Workspace Id
+          type: string
+      required:
+      - run_id
+      - kind
+      - workspace_id
+      - user_id
+      - payload
+      title: SkillTaskRequest
+      type: object
     SkillVersionResponse:
       properties:
         allowed_tools:
@@ -2597,6 +2514,24 @@ components:
       - document_id
       title: SourceSnapshotRestoreIn
       type: object
+    TaskStatusResponse:
+      properties:
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Code
+        id:
+          title: Id
+          type: string
+        status:
+          title: Status
+          type: string
+      required:
+      - id
+      - status
+      title: TaskStatusResponse
+      type: object
     TraversalEdgeResponse:
       properties:
         from_page_id:
@@ -2658,51 +2593,6 @@ components:
       - nodes
       - edges
       title: TraversalPathResponse
-      type: object
-    UpdateSkillRequest:
-      additionalProperties: false
-      properties:
-        description:
-          maxLength: 500
-          minLength: 1
-          title: Description
-          type: string
-        instructions_markdown:
-          maxLength: 30000
-          minLength: 1
-          title: Instructions Markdown
-          type: string
-        model:
-          minLength: 1
-          title: Model
-          type: string
-        name:
-          maxLength: 63
-          minLength: 1
-          pattern: ^[a-z0-9][a-z0-9-]{0,62}$
-          title: Name
-          type: string
-        provider:
-          minLength: 1
-          title: Provider
-          type: string
-        user_id:
-          minLength: 1
-          title: User Id
-          type: string
-        workspace_id:
-          minLength: 1
-          title: Workspace Id
-          type: string
-      required:
-      - provider
-      - model
-      - workspace_id
-      - user_id
-      - name
-      - description
-      - instructions_markdown
-      title: UpdateSkillRequest
       type: object
     ValidationError:
       properties:
@@ -3590,6 +3480,168 @@ paths:
       summary: Get Markdown Agent Run
       tags:
       - internal-agent-runs
+  /internal/ai/tasks/documents/{document_id}/cancel:
+    post:
+      operationId: cancel_document_tasks_internal_ai_tasks_documents__document_id__cancel_post
+      parameters:
+      - in: path
+        name: document_id
+        required: true
+        schema:
+          title: Document Id
+          type: string
+      - in: header
+        name: X-Internal-Token
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Internal-Token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelTaskRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCleanupResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Cancel Document Tasks
+      tags:
+      - ai-task-cancellation
+  /internal/ai/tasks/{run_id}:
+    get:
+      operationId: task_status_internal_ai_tasks__run_id__get
+      parameters:
+      - in: path
+        name: run_id
+        required: true
+        schema:
+          title: Run Id
+          type: string
+      - in: query
+        name: workspace_id
+        required: true
+        schema:
+          title: Workspace Id
+          type: string
+      - in: query
+        name: user_id
+        required: true
+        schema:
+          title: User Id
+          type: string
+      - in: header
+        name: X-Internal-Token
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Internal-Token
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskStatusResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Task Status
+      tags:
+      - ai-task-cancellation
+  /internal/ai/tasks/{run_id}/cancel:
+    post:
+      operationId: cancel_task_internal_ai_tasks__run_id__cancel_post
+      parameters:
+      - in: path
+        name: run_id
+        required: true
+        schema:
+          title: Run Id
+          type: string
+      - in: header
+        name: X-Internal-Token
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Internal-Token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelTaskRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskStatusResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Cancel Task
+      tags:
+      - ai-task-cancellation
+  /internal/ai/tasks/{run_id}/rollback-backend:
+    post:
+      operationId: rollback_backend_task_internal_ai_tasks__run_id__rollback_backend_post
+      parameters:
+      - in: path
+        name: run_id
+        required: true
+        schema:
+          title: Run Id
+          type: string
+      - in: header
+        name: X-Internal-Token
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Internal-Token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelTaskRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Rollback Backend Task
+      tags:
+      - ai-task-cancellation
   /pipeline/reingest-runs:
     post:
       operationId: run_reingest_pipeline_endpoint_pipeline_reingest_runs_post
@@ -3805,74 +3857,6 @@ paths:
       summary: List Skills
       tags:
       - skills
-  /skills/author:
-    post:
-      operationId: author_skill_skills_author_post
-      parameters:
-      - in: header
-        name: X-Agent-Service-Token
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Agent-Service-Token
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SkillAuthoringRequest'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SkillAuthoringResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Author Skill
-      tags:
-      - skills
-  /skills/author/publish:
-    post:
-      operationId: publish_authored_skill_skills_author_publish_post
-      parameters:
-      - in: header
-        name: X-Agent-Service-Token
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Agent-Service-Token
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PublishAuthoredSkillRequest'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SkillAuthoringResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Publish Authored Skill
-      tags:
-      - skills
   /skills/draft-from-runs/preview:
     post:
       operationId: propose_skill_draft_skills_draft_from_runs_preview_post
@@ -3941,6 +3925,39 @@ paths:
       summary: Preview Skill
       tags:
       - skills
+  /skills/tasks:
+    post:
+      operationId: execute_skill_task_skills_tasks_post
+      parameters:
+      - in: header
+        name: X-Agent-Service-Token
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Agent-Service-Token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillTaskRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Execute Skill Task
+      tags:
+      - skills
   /skills/{skill_id}:
     get:
       operationId: get_skill_skills__skill_id__get
@@ -3985,45 +4002,6 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get Skill
-      tags:
-      - skills
-    patch:
-      operationId: update_skill_skills__skill_id__patch
-      parameters:
-      - in: path
-        name: skill_id
-        required: true
-        schema:
-          title: Skill Id
-          type: string
-      - in: header
-        name: X-Agent-Service-Token
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Agent-Service-Token
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateSkillRequest'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SkillAuthoringResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Update Skill
       tags:
       - skills
   /skills/{skill_id}/disable:

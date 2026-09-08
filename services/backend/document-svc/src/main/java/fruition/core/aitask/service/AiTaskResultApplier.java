@@ -83,6 +83,7 @@ public class AiTaskResultApplier {
     public void applyLint(JsonNode event) {
         String eventId = text(event, "event_id");
         String runId = text(event, "run_id");
+        if (!beginResult(runId)) return;
         JsonNode request = required(event, "request");
         String operationId = request.path("operation_id").isNull()
                 ? null : request.path("operation_id").asText(null);
@@ -116,6 +117,7 @@ public class AiTaskResultApplier {
     public void applyRestore(JsonNode event) {
         String eventId = text(event, "event_id");
         String runId = text(event, "run_id");
+        if (!beginResult(runId)) return;
         if (jdbcTemplate.update("""
                 INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind)
                 VALUES (?, ?, 'restore') ON CONFLICT (event_id) DO NOTHING
@@ -151,6 +153,7 @@ public class AiTaskResultApplier {
     public void applyIngest(JsonNode event) {
         String eventId = text(event, "event_id");
         String runId = text(event, "run_id");
+        if (!beginResult(runId)) return;
         if (jdbcTemplate.update("""
                 INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind)
                 VALUES (?, ?, 'ingest') ON CONFLICT (event_id) DO NOTHING
@@ -173,6 +176,7 @@ public class AiTaskResultApplier {
     public AgentApplyResult applyAgent(JsonNode event) {
         String eventId = text(event, "event_id");
         String runId = text(event, "run_id");
+        if (!beginResult(runId)) return new AgentApplyResult(false, null);
         if (jdbcTemplate.update("""
                 INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind, event_payload)
                 VALUES (?, ?, 'agent', CAST(? AS jsonb))
@@ -416,6 +420,7 @@ public class AiTaskResultApplier {
     @Transactional
     public QueryProjection applyQuery(JsonNode event) {
         String runId = text(event, "run_id");
+        if (!beginResult(runId)) return null;
         boolean first = jdbcTemplate.update("""
                 INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind, event_payload)
                 VALUES (?, ?, 'query', CAST(? AS jsonb))
@@ -472,6 +477,20 @@ public class AiTaskResultApplier {
                 result.relatedPages(), result.evidenceSnippets(), result.graphContext(),
                 result.traversalPaths(), result.webSearchRequested(), result.webSearchExecuted(),
                 result.resultCount(), result.errorCode());
+    }
+
+    private boolean beginResult(String runId) {
+        var states = jdbcTemplate.queryForList("SELECT status FROM ai_task_runs WHERE id = ? FOR UPDATE", String.class, runId);
+        if (states.isEmpty()) throw new IllegalStateException("AI 작업 등록을 찾을 수 없습니다: " + runId);
+        if (!Set.of("running", "completed").contains(states.getFirst())) return false;
+        jdbcTemplate.queryForObject("SELECT set_config('app.ai_task_run_id', ?, true)", String.class, runId);
+        jdbcTemplate.update("UPDATE ai_task_runs SET status = 'completed', updated_at = now() WHERE id = ?", runId);
+        return true;
+    }
+
+    public boolean acceptsProgress(String runId) {
+        var states = jdbcTemplate.queryForList("SELECT status FROM ai_task_runs WHERE id = ?", String.class, runId);
+        return !states.isEmpty() && Set.of("running", "completed").contains(states.getFirst());
     }
 
     private JsonNode required(JsonNode node, String field) {

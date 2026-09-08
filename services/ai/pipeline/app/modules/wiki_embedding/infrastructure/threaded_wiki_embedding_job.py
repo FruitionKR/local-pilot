@@ -3,6 +3,8 @@ import threading
 import time
 from functools import lru_cache
 
+from app.core.pipeline_control import task_run_id
+
 from app.modules.wiki_embedding.application.build_wiki_page_embeddings import (
     BuildWikiPageEmbeddingsUseCase,
     embedding_result,
@@ -29,6 +31,10 @@ class ThreadedWikiEmbeddingJob:
         self._logger = logger
 
     def start(self, run_id: str, page_ids: list[str]) -> None:
+        if task_run_id.get() is not None:
+            # 사용자 작업의 임베딩은 같은 복구 기록에 포함하고 전역 재시도 대상을 섞지 않는다.
+            SynchronousWikiEmbeddingJob(self._logger).start(run_id, page_ids)
+            return
         thread = threading.Thread(
             target=self._execute,
             args=(run_id, page_ids),

@@ -25,7 +25,6 @@ public class QueryRunStore {
 
     private static final Logger log = LoggerFactory.getLogger(QueryRunStore.class);
     private static final String KEY_PREFIX = "query:run:";
-    // 별도 취소 계약이 없으므로 진행 중 run은 TTL까지만 보존한다.
     private static final Duration ACTIVE_RUN_TTL = Duration.ofHours(24);
     private static final Duration FINISHED_RUN_TTL = Duration.ofMinutes(10);
 
@@ -58,6 +57,18 @@ public class QueryRunStore {
         return create(workspaceId, sessionId, "openai", "gpt-5-nano", false, question);
     }
 
+    public QueryRun createWithId(String requestId, String workspaceId, String sessionId,
+                                 String provider, String model, boolean webSearchEnabled, String question) {
+        QueryRun run = QueryRun.pending(requestId, workspaceId, sessionId, provider, model,
+                webSearchEnabled, question, clock.instant());
+        if (!Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(
+                KEY_PREFIX + requestId, serialize(run), ACTIVE_RUN_TTL))) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT, "이미 사용한 작업 ID입니다.");
+        }
+        return run;
+    }
+
     public Optional<QueryRun> find(String requestId) {
         Optional<QueryRun> run = Optional.ofNullable(redisTemplate.opsForValue().get(KEY_PREFIX + requestId))
                 .map(this::deserialize);
@@ -87,17 +98,34 @@ public class QueryRunStore {
         });
     }
 
+    public boolean markCancelled(String requestId) {
+        return compareAndSet(requestId, run -> run.cancelled(clock.instant()), FINISHED_RUN_TTL, true);
+    }
+
     private boolean finish(String requestId, UnaryOperator<QueryRun> mutation) {
-        Optional<QueryRun> current = find(requestId);
-        if (current.isEmpty() || current.get().isFinished()) {
-            return false;
-        }
-        write(mutation.apply(current.get()), FINISHED_RUN_TTL);
-        return true;
+        return compareAndSet(requestId, mutation, FINISHED_RUN_TTL, false);
     }
 
     private void update(String requestId, UnaryOperator<QueryRun> mutation, Duration ttl) {
-        find(requestId).ifPresent(run -> write(mutation.apply(run), ttl));
+        compareAndSet(requestId, mutation, ttl, false);
+    }
+
+    private boolean compareAndSet(String requestId, UnaryOperator<QueryRun> mutation, Duration ttl, boolean cancelling) {
+        String key = KEY_PREFIX + requestId;
+        var script = new org.springframework.data.redis.core.script.DefaultRedisScript<Long>(
+                "if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end "
+                + "redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]); return 1", Long.class);
+        for (int attempt = 0; attempt < 10; attempt++) {
+            String current = redisTemplate.opsForValue().get(key);
+            if (current == null) return false;
+            QueryRun run = deserialize(current);
+            if (run.status() == fruition.core.query.domain.QueryRunStatus.CANCELLED
+                    || (!cancelling && run.isFinished())) return false;
+            Long changed = redisTemplate.execute(script, java.util.List.of(key), current,
+                    serialize(mutation.apply(run)), Long.toString(ttl.toSeconds()));
+            if (Long.valueOf(1).equals(changed)) return true;
+        }
+        throw new IllegalStateException("질의 상태가 계속 변경되어 재시도가 필요합니다.");
     }
 
     private void write(QueryRun run, Duration ttl) {

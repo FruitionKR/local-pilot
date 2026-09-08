@@ -1,5 +1,9 @@
 import json
 
+import pytest
+
+from app.modules.wiki_ingestion.domain.operation_recovery import PageRebuildError
+
 from app.modules.wiki_ingestion.application.models import (
     IngestOperationRestoreCommand,
     LintOperationRestoreCommand,
@@ -352,48 +356,43 @@ def test_restore_replays_ingest_and_lint_artifacts_in_operation_order() -> None:
     assert result["changed_pages"][0]["supported_links"] == [lint_link]
 
 
-def test_restore_reports_page_failure_and_keeps_other_success() -> None:
+def test_restore_page_failure_prevents_all_current_state_changes() -> None:
     store = ArtifactStore(
         {
             "wiki/ws-1/pages/C3/ops/A.json": _payload("A", "C3", "A 근거"),
         }
     )
-    use_case = RestoreWikiPagesUseCase(
-        _restore(store)
-    )
+    embedding_job = EmbeddingJob()
+    use_case = RestoreWikiPagesUseCase(_restore(store), embedding_job)
 
-    result = use_case.execute_ingest(
-        IngestOperationRestoreCommand(
-            operation_id="restore-1",
-            restore_to_operation_id=None,
-            cancel_operation_ids=("target-ingest",),
-            workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
-            rebuild_pages=(
-                RebuildPageCommand(
-                    page_id="C3",
-                    keep_contributions=(
-                        RestoreContributionCommand("A", "doc-A"),
+    with pytest.raises(PageRebuildError):
+        use_case.execute_ingest(
+            IngestOperationRestoreCommand(
+                operation_id="restore-1",
+                restore_to_operation_id=None,
+                cancel_operation_ids=("target-ingest",),
+                workspace_id="ws-1",
+                source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
+                rebuild_pages=(
+                    RebuildPageCommand(
+                        page_id="C3",
+                        keep_contributions=(
+                            RestoreContributionCommand("A", "doc-A"),
+                        ),
+                    ),
+                    RebuildPageCommand(
+                        page_id="C6",
+                        keep_contributions=(
+                            RestoreContributionCommand("D", "doc-D"),
+                        ),
                     ),
                 ),
-                RebuildPageCommand(
-                    page_id="C6",
-                    keep_contributions=(
-                        RestoreContributionCommand("D", "doc-D"),
-                    ),
-                ),
-            ),
+            )
         )
-    )
 
-    assert result["status"] == "partially_succeeded"
-    assert [item["page_id"] for item in result["changed_pages"]] == ["C3"]
-    assert result["failed_pages"] == [
-        {
-            "page_id": "C6",
-            "reason": "contribution_missing",
-        }
-    ]
+    assert store.current_states == []
+    assert store.cleaned_pages == []
+    assert embedding_job.calls == []
 
 
 def test_restore_treats_object_storage_error_as_page_failure() -> None:
@@ -406,28 +405,27 @@ def test_restore_treats_object_storage_error_as_page_failure() -> None:
         _restore(store)
     )
 
-    result = use_case.execute_ingest(
-        IngestOperationRestoreCommand(
-            operation_id="restore-1",
-            restore_to_operation_id=None,
-            cancel_operation_ids=("target-ingest",),
-            workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
-            rebuild_pages=(
-                RebuildPageCommand(
-                    page_id="C3",
-                    keep_contributions=(
-                        RestoreContributionCommand("A", "doc-A"),
+    with pytest.raises(PageRebuildError):
+        use_case.execute_ingest(
+            IngestOperationRestoreCommand(
+                operation_id="restore-1",
+                restore_to_operation_id=None,
+                cancel_operation_ids=("target-ingest",),
+                workspace_id="ws-1",
+                source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
+                rebuild_pages=(
+                    RebuildPageCommand(
+                        page_id="C3",
+                        keep_contributions=(
+                            RestoreContributionCommand("A", "doc-A"),
+                        ),
                     ),
                 ),
-            ),
+            )
         )
-    )
 
-    assert result["status"] == "partially_succeeded"
-    assert result["failed_pages"] == [
-        {"page_id": "C3", "reason": "contribution_missing"}
-    ]
+    assert store.current_states == []
+    assert store.cleaned_pages == []
 
 
 def test_restore_treats_malformed_contribution_as_page_failure() -> None:
@@ -442,28 +440,27 @@ def test_restore_treats_malformed_contribution_as_page_failure() -> None:
         _restore(store)
     )
 
-    result = use_case.execute_ingest(
-        IngestOperationRestoreCommand(
-            operation_id="restore-1",
-            restore_to_operation_id=None,
-            cancel_operation_ids=("target-ingest",),
-            workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
-            rebuild_pages=(
-                RebuildPageCommand(
-                    page_id="C3",
-                    keep_contributions=(
-                        RestoreContributionCommand("A", "doc-A"),
+    with pytest.raises(PageRebuildError):
+        use_case.execute_ingest(
+            IngestOperationRestoreCommand(
+                operation_id="restore-1",
+                restore_to_operation_id=None,
+                cancel_operation_ids=("target-ingest",),
+                workspace_id="ws-1",
+                source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
+                rebuild_pages=(
+                    RebuildPageCommand(
+                        page_id="C3",
+                        keep_contributions=(
+                            RestoreContributionCommand("A", "doc-A"),
+                        ),
                     ),
                 ),
-            ),
+            )
         )
-    )
 
-    assert result["status"] == "partially_succeeded"
-    assert result["failed_pages"] == [
-        {"page_id": "C3", "reason": "contribution_missing"}
-    ]
+    assert store.current_states == []
+    assert store.cleaned_pages == []
 
 
 def test_ingest_restore_without_previous_source_marks_source_deleted() -> None:
@@ -651,7 +648,7 @@ def test_lint_operation_restore_removes_unsupported_added_link() -> None:
     }
 
 
-def test_lint_operation_restore_defers_links_when_concept_rebuild_fails() -> None:
+def test_lint_rebuild_failure_prevents_deletion_and_link_changes() -> None:
     store = ArtifactStore(
         {
             "wiki/ws-1/pages/C3/ops/lint-B.json": _lint_payload(
@@ -672,35 +669,26 @@ def test_lint_operation_restore_defers_links_when_concept_rebuild_fails() -> Non
         _restore(store)
     )
 
-    result = use_case.execute_lint(
-        LintOperationRestoreCommand(
-            operation_id="restore-2",
-            target_operation_id="lint-B",
-            workspace_id="ws-1",
-            deleted_pages=("Z",),
-            rebuild_pages=(
-                RebuildPageCommand(
-                    page_id="C3",
-                    keep_contributions=(
-                        RestoreContributionCommand("missing", "doc-A"),
+    with pytest.raises(PageRebuildError):
+        use_case.execute_lint(
+            LintOperationRestoreCommand(
+                operation_id="restore-2",
+                target_operation_id="lint-B",
+                workspace_id="ws-1",
+                deleted_pages=("Z",),
+                rebuild_pages=(
+                    RebuildPageCommand(
+                        page_id="C3",
+                        keep_contributions=(
+                            RestoreContributionCommand("missing", "doc-A"),
+                        ),
                     ),
                 ),
-            ),
+            )
         )
-    )
 
-    assert result["link_changes"] == {
-        "removed_links": [],
-        "restored_links": [],
-    }
-    assert result["failed_actions"] == [
-        {
-            "action": "restore_links",
-            "resource_id": "lint-B",
-            "reason": "concept_rebuild_failed",
-        }
-    ]
-    assert store.cleaned_pages == [("ws-1", ["Z"])]
+    assert store.current_states == []
+    assert store.cleaned_pages == []
 
 
 def test_lint_operation_restore_reports_missing_target_log() -> None:
@@ -713,31 +701,50 @@ def test_lint_operation_restore_reports_missing_target_log() -> None:
         _restore(store)
     )
 
-    result = use_case.execute_lint(
-        LintOperationRestoreCommand(
-            operation_id="restore-2",
-            target_operation_id="lint-missing",
-            workspace_id="ws-1",
-            rebuild_pages=(
-                RebuildPageCommand(
-                    page_id="C3",
-                    keep_contributions=(
-                        RestoreContributionCommand("A", "doc-A"),
+    with pytest.raises(PageRebuildError):
+        use_case.execute_lint(
+            LintOperationRestoreCommand(
+                operation_id="restore-2",
+                target_operation_id="lint-missing",
+                workspace_id="ws-1",
+                rebuild_pages=(
+                    RebuildPageCommand(
+                        page_id="C3",
+                        keep_contributions=(
+                            RestoreContributionCommand("A", "doc-A"),
+                        ),
                     ),
                 ),
-            ),
+            )
         )
+
+    assert store.current_states == []
+    assert store.cleaned_pages == []
+
+
+
+def test_missing_source_snapshot_prevents_concept_changes_and_deletion() -> None:
+    store = ArtifactStore({
+        "wiki/ws-1/pages/C3/ops/A.json": _payload("A", "C3", "남은 근거"),
+    })
+    embedding_job = EmbeddingJob()
+    use_case = RestoreWikiPagesUseCase(_restore(store), embedding_job)
+    command = IngestOperationRestoreCommand(
+        operation_id="restore-1",
+        restore_to_operation_id="missing",
+        cancel_operation_ids=("B",),
+        workspace_id="ws-1",
+        source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
+        rebuild_pages=(
+            RebuildPageCommand("C3", (RestoreContributionCommand("A", "doc-A"),)),
+        ),
+        deleted_pages=("Z",),
     )
 
-    assert result["status"] == "partially_succeeded"
-    assert result["link_changes"] == {
-        "removed_links": [],
-        "restored_links": [],
-    }
-    assert result["failed_actions"] == [
-        {
-            "action": "restore_links",
-            "resource_id": "lint-missing",
-            "reason": "operation_log_missing",
-        }
-    ]
+    with pytest.raises(PageRebuildError, match="source snapshot"):
+        use_case.execute_ingest(command)
+
+    assert store.writes == []
+    assert store.current_states == []
+    assert store.cleaned_pages == []
+    assert embedding_job.calls == []

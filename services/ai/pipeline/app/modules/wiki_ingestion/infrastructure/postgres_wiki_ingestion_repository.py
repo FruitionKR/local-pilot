@@ -13,6 +13,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
+from app.core.pipeline_control import PipelineRunCancelledError, task_run_id
 from app.core.error_text import truncate_error
 from app.modules.wiki_generation.domain.text_utils import slugify
 from app.modules.wiki_ingestion.infrastructure.backend_document_reader import (
@@ -97,7 +98,14 @@ def ai_database_url() -> str:
 
 def connect_ai() -> psycopg.Connection:
     """ai-svc 소유 테이블의 ai_db 연결."""
-    return psycopg.connect(ai_database_url(), row_factory=dict_row)
+    conn = psycopg.connect(ai_database_url(), row_factory=dict_row)
+    if task_run_id.get() is not None:
+        try:
+            conn.execute("SELECT set_config('app.ai_task_run_id', %s, true)", (task_run_id.get(),))
+        except Exception:
+            conn.close()
+            raise
+    return conn
 
 
 def connect() -> psycopg.Connection:
@@ -468,6 +476,8 @@ _AI_SCHEMA_SQL_PATH = Path(__file__).resolve().parents[4] / "db" / "ai_schema.sq
 
 # ai_db는 python이 소유한다 — db/ai_schema.sql이 원본 DDL
 AI_DB_REQUIRED_TABLES = (
+    "ai_task_runs",
+    "ai_task_changes",
     *REQUIRED_TABLES,
     "wiki_schemas",
     "document_derived_state",
@@ -852,6 +862,11 @@ def finish_pipeline_run(
     lock = concept_write_lock(str(workspace_id), run_id) if document_id else nullcontext()
     with lock:
         with connect() as conn:
+            active = conn.execute(
+                "SELECT status FROM pipeline_runs WHERE id = %s FOR UPDATE", (run_id,),
+            ).fetchone()
+            if active is None or active["status"] != "running":
+                raise PipelineRunCancelledError("Pipeline run no longer accepts outputs.")
             if document_id:
                 embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
                 post_ingest = manifest.get("post_ingest")
@@ -915,7 +930,7 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
             UPDATE pipeline_runs
             SET status = 'failed', error = %s,
                 updated_at = now(), finished_at = now()
-            WHERE id = %s
+            WHERE id = %s AND status = 'running'
             """,
             (error_message, run_id),
         )

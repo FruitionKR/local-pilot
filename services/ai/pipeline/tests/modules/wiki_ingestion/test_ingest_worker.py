@@ -307,6 +307,7 @@ def test_post_ingest_dispatch_failure_is_not_treated_as_finished_ingest() -> Non
             "_post_ingest_command",
             return_value=post_command,
         ),
+        patch("app.modules.task_cancellation.infrastructure.postgres_task_journal.register"),
         pytest.raises(ingest_worker.PostIngestDispatchError, match="kafka unavailable"),
     ):
         asyncio.run(

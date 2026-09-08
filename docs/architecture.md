@@ -116,3 +116,15 @@ ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 
 |---|---|
 | JWT HS256 공유 시크릿 | 외부 공개·시크릿 유출 리스크 대두 시 RS256+JWKS 전환 |
 | pipeline-runs PVC | S3 아티팩트 이전 완료 시 ingest-worker Spot 노드 활성화 가능 |
+
+
+## AI 작업 취소
+
+공개 제품 경로의 취소 계약은 [AI 작업 취소 API](api/ai/tasks.md), 설계 결정은 [ADR 0018](adr/0018-ai-task-cancellation.md)을 따른다.
+Backend가 취소 상태를 먼저 커밋하고 결과 저장을 차단한다. Python은 실행 worker의 종료를 확인한 뒤
+AI DB·객체 저장소·Agent 역작업을 복구하고, 업무 DB의 변경 ID를 역순으로 backend에 전달한다.
+Backend는 각 행의 현재 값·후속 참조를 검증하고 원자적으로 복구한다. 복구가 모두 끝나야
+`cancelled`와 종결 SSE를 보낸다. 장애 후에는 영속 기록으로 재시도하며 다른 사용자의 변경은 덮어쓰지 않는다.
+동기 Query도 Kafka 작업을 시작한 뒤 완료를 기다린다. Skill 작성·게시·수정은 동일한 작업 ID envelope를
+내부 HTTP로 전달한다. 새 의존성을 추가하지 않고 PostgreSQL trigger·행/권고 잠금과 기존 Redis·MinIO를 사용한다.
+구버전 실행에는 변경 전 기록이 없으므로 배포 전 작업과 큐를 비운다. 운영용 단발 내부 HTTP 호출은 제품 취소 경로와 구분한다.

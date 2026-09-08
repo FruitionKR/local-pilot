@@ -6,7 +6,6 @@ import fruition.core.query.dto.QueryRequest;
 import fruition.core.query.dto.QueryResponse;
 import fruition.core.query.dto.QueryRunCreateResponse;
 import fruition.core.query.service.QueryRunService;
-import fruition.core.query.service.QueryService;
 import fruition.shared.ai.AiModelCatalog;
 import fruition.shared.util.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,14 +34,12 @@ public class QueryController {
 
     private static final Logger log = LoggerFactory.getLogger(QueryController.class);
 
-    private final QueryService queryService;
     private final QueryRunService queryRunService;
     private final ChatSessionService chatSessionService;
     private final AiModelCatalog aiModelCatalog;
 
-    public QueryController(QueryService queryService, QueryRunService queryRunService,
+    public QueryController(QueryRunService queryRunService,
                            ChatSessionService chatSessionService, AiModelCatalog aiModelCatalog) {
-        this.queryService = queryService;
         this.queryRunService = queryRunService;
         this.chatSessionService = chatSessionService;
         this.aiModelCatalog = aiModelCatalog;
@@ -73,14 +70,16 @@ public class QueryController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "채팅 세션 ID", example = "session_abc12345")
             @PathVariable("session_id") String sessionId,
+            @org.springframework.web.bind.annotation.RequestParam(name = "run_id", required = false) String runId,
             @Valid @RequestBody QueryRequest request) {
         log.info("[질의 요청 수신] mode=sync workspaceId={} userId={} sessionId={} questionLength={}",
                 workspaceId, userId, sessionId, request.question().length());
         chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
         AiModelCatalog.AiModel selected = aiModelCatalog.resolve(request.provider(), request.model());
-        QueryResponse response = queryService.query(workspaceId, sessionId, request.question(),
-                selected.provider(), selected.model(), request.allowWebSearch());
-        return ResponseEntity.ok(response);
+        QueryRun run = queryRunService.start(workspaceId, userId, sessionId, request.question(),
+                selected.provider(), selected.model(), request.allowWebSearch(), runId);
+        return ResponseEntity.ok().header("X-AI-Run-Id", run.requestId())
+                .body(queryRunService.awaitResult(run, userId));
     }
 
     @Operation(

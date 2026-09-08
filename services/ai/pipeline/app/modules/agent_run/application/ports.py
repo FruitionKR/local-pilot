@@ -1,4 +1,5 @@
-from typing import Protocol
+from contextlib import AbstractContextManager
+from typing import Any, Protocol
 
 from app.modules.agent_run.domain.entities import (
     AgentJob,
@@ -133,6 +134,13 @@ class AgentToolAuthorizationRepositoryPort(Protocol):
 
 
 class AgentPlanRepositoryPort(Protocol):
+    def register_artifact(
+        self, *, run_id: str, workspace_id: str, user_id: str, artifact_id: str,
+        content_hash: str, purpose: str, document_id: str | None,
+        base_version: int | None, target: dict[str, object] | None, markdown: str,
+    ) -> dict[str, object]:
+        ...
+
     def save_plan(self, run_id: str, plan: AgentPlan) -> None:
         ...
 
@@ -184,6 +192,31 @@ class AgentToolGatewayPort(Protocol):
 
 
 class AgentJobRepositoryPort(Protocol):
+    def execution_lock(self, run_id: str) -> AbstractContextManager[None]:
+        ...
+
+    def get_undo_record(self, run_id: str, operation_id: str) -> dict[str, Any] | None:
+        ...
+
+    def prepare_undo(self, run_id: str, plan_id: str, operation_id: str,
+                     tool_name: str, arguments: dict[str, Any], before: dict[str, Any]) -> bool:
+        ...
+
+    def load_undo_records(self, run_id: str) -> list[dict[str, Any]]:
+        ...
+
+    def save_undo_request(self, record_id: str, tool_name: str, arguments: dict[str, Any]) -> None:
+        ...
+
+    def complete_undo(self, record_id: str, response: dict[str, Any]) -> None:
+        ...
+
+    def parent_rollback_error(self, run_id: str) -> str | None:
+        ...
+
+    def finish_rollback(self, run_id: str, error_code: str | None = None) -> None:
+        ...
+
     def heartbeat(self, job: AgentJob) -> bool:
         ...
 
