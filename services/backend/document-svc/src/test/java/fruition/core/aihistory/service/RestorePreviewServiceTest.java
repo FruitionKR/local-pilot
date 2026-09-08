@@ -93,7 +93,7 @@ class RestorePreviewServiceTest {
     void rejectsPlanThatExecuteWouldReject() {
         givenTarget(OperationType.ingest);
         when(scopeResolver.resolve(any())).thenReturn(Set.of(OPERATION_ID));
-        when(planner.plan(any(), any())).thenReturn(new RestorePlan(List.of()));
+        when(planner.plan(any(), any(), any())).thenReturn(new RestorePlan(List.of()));
         when(validator.requireApplicable(any(), any()))
                 .thenThrow(new InvalidRestoreRequestException("되돌릴 Wiki 페이지가 없습니다."));
 
@@ -106,7 +106,7 @@ class RestorePreviewServiceTest {
     void returnsPlanWithToken() {
         givenTarget(OperationType.ingest);
         when(scopeResolver.resolve(any())).thenReturn(Set.of(OPERATION_ID));
-        when(planner.plan(any(), any())).thenReturn(new RestorePlan(List.of(
+        when(planner.plan(any(), any(), any())).thenReturn(new RestorePlan(List.of(
                 PageRestorePlan.delete("wp_C8"),
                 PageRestorePlan.restore("wp_S_A", 2L, "op_a1", 1))));
         when(tokenSigner.sign(org.mockito.ArgumentMatchers.eq(OPERATION_ID),

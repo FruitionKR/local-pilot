@@ -29,7 +29,7 @@ import java.util.Set;
 /**
  * 복구 미리보기. 무엇이 삭제·복원·재작성되는지 계산해 보여주고 실행에 쓸 토큰을 발급한다.
  *
- * <p>Wiki 복구는 본문을 읽지 않고 기여 명단만으로 끝난다. 문서 편집 복구는 canonical 편집
+ * <p>Wiki 복구는 본문을 읽지 않고 페이지 유형과 기여 명단으로 판단한다. 문서 편집 복구는 canonical 편집
  * 상태의 revision을 확인하고, 필요한 경우 기존 원본에서 편집 상태를 초기화한다.
  */
 @Service
@@ -91,7 +91,7 @@ public class RestorePreviewService {
 
         Set<String> excluded = scopeResolver.resolve(target);
         Map<String, List<WikiPageContribution>> contributions = loadContributions(excluded);
-        RestorePlan plan = planner.plan(excluded, contributions);
+        RestorePlan plan = planner.plan(excluded, contributions, workspaceId);
         validator.requireApplicable(target, plan);
 
         return RestorePreviewResponse.from(operationId, plan,

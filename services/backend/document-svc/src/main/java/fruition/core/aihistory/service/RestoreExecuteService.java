@@ -109,7 +109,7 @@ public class RestoreExecuteService {
             plan = context.plan();
         } else {
             contributions = previewService.loadContributions(excluded);
-            plan = planner.plan(excluded, contributions);
+            plan = planner.plan(excluded, contributions, workspaceId);
         }
 
         // 미리보기 이후 대상이 바뀌었으면 실행하지 않는다. 되돌리기는 무를 수 없다.
