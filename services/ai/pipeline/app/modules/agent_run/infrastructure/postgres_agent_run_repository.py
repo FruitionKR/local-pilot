@@ -522,7 +522,7 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
                     error_code = NULL, updated_at = now(), finished_at = NULL
                 WHERE id = %s RETURNING *
                 """,
-                (instruction.strip()[:1000], run_id),
+                (instruction.strip(), run_id),
             ).fetchone()
             conn.execute(
                 """

@@ -7,13 +7,68 @@ from langgraph.channels import UntrackedValue
 from app.modules.agent_run.infrastructure.agent_worker import AgentWorker
 from app.modules.agent_run.infrastructure.agent_worker import _resolve_operation_references
 from app.modules.agent_run.domain.entities import AgentRun, AgentRunContext
-from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
+from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanIntentClarificationRequired, AgentPlanOperation
 from app.modules.agent_run.application.ports import ToolGatewayError
 from app.modules.agent_run.infrastructure.postgres_agent_job_repository import PostgresAgentJobRepository
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
 
 class AgentWorkerTest(unittest.TestCase):
+    def test_planning_uses_route_and_request_once_without_executing(self) -> None:
+        repository = MagicMock()
+        context = _executing_context()
+        repository.load_context.return_value = replace(
+            context, run=replace(context.run, status="queued", skill_version_id=None),
+        )
+        repository.next_plan_version.return_value = 1
+        plans, gateway, generator = MagicMock(), MagicMock(), MagicMock()
+        generator.generate.return_value = replace(_approved_plan(), status="awaiting_approval")
+        worker = AgentWorker(repository, plans, gateway, generator)
+        with (
+            patch.object(worker, "_inspect_hierarchy", return_value=[]),
+            patch.object(worker, "_load_content_artifacts", return_value=()),
+        ):
+            worker._plan_run("run-1")
+        generator.generate.assert_called_once()
+        self.assertEqual(generator.generate.call_args.kwargs["routing_action"], context.run.action)
+        self.assertEqual(generator.generate.call_args.kwargs["instruction"], context.run.request_summary)
+        plans.save_plan.assert_called_once_with("run-1", generator.generate.return_value)
+        gateway.execute.assert_not_called()
+
+    def test_planning_clarification_and_provider_failure_are_distinct(self) -> None:
+        for failure in (AgentPlanIntentClarificationRequired(), RuntimeError("timeout")):
+            with self.subTest(failure=type(failure).__name__):
+                repository = MagicMock()
+                context = _executing_context()
+                repository.load_context.return_value = replace(
+                    context, run=replace(context.run, status="queued", skill_version_id=None),
+                )
+                plans, gateway, generator = MagicMock(), MagicMock(), MagicMock()
+                generator.generate.side_effect = failure
+                worker = AgentWorker(repository, plans, gateway, generator)
+                job = MagicMock(run_id="run-1", job_type="planning", id="job-1")
+                with (
+                    patch.object(worker, "_inspect_hierarchy", return_value=[]),
+                    patch.object(worker, "_load_content_artifacts", return_value=()),
+                ):
+                    if isinstance(failure, AgentPlanIntentClarificationRequired):
+                        worker.process(job)
+                        repository.request_clarification.assert_called_once_with(
+                            "run-1", "mutation_intent_required",
+                        )
+                        repository.fail.assert_not_called()
+                        repository.complete.assert_called_once_with(job)
+                        snapshot = worker._graph.get_state({"configurable": {"thread_id": "run-1"}})
+                        self.assertEqual(snapshot.values["error_code"], "mutation_intent_required")
+                        self.assertEqual(snapshot.next, ("wait_for_user",))
+                    else:
+                        with self.assertLogs("app.modules.agent_run.infrastructure.agent_worker", level="ERROR"):
+                            worker.process(job)
+                        repository.request_clarification.assert_not_called()
+                        repository.fail.assert_called_once_with(job, "RuntimeError")
+                plans.save_plan.assert_not_called()
+                gateway.execute.assert_not_called()
+
     def test_process_keeps_internal_value_error_detail_but_hides_external_detail(self) -> None:
         repository = MagicMock()
         worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock())
@@ -1157,6 +1212,7 @@ class AgentWorkerTest(unittest.TestCase):
         self.assertTrue(updated)
         query, parameters = connection.execute.call_args.args
         self.assertIn("error_code = %s", query)
+        self.assertIn("status IN ('planning', 'executing')", query)
         self.assertEqual(parameters, ("react_tool_budget_insufficient", "run-1"))
 
     def test_terminal_run_status_is_not_overwritten_when_job_fails(self) -> None:

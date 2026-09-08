@@ -73,7 +73,6 @@ CLARIFY_INCOMPATIBLE_SKILL_MESSAGE = (
     "선택한 Skill이 요청한 모든 작업을 지원하지 않습니다. "
     "다른 Skill을 선택하거나 요청 범위를 줄여 주세요."
 )
-CLARIFY_MUTATION_INTENT_MESSAGE = "변경 작업은 대화나 참조 문서가 아닌 현재 메시지에 직접 요청해 주세요."
 CLARIFY_PREVIEW_MESSAGE = "저장할 이전 미리보기를 확인할 수 없어 미리보기를 다시 만들어 주세요."
 NO_CHANGES_MESSAGE = "원문에서 변경할 내용이 없어 저장 작업을 만들지 않았습니다."
 BLOCKED_SKILL_AUTHORING_MESSAGE = "보안 문제가 있는 내용을 제거하거나 수정한 뒤 다시 시도해 주세요."
@@ -263,26 +262,6 @@ class HandleAgentTurnUseCase:
                 raise AgentConfigurationError("Workspace workflow requires workspace_id and user_id.")
             if inspect_skill_instructions(request.message):
                 return _reject_unsafe_workspace_mutation(route)
-            if not route.direct_mutation_verified:
-                return AgentTurnResult(
-                    action="clarify",
-                    route=replace(
-                        route,
-                        action="clarify",
-                        confidence=0.0,
-                        reason="Direct mutation intent was not confirmed.",
-                        edit_goal=None,
-                        edit_operation=None,
-                        edit_destination=None,
-                        selected_skill_id=None,
-                        skill_candidates=(),
-                        retrieval_source="none",
-                        document_operation="none",
-                        persist=False,
-                        required_capabilities=(),
-                    ),
-                    message=CLARIFY_MUTATION_INTENT_MESSAGE,
-                )
             preview = _latest_markdown_preview(request)
             preview_action, preview_run_id = preview or (None, None)
             reuses_edit_preview = (

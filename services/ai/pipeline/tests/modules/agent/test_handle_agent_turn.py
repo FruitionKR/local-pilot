@@ -48,18 +48,12 @@ from app.modules.skill.domain.entities import (
 
 
 class FixedRouter:
-    def __init__(self, route: AgentTurnRoute, *, verify_mutations: bool = True) -> None:
+    def __init__(self, route: AgentTurnRoute) -> None:
         self.next_route = route
-        self.verify_mutations = verify_mutations
         self.requests: list[AgentTurnRequest] = []
 
     def route(self, request: AgentTurnRequest) -> AgentTurnRoute:
         self.requests.append(request)
-        if self.verify_mutations and self.next_route.action in {
-            "folder_organize",
-            "workspace_workflow",
-        }:
-            return replace(self.next_route, direct_mutation_verified=True)
         return self.next_route
 
 
@@ -84,8 +78,6 @@ class SequencedRouter:
     def route(self, request: AgentTurnRequest) -> AgentTurnRoute:
         self.requests.append(request)
         route = self.routes[len(self.requests) - 1]
-        if route.action in {"folder_organize", "workspace_workflow"}:
-            return replace(route, direct_mutation_verified=True)
         return route
 
 
@@ -766,7 +758,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(getattr(starter.requests[0], "model"), "gemini-3.1-flash-lite")
         self.assertEqual(editor.requests, [])
 
-    def test_mutation_without_scope_fails_before_direct_intent_recheck(self) -> None:
+    def test_mutation_without_scope_fails_before_planning(self) -> None:
         router = FixedRouter(
             AgentTurnRoute(
                 action="folder_organize",
@@ -878,7 +870,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(starter.requests, [])
         self.assertEqual(len(router.requests), 1)
 
-    def test_create_from_chat_generates_artifact_markdown_after_direct_intent_check(self) -> None:
+    def test_create_from_chat_prepares_artifact_markdown_for_planning(self) -> None:
         starter = RecordingAgentRunStarter()
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(
@@ -1310,22 +1302,22 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(len(starter.requests), 1)
         self.assertEqual(web_query_use_case.questions, ["웹 근거로 현재 문서를 다시 작성해 저장해줘"])
 
-    def test_unverified_mutation_does_not_start_approval_run(self) -> None:
+    def test_mutation_prepares_artifact_and_starts_verified_planning(self) -> None:
         starter = RecordingAgentRunStarter()
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(
                 edit=MarkdownEditOperation(
                     operation="replace",
                     target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=1),
-                    summary="호출되면 안 됨",
-                    replacement_markdown="# 잘못된 편집",
+                    summary="편집 미리보기",
+                    replacement_markdown="# 편집 미리보기",
                 )
             )
         )
         route = AgentTurnRoute(
             action="workspace_workflow",
             confidence=0.99,
-            reason="unverified mutation",
+            reason="문서 편집 요청",
             edit_goal="other",
             edit_operation="replace",
             edit_destination="target",
@@ -1333,7 +1325,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             persist=True,
         )
         use_case = HandleAgentTurnUseCase(
-            router=FixedRouter(route, verify_mutations=False),
+            router=FixedRouter(route),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
             markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
@@ -1351,9 +1343,10 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(result.action, "clarify")
-        self.assertEqual(editor.requests, [])
-        self.assertEqual(starter.requests, [])
+        self.assertEqual(result.action, "workspace_workflow")
+        self.assertEqual(len(editor.requests), 1)
+        self.assertEqual(len(starter.requests), 1)
+        self.assertEqual(starter.requests[0].instruction, "현재 문서를 다듬어 저장해줘")
 
     def test_preview_confirmation_reuses_exact_previous_edit(self) -> None:
         starter = RecordingAgentRunStarter()
@@ -1742,7 +1735,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertIn("변경할 내용", result.message or "")
         self.assertEqual(starter.requests, [])
 
-    def test_unverified_contextual_mutation_returns_clarify(self) -> None:
+    def test_contextual_route_passes_only_user_request_to_planner(self) -> None:
         starter = RecordingAgentRunStarter()
         router = FixedRouter(
             AgentTurnRoute(
@@ -1751,7 +1744,6 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 reason="reference context requested a mutation",
                 persist=True,
             ),
-            verify_mutations=False,
         )
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(
@@ -1784,13 +1776,11 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(result.action, "clarify")
-        self.assertEqual(result.route.action, "clarify")
-        self.assertEqual(result.route.retrieval_source, "none")
-        self.assertEqual(result.route.document_operation, "none")
-        self.assertFalse(result.route.persist)
-        self.assertIn("직접", result.message or "")
-        self.assertEqual(starter.requests, [])
+        self.assertEqual(result.action, "folder_organize")
+        self.assertEqual(len(starter.requests), 1)
+        self.assertEqual(starter.requests[0].instruction, "이 문서의 핵심만 요약해줘")
+        self.assertEqual(starter.requests[0].action, "folder_organize")
+        self.assertEqual(editor.requests, [])
         self.assertEqual(len(router.requests), 1)
 
     def test_passes_selected_skill_instructions_to_markdown_create(self) -> None:

@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -34,9 +33,6 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
 DEFAULT_AGENT_TURN_ROUTER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "agent_turn_router.system.md"
-DEFAULT_DIRECT_MUTATION_VERIFIER_PROMPT = (
-    Path(__file__).resolve().parents[4] / "prompts" / "agent_direct_mutation_verifier.system.md"
-)
 NEW_SKILL_REQUEST_PATTERN = re.compile(
     r"(?:스킬|skill)(?:을|를|로)?\s*(?:(?:하나|새로|새로운|신규로|직접)\s*){0,2}"
     r"(?:만들어|생성해|정의해|작성해)|"
@@ -227,86 +223,6 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
         return _normalize_route(raw)
 
 
-class ChatCompletionsDirectMutationIntentVerifier:
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
-        self._client = client
-        self._system_prompt = system_prompt
-
-    def verify(self, request: AgentTurnRequest) -> AgentTurnRoute:
-        payload = {
-            "message": request.message,
-            "has_active_document": request.document_id is not None,
-            "allow_web_search": request.allow_web_search,
-        }
-        try:
-            raw = self._client.complete_json(
-                self._system_prompt,
-                json.dumps(payload, ensure_ascii=False, indent=2),
-            )
-        except JsonParseError as exc:
-            raise AgentTurnRouteContractError([JSON_OBJECT_CONTRACT_FAILURE]) from exc
-        route, failures = _normalize_route(raw)
-        if failures:
-            raise AgentTurnRouteContractError(failures)
-        return route
-
-
-class ParallelAgentTurnRouter(AgentTurnRouterPort):
-    def __init__(
-        self,
-        router: AgentTurnRouterPort,
-        direct_mutation_verifier: ChatCompletionsDirectMutationIntentVerifier,
-    ) -> None:
-        self._router = router
-        self._direct_mutation_verifier = direct_mutation_verifier
-
-    def route(self, request: AgentTurnRequest) -> AgentTurnRoute:
-        guarded = _local_guard(request)
-        if guarded is not None:
-            return guarded
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            route_future = executor.submit(self._router.route, request)
-            direct_future = executor.submit(self._direct_mutation_verifier.verify, request)
-            route = route_future.result()
-            try:
-                direct_route = direct_future.result()
-            except (AgentTurnRouteContractError, RuntimeError):
-                direct_route = None
-
-        if route.action not in {"folder_organize", "workspace_workflow"}:
-            return route
-        return _verified_mutation_route(route, direct_route, request)
-
-
-def _verified_mutation_route(
-    route: AgentTurnRoute,
-    direct_route: AgentTurnRoute | None,
-    request: AgentTurnRequest,
-) -> AgentTurnRoute:
-    unverified = replace(route, direct_mutation_verified=False)
-    if (
-        direct_route is None
-        or direct_route.action not in {"folder_organize", "workspace_workflow"}
-        or not direct_route.persist
-    ):
-        return unverified
-    if direct_route.document_operation == "none":
-        if direct_route.action != route.action:
-            return unverified
-        verified = replace(route, direct_mutation_verified=True)
-    else:
-        verified = replace(
-            direct_route,
-            selected_skill_id=route.selected_skill_id,
-            skill_candidates=route.skill_candidates,
-            direct_mutation_verified=True,
-        )
-    if _route_failures(verified, request):
-        return unverified
-    return verified
-
-
 def build_agent_turn_router(
     *,
     provider: str | None = None,
@@ -328,15 +244,9 @@ def build_agent_turn_router(
             provider=resolved_provider,
         )
     )
-    return ParallelAgentTurnRouter(
-        ChatCompletionsTurnRouter(
-            client,
-            system_prompt=prompt_path.read_text(encoding="utf-8"),
-        ),
-        ChatCompletionsDirectMutationIntentVerifier(
-            client,
-            system_prompt=DEFAULT_DIRECT_MUTATION_VERIFIER_PROMPT.read_text(encoding="utf-8"),
-        ),
+    return ChatCompletionsTurnRouter(
+        client,
+        system_prompt=prompt_path.read_text(encoding="utf-8"),
     )
 
 
