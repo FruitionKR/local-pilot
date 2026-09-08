@@ -81,7 +81,7 @@ class RestoreExecuteServiceTest {
         when(previewService.loadContributions(Set.of("op_a2")))
                 .thenReturn(Map.of("wp_S_A", List.of(contribution)));
         RestorePlan plan = new RestorePlan(List.of(page));
-        when(planner.plan(any(), any())).thenReturn(plan);
+        when(planner.plan(any(), any(), any())).thenReturn(plan);
         when(tokenSigner.matches(TOKEN, TARGET, Map.of("wp_S_A", List.of(contribution))))
                 .thenReturn(true);
         when(validator.requireApplicable(target, plan)).thenReturn(page);
@@ -109,7 +109,7 @@ class RestoreExecuteServiceTest {
         when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
         when(scopeResolver.resolve(target)).thenReturn(Set.of("op_a2"));
         when(previewService.loadContributions(Set.of("op_a2"))).thenReturn(Map.of());
-        when(planner.plan(any(), any())).thenReturn(new RestorePlan(List.of()));
+        when(planner.plan(any(), any(), any())).thenReturn(new RestorePlan(List.of()));
         when(tokenSigner.matches(TOKEN, TARGET, Map.of())).thenReturn(false);
 
         assertThatThrownBy(() -> service.execute(WORKSPACE, USER, TARGET, TOKEN))
@@ -126,7 +126,7 @@ class RestoreExecuteServiceTest {
         when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
         when(scopeResolver.resolve(target)).thenReturn(Set.of("op_a2"));
         when(previewService.loadContributions(Set.of("op_a2"))).thenReturn(Map.of());
-        when(planner.plan(any(), any())).thenReturn(new RestorePlan(List.of(page)));
+        when(planner.plan(any(), any(), any())).thenReturn(new RestorePlan(List.of(page)));
         when(tokenSigner.matches(TOKEN, TARGET, Map.of())).thenReturn(true);
         when(validator.requireApplicable(target, new RestorePlan(List.of(page)))).thenReturn(page);
         when(lifecycle.startQueued(eq(target), anyString(), anyString(), any()))
@@ -150,7 +150,7 @@ class RestoreExecuteServiceTest {
         when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
         when(scopeResolver.resolve(target)).thenReturn(Set.of("op_a2"));
         when(previewService.loadContributions(Set.of("op_a2"))).thenReturn(contributions);
-        when(planner.plan(any(), any())).thenReturn(plan);
+        when(planner.plan(any(), any(), any())).thenReturn(plan);
         when(tokenSigner.matches(TOKEN, TARGET, contributions)).thenReturn(true, false);
         when(validator.requireApplicable(target, plan)).thenReturn(page);
         when(lifecycle.isClaimed(eq(TARGET), anyString())).thenReturn(false, true);

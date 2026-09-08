@@ -30,6 +30,35 @@ const STATUS_LABELS: Record<string, string> = {
   conflict: "충돌"
 };
 
+/** Wiki 본문 대신 유형별로 생성·삭제된 페이지 제목을 보여준다. */
+function WikiTitles({ changes }: { changes: OperationChange[] }) {
+  const groups = [
+    { type: "concept", label: "Concept" },
+    { type: "source", label: "Source" },
+    { type: undefined, label: "유형 정보 없음" }
+  ];
+  return (
+    <div className={styles["card-body"]}>
+      {groups.map(({ type, label }) => {
+        const pages = changes.filter((change) => change.page_type === type);
+        if (pages.length === 0) return null;
+        return (
+          <section className={styles["change"]} key={label} aria-label={label}>
+            <h4 className={styles["change-heading"]}>{label}</h4>
+            <ul className={styles["wiki-titles"]}>
+              {pages.map((page) => (
+                <li key={page.id}>
+                  {page.change_type === "created" ? "생성" : "삭제"} · {page.resource_display_name || "제목 없음"}
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 /** 변경 리소스 하나의 diff를 Figma 754:10436 형태로 렌더링한다. */
 function ChangeDiff({ change }: { change: OperationChange }) {
   const heading = change.resource_display_name
@@ -259,7 +288,13 @@ export function LogView({
               )}
             </header>
             {detail.changes.length === 0 ? (
-              <p className={styles["card-notice"]}>변경된 리소스가 없습니다.</p>
+              <p className={styles["card-notice"]}>
+                {detail.operation_type === "ingest" || detail.operation_type === "lint"
+                  ? "생성되거나 삭제된 Wiki가 없습니다."
+                  : "변경된 리소스가 없습니다."}
+              </p>
+            ) : detail.operation_type === "ingest" || detail.operation_type === "lint" ? (
+              <WikiTitles changes={detail.changes} />
             ) : (
               <div className={styles["card-body"]}>
                 {detail.changes.map((change) => (

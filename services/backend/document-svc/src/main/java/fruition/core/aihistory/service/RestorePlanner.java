@@ -3,6 +3,7 @@ package fruition.core.aihistory.service;
 import fruition.core.aihistory.dto.PageRestorePlan;
 import fruition.core.aihistory.dto.RestorePlan;
 import fruition.core.wiki.domain.WikiPageContribution;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -12,34 +13,39 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-/**
- * 복구 판정. 기여 명단만 보고 페이지마다 삭제·복원·재조립을 가른다.
- *
- * <p>본문을 읽지 않는 순수 계산이라 미리보기가 가볍고 저장소 접근이 없다.
- * 판정 근거는 설계 문서 {@code docs/backlog/design/ai-operation-log.md} §5.1이다.
- *
- * <p>입력에는 <b>비활성 기여도 포함</b>해야 한다. 복원 목적지가 유효한지 판단하려면
- * 그 revision이 담고 있던 기여를 알아야 하는데, 이전 복구로 꺼진 기여가 그 안에 들어 있을 수 있다.
- */
+/** Source는 마지막 남은 ingest 본문으로 복원하고 Concept는 남은 활성 기여로 재작성한다. */
 @Component
 public class RestorePlanner {
 
+    private final PipelineWikiStateRequester wikiStateRequester;
+
+    public RestorePlanner(PipelineWikiStateRequester wikiStateRequester) {
+        this.wikiStateRequester = wikiStateRequester;
+    }
+
     /**
-     * @param excludedOperationIds 제외할 작업. {@code mode}로 결정된 집합이다
+     * @param excludedOperationIds 취소할 ingest 작업 집합
      * @param contributionsByPage  페이지별 <b>전체</b> 기여(활성·비활성 모두)
      */
     public RestorePlan plan(Set<String> excludedOperationIds,
-                            Map<String, List<WikiPageContribution>> contributionsByPage) {
+                            Map<String, List<WikiPageContribution>> contributionsByPage,
+                            String workspaceId) {
+        Set<String> sourcePageIds = contributionsByPage.isEmpty() ? Set.of()
+                : wikiStateRequester.lookup(List.copyOf(contributionsByPage.keySet()), workspaceId).stream()
+                        .filter(page -> "source".equals(page.pageType()))
+                        .map(PipelineWikiStateRequester.WikiPageSnapshot::id)
+                        .collect(java.util.stream.Collectors.toSet());
         List<PageRestorePlan> pages = new ArrayList<>();
         for (Map.Entry<String, List<WikiPageContribution>> entry : contributionsByPage.entrySet()) {
-            planPage(entry.getKey(), entry.getValue(), excludedOperationIds).ifPresent(pages::add);
+            planPage(entry.getKey(), entry.getValue(), excludedOperationIds,
+                    sourcePageIds.contains(entry.getKey())).ifPresent(pages::add);
         }
         return new RestorePlan(pages);
     }
 
     private Optional<PageRestorePlan> planPage(String pageId,
                                                List<WikiPageContribution> contributions,
-                                               Set<String> excluded) {
+                                               Set<String> excluded, boolean sourcePage) {
         List<WikiPageContribution> ordered = contributions.stream()
                 .sorted(Comparator.comparingLong(WikiPageContribution::getSequenceRevision))
                 .toList();
@@ -67,16 +73,13 @@ public class RestorePlanner {
             return Optional.of(PageRestorePlan.delete(pageId));
         }
 
-        WikiPageContribution lastKept = kept.get(kept.size() - 1);
-        long lastKeptRevision = lastKept.getSequenceRevision();
-        if (snapshotMatchesKept(ordered, kept, lastKeptRevision)) {
-            // 그 revision이 담고 있던 기여가 남길 집합과 정확히 같다.
-            // 새로 쓸 필요 없이 그 revision의 본문과 object key를 재사용한다.
+        if (sourcePage) {
+            WikiPageContribution lastKept = kept.get(kept.size() - 1);
             return Optional.of(PageRestorePlan.restore(
-                    pageId, lastKeptRevision, lastKept.getIngestOperationId(), kept.size()));
+                    pageId, lastKept.getSequenceRevision(), lastKept.getIngestOperationId(), kept.size()));
         }
 
-        // 남은 기여만의 본문이 저장된 적이 없다. 조각을 다시 붙여야 한다.
+        // Concept는 과거 revision 유무와 관계없이 pipeline의 기여 재작성 계약을 따른다.
         List<PageRestorePlan.Kept> keepContributions = kept.stream()
                 .map(c -> new PageRestorePlan.Kept(
                         c.getIngestOperationId(), c.getSourceDocumentId(), c.getObjectKey()))
@@ -84,18 +87,4 @@ public class RestorePlanner {
         return Optional.of(PageRestorePlan.rebuild(pageId, keepContributions));
     }
 
-    /**
-     * {@code revision} 시점의 본문이 {@code kept}와 같은 기여로 이루어졌는지.
-     *
-     * <p>그 revision까지 반영된 기여는 {@code sequence_revision <= revision}인 것 전부다.
-     * 그중 하나라도 이번에 빼거나 이전 복구로 이미 뺀 것이 있으면 스냅샷을 그대로 쓸 수 없다.
-     */
-    private boolean snapshotMatchesKept(List<WikiPageContribution> ordered,
-                                        List<WikiPageContribution> kept,
-                                        long revision) {
-        long appliedAtRevision = ordered.stream()
-                .filter(c -> c.getSequenceRevision() <= revision)
-                .count();
-        return appliedAtRevision == kept.size();
-    }
 }

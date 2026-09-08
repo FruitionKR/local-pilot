@@ -73,7 +73,8 @@ public class OperationQueryController {
     }
 
     @Operation(summary = "AI 작업 로그 상세",
-            description = "그 작업이 바꾼 리소스를 함께 반환합니다. 줄 수는 저장된 값이라 계산이 없습니다.")
+            description = "ingest·lint는 생성·삭제된 Wiki의 제목과 page_type(concept/source)을 반환하며 본문·diff는 계산하거나 전달하지 않습니다. "
+                    + "그 외 작업은 리소스별 변경분을 반환합니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "404", description = "작업 또는 워크스페이스를 찾을 수 없음",
@@ -109,8 +110,8 @@ public class OperationQueryController {
             description = "복구 대상에 따라 처리 방식이 다릅니다. 문서 편집 복구는 즉시 완료되어 200을 반환하고, "
                     + "Wiki 복구는 queued 상태로 등록되어 202를 반환합니다. "
                     + "미리보기와 같은 계산을 다시 하고 Wiki에 반영합니다. "
-                    + "받치는 기여가 남지 않은 페이지는 삭제하고, 되돌릴 버전이 그대로 있는 페이지는 그 내용으로 복원하며, "
-                    + "남은 조각을 합쳐야 하는 페이지는 llmPipeline에 재작성을 맡깁니다. "
+                    + "받치는 기여가 남지 않은 페이지는 삭제합니다. Source는 마지막 남은 ingest의 본문으로 복원하고, "
+                    + "Concept는 과거 버전 유무와 관계없이 남은 활성 기여를 llmPipeline에 전달해 재작성합니다. "
                     + "재작성이 있으면 status가 rebuilding으로 돌아오며 결과는 로그 상세로 확인합니다. "
                     + "ingest 되돌리기는 Wiki만 되돌리고 원문 문서는 건드리지 않습니다.")
     @ApiResponses({

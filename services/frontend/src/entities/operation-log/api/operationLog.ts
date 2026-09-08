@@ -17,7 +17,7 @@ export async function fetchOperationLogs(
   return parseJsonOrThrow(response, "로그를 불러오지 못했습니다.");
 }
 
-/** AI 작업 로그 상세. 변경 리소스와 diff hunk를 포함한다. */
+/** AI 작업 로그 상세. ingest·lint는 Wiki 제목·유형, 그 외에는 변경분을 포함한다. */
 export async function fetchOperationLogDetail(operationId: string): Promise<OperationLogDetail> {
   const response = await apiFetch(
     workspacePath(getWorkspaceId(), "ai-operation-logs", operationId)
