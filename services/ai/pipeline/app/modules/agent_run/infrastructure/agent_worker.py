@@ -24,7 +24,7 @@ from app.modules.agent_run.domain.entities import (
     AgentRunContext,
     ContentArtifactReference,
 )
-from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
+from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanIntentClarificationRequired, AgentPlanOperation
 
 
 logger = logging.getLogger(__name__)
@@ -176,8 +176,8 @@ class AgentWorker:
             self._graph.invoke(graph_input, config=config, durability="sync")
 
     def _plan_node(self, state: AgentRunGraphState) -> AgentRunGraphState:
-        self._plan_run(state["run_id"])
-        return {"steps": 0, "outcome": ""}
+        error_code = self._plan_run(state["run_id"])
+        return {"steps": 0, "outcome": "", "error_code": error_code or ""}
 
     def _wait_for_user_node(self, state: AgentRunGraphState) -> AgentRunGraphState:
         decision = interrupt(
@@ -218,7 +218,7 @@ class AgentWorker:
     def _plan(self, job: AgentJob) -> None:
         self._plan_run(job.run_id)
 
-    def _plan_run(self, run_id: str) -> None:
+    def _plan_run(self, run_id: str) -> str | None:
         context = self._repository.load_context(run_id)
         if context.run.status not in {"queued", "planning", "clarification_required"}:
             return
@@ -231,20 +231,26 @@ class AgentWorker:
         hierarchy = self._inspect_hierarchy(context)
         content_artifacts = self._load_content_artifacts(context)
         plan_id = str(uuid4())
-        plan = self._plan_generator.generate(
-            run_id=run_id,
-            plan_id=plan_id,
-            version=self._repository.next_plan_version(run_id),
-            instruction=context.run.request_summary,
-            hierarchy=hierarchy,
-            skill_instructions=context.skill_instructions,
-            allowed_tools=(
-                context.allowed_tools
-                if context.run.skill_version_id is not None
-                else None
-            ),
-            content_artifacts=content_artifacts,
-        )
+        try:
+            plan = self._plan_generator.generate(
+                run_id=run_id,
+                plan_id=plan_id,
+                version=self._repository.next_plan_version(run_id),
+                instruction=context.run.request_summary,
+                routing_action=context.run.action,
+                hierarchy=hierarchy,
+                skill_instructions=context.skill_instructions,
+                allowed_tools=(
+                    context.allowed_tools
+                    if context.run.skill_version_id is not None
+                    else None
+                ),
+                content_artifacts=content_artifacts,
+            )
+        except AgentPlanIntentClarificationRequired as exc:
+            if not self._repository.request_clarification(run_id, str(exc)):
+                raise ValueError("AgentRun cannot request planning clarification.") from exc
+            return str(exc)
         if context.run.skill_version_id is not None:
             unsupported = {operation.tool_name for operation in plan.operations} - set(context.allowed_tools)
             if unsupported:

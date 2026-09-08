@@ -24,7 +24,7 @@ class StartAgentRunUseCase(AgentRunStarterPort):
             action=request.action,
             skill_version_id=request.skill_version_id,
             status="queued",
-            request_summary=request.instruction.strip()[:1000],
+            request_summary=request.instruction.strip(),
             provider=provider,
             model=model,
         )

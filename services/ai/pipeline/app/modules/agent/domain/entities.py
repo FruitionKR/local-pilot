@@ -110,7 +110,6 @@ class AgentTurnRoute:
     document_operation: DocumentOperation = "none"
     persist: bool = False
     required_capabilities: tuple[SkillCapability, ...] = ()
-    direct_mutation_verified: bool = False
 
 
 @dataclass(frozen=True)

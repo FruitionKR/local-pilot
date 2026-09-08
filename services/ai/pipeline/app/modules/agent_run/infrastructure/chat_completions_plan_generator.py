@@ -9,7 +9,12 @@ from app.core.llm_env import (
     provider_api_key_env,
 )
 from app.core.untrusted_input import validate_untrusted_payload
-from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation, build_agent_plan
+from app.modules.agent_run.domain.plan import (
+    AgentPlan,
+    AgentPlanIntentClarificationRequired,
+    AgentPlanOperation,
+    build_agent_plan,
+)
 from app.modules.agent_run.domain.entities import ContentArtifactReference
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
 
@@ -38,6 +43,7 @@ class ChatCompletionsPlanGenerator:
         plan_id: str,
         version: int,
         instruction: str,
+        routing_action: str,
         hierarchy: list[dict[str, object]],
         skill_instructions: str | None,
         allowed_tools: tuple[str, ...] | None,
@@ -56,6 +62,7 @@ class ChatCompletionsPlanGenerator:
         payload = {
             "plan_id": plan_id,
             "instruction": instruction,
+            "routing_action": routing_action,
             "hierarchy": hierarchy,
             "skill_instructions": skill_instructions,
             "allowed_tools": sorted(allowed_plan_tools),
@@ -89,6 +96,16 @@ class ChatCompletionsPlanGenerator:
             json.dumps(payload, ensure_ascii=False, indent=2),
             trusted_identifiers=tuple(dict.fromkeys(trusted_identifiers)),
         )
+        if type(value.get("intent_confirmed")) is not bool:
+            raise ValueError("Agent plan intent_confirmed must be a boolean.")
+        if not value["intent_confirmed"]:
+            if (
+                value.get("operations") != []
+                or not isinstance(value.get("summary"), str)
+                or not value["summary"].strip()
+            ):
+                raise ValueError("Unconfirmed Agent plan must have a summary and no operations.")
+            raise AgentPlanIntentClarificationRequired()
         plan = normalize_plan_candidate(run_id, plan_id, version, value)
         if any(operation.tool_name not in allowed_plan_tools for operation in plan.operations):
             raise ValueError("Agent plan contains a tool outside the trusted mutation scope.")

@@ -145,6 +145,7 @@ class AgentPlanGeneratorPort(Protocol):
         plan_id: str,
         version: int,
         instruction: str,
+        routing_action: str,
         hierarchy: list[dict[str, object]],
         skill_instructions: str | None,
         allowed_tools: tuple[str, ...] | None,

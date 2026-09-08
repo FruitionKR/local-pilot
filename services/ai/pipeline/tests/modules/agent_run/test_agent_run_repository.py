@@ -94,6 +94,7 @@ class AgentRunRepositoryTest(unittest.TestCase):
         self.assertNotEqual(_canonical_json(True), _canonical_json(1))
 
     def test_revise_clears_previous_clarification_error_code(self) -> None:
+        instruction = "문서를 정리해줘. " * 150 + "기존 이름은 바꾸지 마."
         connection = MagicMock()
         locked_result = MagicMock()
         locked_result.fetchone.return_value = _run_row(
@@ -107,7 +108,7 @@ class AgentRunRepositoryTest(unittest.TestCase):
             status="queued",
             error_code=None,
             current_plan_id=None,
-            request_summary="새 계획으로 수정해줘",
+            request_summary=instruction,
         )
         insert_result = MagicMock()
         connection.execute.side_effect = [
@@ -124,13 +125,14 @@ class AgentRunRepositoryTest(unittest.TestCase):
                 "workspace-1",
                 "user-1",
                 "run-1",
-                "새 계획으로 수정해줘",
+                instruction,
                 "job-1",
             )
 
         update_query = connection.execute.call_args_list[2].args[0]
         self.assertIn("error_code = NULL", update_query)
         self.assertIsNone(run.error_code)
+        self.assertEqual(connection.execute.call_args_list[2].args[1], (instruction, "run-1"))
 
     def test_repository_uses_ai_database_connection(self) -> None:
         connection = MagicMock()

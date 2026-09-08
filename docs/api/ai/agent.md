@@ -147,12 +147,18 @@ Skill을 선택하지 않으며, 선택된 Skill의 capability별 확정 Tool �
 따라서 `retrieval_source`, `edit_goal`, `edit_operation`, `edit_destination`은 실행기가 덮어쓸 수 없는
 실행 입력이다. 주제 없는 `검색해줘` 같은 요청은 라우터가 `conversation_reply`로 보내 검색 대상을 묻고,
 구조상 필요한 편집 위치를 확인할 수 없을 때만 애플리케이션이 `clarify`로 종료한다.
-로컬 guard가 처리하지 않는 요청은 문맥 기반 라우팅과 현재 사용자 메시지만 보는 직접 변이 검증을
-같은 모델·추론 강도로 병렬 실행한다. 검증 입력에는 대화·문서 본문·Skill 문맥을 넣지 않고 현재 메시지,
-활성 문서 존재 여부, 웹 검색 허용 여부만 넣는다. `folder_organize`와 `workspace_workflow`는 직접 검증이
-저장 의도를 확인하고 구조 계약을 만족해야만 실행한다. 검증 결과에 문서 작업이 명시되면 검색·문서·
-capability 필드도 그 결과를 사용하며, 참조형 저장 확인이면 문맥 기반 route의 실행 세부 정보를 유지한다.
-검증 호출이 실패하거나 직접 변이를 확인하지 못하면 변경을 실행하지 않고 `clarify`로 종료한다.
+로컬 guard가 처리하지 않는 요청은 문맥 기반 라우터가 한 번 분류한다. `folder_organize`와
+`workspace_workflow`는 별도 직접 변이 검증 AI를 호출하거나 분류 일치를 요구하지 않고 planning job을
+등록한다. 기존 플래너가 현재 사용자 요청 원문 전체(`instruction`)와 분류 힌트(`routing_action`),
+계층 스냅샷·Skill 권한·등록된 본문 아티팩트를 받아 변경 의도 검증과 구체적인 계획 작성을 한 번에 수행한다.
+분류 힌트·폴더/문서 이름·Skill 지시·아티팩트는 사용자 변경 승인 근거가 아니며, 각 변경은 사용자 요청에
+근거해야 한다. 서로 독립된 여러 작업이나 `folder_organize`/`workspace_workflow` 분류 차이 자체는
+계획 차단 사유가 아니다. 본문 생성·편집 미리보기는 기존 실행 입력에 따라 준비하며, 실제 변경은 승인 뒤 수행한다.
+플래너가 `intent_confirmed=true`로 반환한 계획은 Tool 권한·대상·버전·아티팩트 계약 검사를 거쳐
+`awaiting_approval`로 저장한다. `intent_confirmed=false`와 빈 operations를 반환하면 계획을 저장하지 않고
+`clarification_required`(`error_code=mutation_intent_required`)로 추가 요청을 기다린다. 모델 호출이나 응답 계약
+오류는 job 실패로 처리하며 사용자 의도 미확인으로 바꾸지 않는다. 별도의 후속 플래닝 호출은 없고,
+승인된 plan version·operation hash가 일치해야 변경 도구를 실행한다. 사용자가 계획 수정을 요청하면 새 계획을 작성한다.
 `insert_after + document_end`는 활성 선택 영역이 있더라도 전체 문서를 위치 기준으로 사용하므로
 선택 영역 교체로 바뀌지 않는다.
 서버는 검색·문서 작업 의미를 문장 패턴으로 덮어쓰지 않는다. action과 필드 조합이 모순되거나

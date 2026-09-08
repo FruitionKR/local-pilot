@@ -17,6 +17,17 @@ class RecordingRepository:
 
 
 class StartAgentRunTest(unittest.TestCase):
+    def test_planner_receives_full_request_including_trailing_constraints(self) -> None:
+        repository = RecordingRepository()
+        instruction = "문서를 주제별로 정리해줘. " + "참고 내용 " * 200 + "기존 폴더 이름은 변경하지 마."
+        StartAgentRunUseCase(repository).start(
+            StartAgentRunRequest(
+                workspace_id="workspace-1", user_id="user-1",
+                instruction=instruction, provider="openai", model="gpt-5-nano",
+            )
+        )
+        self.assertEqual(repository.arguments[0].request_summary, instruction)
+
     def test_creation_markdown_gets_generated_artifact_id_and_sha256(self) -> None:
         repository = RecordingRepository()
         markdown = "# 생성 문서\n"

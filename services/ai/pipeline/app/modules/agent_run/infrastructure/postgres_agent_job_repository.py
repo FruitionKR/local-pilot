@@ -219,7 +219,7 @@ class PostgresAgentJobRepository:
                 """
                 UPDATE agent_runs
                 SET status = 'clarification_required', error_code = %s, updated_at = now()
-                WHERE id = %s AND status = 'executing' RETURNING id
+                WHERE id = %s AND status IN ('planning', 'executing') RETURNING id
                 """,
                 (error_code, run_id),
             ).fetchone()
