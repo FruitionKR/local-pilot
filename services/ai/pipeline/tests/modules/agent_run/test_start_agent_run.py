@@ -1,6 +1,7 @@
 import hashlib
 import unittest
 
+from app.modules.agent.domain.exceptions import AgentConfigurationError
 from app.modules.agent_run.application.start_agent_run import StartAgentRunUseCase
 from app.modules.agent_run.domain.entities import AgentRun, StartAgentRunContent, StartAgentRunRequest
 
@@ -17,6 +18,17 @@ class RecordingRepository:
 
 
 class StartAgentRunTest(unittest.TestCase):
+    def test_disabled_feature_is_configuration_error_without_creating_a_run(self) -> None:
+        repository = RecordingRepository()
+        with self.assertRaises(AgentConfigurationError):
+            StartAgentRunUseCase(repository, feature_enabled=False).start(
+                StartAgentRunRequest(
+                    workspace_id="workspace-1", user_id="user-1",
+                    instruction="현재까지 업로드 한 문서, 알맞은 폴더 이름 생성해서 주제별로 정리해 줘",
+                )
+            )
+        self.assertIsNone(repository.arguments)
+
     def test_planner_receives_full_request_including_trailing_constraints(self) -> None:
         repository = RecordingRepository()
         instruction = "문서를 주제별로 정리해줘. " + "참고 내용 " * 200 + "기존 폴더 이름은 변경하지 마."
