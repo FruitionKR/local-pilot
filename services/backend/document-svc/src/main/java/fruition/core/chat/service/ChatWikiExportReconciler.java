@@ -47,19 +47,21 @@ public class ChatWikiExportReconciler {
     private final DocumentService documentService;
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
+    private final fruition.core.document.repository.AiCommandOutboxWriter taskWriter;
 
     public ChatWikiExportReconciler(DocumentRepository documentRepository,
                                     PipelineWikiStateRequester pipelineWikiStateRequester,
                                     ChatPartialWikiRepository chatPartialWikiRepository,
                                     DocumentService documentService,
                                     TransactionTemplate transactionTemplate,
-                                    ObjectMapper objectMapper) {
+                                    ObjectMapper objectMapper, fruition.core.document.repository.AiCommandOutboxWriter taskWriter) {
         this.documentRepository = documentRepository;
         this.pipelineWikiStateRequester = pipelineWikiStateRequester;
         this.chatPartialWikiRepository = chatPartialWikiRepository;
         this.documentService = documentService;
         this.transactionTemplate = transactionTemplate;
         this.objectMapper = objectMapper;
+        this.taskWriter = taskWriter;
     }
 
     /**
@@ -96,6 +98,7 @@ public class ChatWikiExportReconciler {
         ChatProvenance provenance = readProvenance(document);
 
         transactionTemplate.execute(status -> {
+            if (!taskWriter.join(document.getPipelineRunId())) return null;
             // export 시점 이름은 첫 질문을 줄인 임시값이다. 내용을 요약한 페이지 제목이 나왔으면 그걸로 확정한다.
             documentService.confirmChatExportName(document, sourcePage.title());
 

@@ -99,8 +99,14 @@ class DocumentServiceConvertTest {
 
     DocumentService documentService;
 
+    private final fruition.core.document.repository.AiCommandOutboxWriter taskWriter =
+            org.mockito.Mockito.mock(fruition.core.document.repository.AiCommandOutboxWriter.class);
+
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(applyOperationStore.authorizeSave(anyString(), anyString(), anyString())).thenReturn(true);
+        org.mockito.Mockito.lenient().when(taskWriter.active(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        org.mockito.Mockito.lenient().when(taskWriter.join(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
         documentService = new DocumentService(documentRepository, folderRepository,
                 workspaceAccessGuard, minioClient, storageProps,
                 ingestCommandOutbox, pipelineWikiStateRequester,
@@ -115,7 +121,7 @@ class DocumentServiceConvertTest {
                 applyOperationStore,
                 operationRecorder,
                 ingestOperationStarter,
-                workspaceAiModelClient);
+                workspaceAiModelClient, taskWriter);
         // 변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.
         lenient().when(storageProps.getBucket()).thenReturn("fruition-storage");
         // 단위 테스트에서는 transactionTemplate이 콜백을 그대로 실행하게 한다.
@@ -272,7 +278,7 @@ class DocumentServiceConvertTest {
                 Headers.of(), "fruition-storage", "us-east-1",
                 source.getSourceUri(), new ByteArrayInputStream(pdfBytes)));
         when(converterClient.convertPdf(
-                "보고서.pdf", pdfBytes, "gemini", "gemini-3.1-flash-lite"))
+                eq("보고서.pdf"), eq(pdfBytes), eq("gemini"), eq("gemini-3.1-flash-lite"), any(java.util.function.BooleanSupplier.class)))
                 .thenReturn("# 변환된 본문\n");
         when(postgresDocumentEditStore.save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
@@ -323,7 +329,7 @@ class DocumentServiceConvertTest {
                 Headers.of(), "fruition-storage", "us-east-1", source.getSourceUri(),
                 new ByteArrayInputStream(pdfBytes)));
         when(converterClient.convertPdf(
-                "보고서.pdf", pdfBytes, "gemini", "gemini-3.1-flash-lite"))
+                eq("보고서.pdf"), eq(pdfBytes), eq("gemini"), eq("gemini-3.1-flash-lite"), any(java.util.function.BooleanSupplier.class)))
                 .thenReturn(markdown);
         Instant updatedAt = Instant.parse("2026-08-14T00:00:00Z");
         PostgresDocumentEditSaveResult first = new PostgresDocumentEditSaveResult(
@@ -360,7 +366,7 @@ class DocumentServiceConvertTest {
         when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
                 Headers.of(), "fruition-storage", "us-east-1",
                 source.getSourceUri(), new ByteArrayInputStream(new byte[]{1})));
-        when(converterClient.convertPdf(anyString(), any(), anyString(), anyString()))
+        when(converterClient.convertPdf(anyString(), any(), anyString(), anyString(), any(java.util.function.BooleanSupplier.class)))
                 .thenThrow(new DocumentConvertException("변환기 호출이 실패했습니다. status=422"));
 
         documentService.doConvert(7L, "doc_placeholder", SOURCE_DOCUMENT_ID);

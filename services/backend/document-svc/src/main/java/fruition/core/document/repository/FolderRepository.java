@@ -17,6 +17,11 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
 
     Optional<Folder> findByIdAndWorkspaceIdAndDeletedAtIsNull(UUID id, String workspaceId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT f FROM Folder f WHERE f.id = :id AND f.workspaceId = :workspaceId AND f.deletedAt IS NULL")
+    Optional<Folder> findActiveForUpdate(@Param("id") UUID id, @Param("workspaceId") String workspaceId);
+
+
     Optional<Folder> findByIdAndWorkspaceIdAndDeletedAtIsNotNull(UUID id, String workspaceId);
 
     List<Folder> findAllByWorkspaceIdAndDeletedAtIsNull(String workspaceId);

@@ -262,3 +262,12 @@ def _skill_markdown(name: str, description: str, instructions_markdown: str) -> 
         "---\n\n"
         f"{instructions_markdown}"
     )
+
+
+class SkillTaskRequest(BaseModel):
+    run_id: str = Field(min_length=1, max_length=120)
+    kind: Literal["skill_author", "skill_publish", "skill_update"]
+    workspace_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    payload: dict[str, object]
+    skill_id: str | None = None

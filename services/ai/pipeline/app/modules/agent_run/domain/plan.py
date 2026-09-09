@@ -23,6 +23,7 @@ OperationStatus = Literal[
     "conflicted",
     "verification_failed",
     "cancelled",
+    "rolled_back",
 ]
 
 

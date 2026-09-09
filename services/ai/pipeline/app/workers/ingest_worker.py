@@ -17,6 +17,8 @@ backend가 `ai.ingest.command` topic에 발행한 문서/채팅 Wiki ingest 명�
 
 from __future__ import annotations
 
+from app.core.pipeline_control import PipelineRunCancelledError
+
 import asyncio
 import json
 import logging
@@ -169,14 +171,26 @@ async def _dispatch_post_ingest(
             command,
         )
         if post_ingest_command is not None:
+            from app.modules.task_cancellation.infrastructure import postgres_task_journal as journal
+            await asyncio.to_thread(journal.register, post_ingest_command)
             await producer.send_and_wait(
                 POST_INGEST_TOPIC,
                 post_ingest_command,
                 key=str(post_ingest_command["workspace_id"]).encode("utf-8"),
             )
+    except PipelineRunCancelledError:
+        return
     except Exception as exc:
         raise PostIngestDispatchError(str(exc)) from exc
 
+
+
+def _handle_controlled(command: dict) -> dict:
+    from app.modules.task_cancellation.infrastructure import postgres_task_journal as journal
+    if command.get("kind") == "document_deleted":
+        return _handle(command)
+    _build_payload(command)
+    return journal.execute(command, lambda: _handle(command))
 
 def _handle(command: dict) -> dict:
     if command.get("kind") == "document_deleted":
@@ -251,12 +265,14 @@ async def consume() -> None:
         loop.add_signal_handler(sig, stop.set)
     try:
         while not stop.is_set():
+            from app.modules.task_cancellation.infrastructure import postgres_task_journal as journal
+            await asyncio.to_thread(journal.rollback_pending)
             batch = await consumer.getmany(timeout_ms=1000, max_records=1)
             for _tp, messages in batch.items():
                 for message in messages:
                     try:
                         # 실행은 스레드로 넘겨 이벤트 루프(heartbeat)를 비워 둔다.
-                        result = await asyncio.to_thread(_handle, message.value)
+                        result = await asyncio.to_thread(_handle_controlled, message.value)
                         await _dispatch_post_ingest(producer, message.value)
                         event = _result_event(message.value, result)
                     except PostIngestDispatchError:
@@ -294,6 +310,11 @@ async def consume() -> None:
                             durable = get_pipeline_run_repository().get_run(run_id) if run_id else None
                         except Exception:
                             durable = None
+                        from app.modules.task_cancellation.infrastructure import postgres_task_journal as journal
+                        with journal.connect() as conn:
+                            controlled = conn.execute("SELECT status FROM ai_task_runs WHERE id = %s", (run_id,)).fetchone()
+                        if controlled and controlled["status"] in {*journal.STOPPING, "failed"}:
+                            durable = {"status": "failed", "manifest": {}}
                         if durable is None or durable.get("status") not in TERMINAL_STATUSES:
                             # terminal run까지 못 남긴 실패는 offset을 전진시키지 않고 컨테이너 재시작으로 재수신한다.
                             raise

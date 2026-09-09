@@ -58,6 +58,8 @@ class AgentTurnServiceTest {
 
     private AgentTurnService service;
 
+    @Mock fruition.core.aitask.service.AiTaskCancellationService cancellation;
+
     @BeforeEach
     void setUp() {
         // 대화 조립은 ChatConversationReaderTest 가 검증한다. 여기서는 빈 맥락으로 둔다.
@@ -67,7 +69,7 @@ class AgentTurnServiceTest {
                         java.util.List.of(), null));
         service = new AgentTurnService(documentService, editLockService, workspaceAccessGuard, runRepository,
                 statusRequester, outboxWriter, applyOperationStore, aiModelCatalog,
-                chatSessionService, chatConversationReader, chatTurnRecorder, "ai.agent.command");
+                chatSessionService, chatConversationReader, chatTurnRecorder, "ai.agent.command", cancellation, new ObjectMapper());
     }
 
     @Test
@@ -728,4 +730,12 @@ class AgentTurnServiceTest {
         assertThat(violations).extracting(v -> v.getPropertyPath().toString())
                 .contains("conversationContext.selectedPairIds");
     }
+    @Test
+    void cancelledTurnStillAllowsEventSubscriptionAfterProjectionRollback() {
+        when(cancellation.findStatus("agent_12345678123456781234567812345678", "ws_1", "user_1"))
+                .thenReturn(java.util.Optional.of(java.util.Map.of("status", "cancelled")));
+        service.verifyRunAccess("ws_1", "user_1", "agent_12345678123456781234567812345678");
+        org.mockito.Mockito.verifyNoInteractions(runRepository);
+    }
+
 }

@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import hashlib
 from typing import Any
+from uuid import uuid4
 
 from psycopg.types.json import Json
+
+from app.core.pipeline_control import PipelineRunCancelledError
 
 from app.modules.agent_run.application.ports import (
     AgentApprovalRepositoryPort,
@@ -22,7 +25,31 @@ from app.modules.wiki_ingestion.infrastructure import (
 )
 
 
+def agent_command_hash(command: dict[str, Any]) -> str:
+    canonical = json.dumps(command, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def register_cancelled_turn(command: dict[str, Any]) -> None:
+    digest = agent_command_hash(command)
+    with database.connect_ai() as conn:
+        conn.execute("""
+            INSERT INTO agent_runs(id, workspace_id, user_id, action, status, request_summary,
+                                   command_envelope_hash, result)
+            VALUES (%s, %s, %s, 'markdown_turn', 'queued', %s, %s, '{"action":"reject"}')
+            ON CONFLICT (id) DO NOTHING
+        """, (command["run_id"], command["workspace_id"], command["user_id"],
+              str(command.get("message", ""))[:1000], digest))
+        row = conn.execute("SELECT command_envelope_hash FROM agent_runs WHERE id = %s",
+                           (command["run_id"],)).fetchone()
+        if row is None or row["command_envelope_hash"] != digest:
+            raise ValueError("Agent command identity mismatch.")
+
+
 class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepositoryPort):
+    def __init__(self, parent_run_id: str | None = None) -> None:
+        self._parent_run_id = parent_run_id
+
     def create_with_planning_job(
         self,
         run: AgentRun,
@@ -33,6 +60,19 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
         object_written = False
         try:
             with database.connect_ai() as conn:
+                if self._parent_run_id is not None:
+                    parent = _lock_user_run(conn, run.workspace_id, run.user_id, self._parent_run_id)
+                    if parent is None or parent["action"] != "markdown_turn" or parent["status"] != "executing":
+                        raise PipelineRunCancelledError("Parent turn no longer accepts a child run.")
+                    child_id = (parent["result"] or {}).get("run_id")
+                    if child_id:
+                        child = conn.execute("SELECT * FROM agent_runs WHERE id = %s", (child_id,)).fetchone()
+                        if child is None:
+                            raise ValueError("Parent turn child run is missing.")
+                        return _row_to_run(child)
+                    # 하위 run 생성과 참조를 함께 커밋하여 취소·재전달 경합을 막는다.
+                    conn.execute("UPDATE agent_runs SET result = %s, updated_at = now() WHERE id = %s",
+                                 (Json({"run_id": run.id}), self._parent_run_id))
                 if artifact is not None:
                     _validate_artifact_metadata(
                         artifact.purpose,
@@ -168,7 +208,32 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
                 ),
             ).fetchone()
             if operation is None:
-                return False
+                undo = conn.execute(
+                    """
+                    SELECT undo.response_metadata
+                    FROM agent_tool_executions undo
+                    JOIN agent_runs run ON run.id = undo.run_id
+                    JOIN agent_plans plan ON plan.id = undo.plan_id AND plan.run_id = run.id
+                    WHERE undo.id = %s AND undo.status = 'undo_running'
+                      AND run.id = %s AND run.workspace_id = %s AND run.user_id = %s
+                      AND run.status = 'rolling_back'
+                      AND plan.id = %s AND plan.version = %s AND plan.operation_hash = %s
+                      AND plan.status = 'approved'
+                      AND EXISTS (
+                          SELECT 1 FROM agent_approvals approval
+                          WHERE approval.run_id = run.id AND approval.plan_id = plan.id
+                            AND approval.user_id = run.user_id AND approval.decision = 'approved'
+                            AND approval.plan_version = plan.version
+                            AND approval.operation_hash = plan.operation_hash
+                      )
+                    """,
+                    (operation_id, run_id, workspace_id, user_id, plan_id, plan_version, operation_hash),
+                ).fetchone()
+                if undo is None:
+                    return False
+                recorded = undo["response_metadata"]
+                return (recorded.get("undo_tool") == tool_name
+                        and _canonical_json(recorded.get("undo_arguments")) == _canonical_json(arguments))
             result_rows = conn.execute(
                 """
                 SELECT DISTINCT ON (execution.operation_id)
@@ -472,30 +537,18 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
             run = _lock_user_run(conn, workspace_id, user_id, run_id)
             if run is None:
                 raise ValueError("AgentRun not found.")
-            if run["status"] in {"completed", "partial_failed", "failed", "conflicted", "rejected", "cancelled"}:
+            if run["status"] in {"cancel_requested", "rolling_back", "cancelled"}:
+                return _row_to_run(run)
+            child_id = (run["result"] or {}).get("run_id") if run["action"] == "markdown_turn" else None
+            if run["status"] == "rejected" or (run["status"] == "completed" and run["action"] != "markdown_turn"):
                 raise ValueError("Completed AgentRun cannot be cancelled.")
-            conn.execute(
-                """
-                UPDATE agent_jobs SET status = 'cancelled', updated_at = now()
-                WHERE run_id = %s AND status = 'queued'
-                """,
-                (run_id,),
-            )
-            conn.execute(
-                """
-                UPDATE agent_plan_operations SET status = 'cancelled', updated_at = now()
-                WHERE plan_id = %s AND status = 'pending'
-                """,
-                (run["current_plan_id"],),
-            )
-            updated = conn.execute(
-                """
-                UPDATE agent_runs
-                SET status = 'cancelled', updated_at = now(), finished_at = now()
-                WHERE id = %s RETURNING *
-                """,
-                (run_id,),
-            ).fetchone()
+            if child_id:
+                child = _lock_user_run(conn, workspace_id, user_id, child_id)
+                if child is None or child["action"] == "markdown_turn":
+                    raise ValueError("Parent turn child run is invalid.")
+                if child["status"] not in {"cancel_requested", "rolling_back", "cancelled"}:
+                    _request_rollback(conn, child_id)
+            updated = _request_rollback(conn, run_id)
         return _row_to_run(updated)
 
     def revise(
@@ -708,3 +761,19 @@ def _artifact_metadata(row: Any) -> dict[str, object]:
         "base_version": row["base_version"],
         "target": row["target"],
     }
+
+
+def _request_rollback(conn: Any, run_id: str) -> dict[str, Any]:
+    conn.execute("UPDATE agent_jobs SET status = 'cancelled', updated_at = now() "
+                 "WHERE run_id = %s AND status = 'queued'", (run_id,))
+    conn.execute(
+        "UPDATE agent_plan_operations SET status = 'cancelled', updated_at = now() "
+        "WHERE plan_id IN (SELECT id FROM agent_plans WHERE run_id = %s) AND status = 'pending'", (run_id,),
+    )
+    updated = conn.execute(
+        "UPDATE agent_runs SET status = 'cancel_requested', error_code = NULL, updated_at = now(), "
+        "finished_at = NULL WHERE id = %s RETURNING *", (run_id,),
+    ).fetchone()
+    conn.execute("INSERT INTO agent_jobs (id, run_id, job_type, status) VALUES (%s, %s, 'rollback', 'queued')",
+                 (str(uuid4()), run_id))
+    return updated

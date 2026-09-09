@@ -29,9 +29,9 @@ def get_propose_skill_draft_use_case(*, provider: str, model: str) -> ProposeSki
     return ProposeSkillDraftUseCase(build_skill_draft_generator(provider=provider, model=model))
 
 
-def get_author_skill_use_case(*, provider: str, model: str) -> AuthorSkillUseCase:
+def get_author_skill_use_case(*, provider: str, model: str, parent_run_id: str | None = None) -> AuthorSkillUseCase:
     return AuthorSkillUseCase(
         build_skill_authoring_generator(provider=provider, model=model),
         build_skill_reference_reader(),
-        get_manage_skill_use_case(),
+        ManageSkillUseCase(PostgresSkillRepository(parent_run_id=parent_run_id)),
     )

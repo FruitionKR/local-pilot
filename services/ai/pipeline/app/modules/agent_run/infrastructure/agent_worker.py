@@ -12,6 +12,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 from langsmith import tracing_context
 
+from app.modules.agent_run.application.rollback_agent_run import RollbackAgentRunUseCase
 from app.modules.agent_run.application.ports import (
     AgentJobRepositoryPort,
     AgentPlanGeneratorPort,
@@ -33,7 +34,7 @@ _MAX_EXECUTION_STEPS = 40
 _GRAPH_RECURSION_LIMIT = 64
 _MAX_FAILURE_DETAIL_LENGTH = 256
 _TERMINAL_RUN_STATUSES = frozenset(
-    {"completed", "partial_failed", "failed", "conflicted", "rejected", "cancelled"}
+    {"completed", "partial_failed", "failed", "conflicted", "rejected", "cancelled", "cancel_requested", "rolling_back", "rollback_failed"}
 )
 class _ToolBudgetExhausted(Exception):
     """재시도 도중 tool 호출 예산이 소진되었음을 알리는 내부 신호.
@@ -58,13 +59,14 @@ class AgentWorker:
         repository: AgentJobRepositoryPort,
         run_repository: AgentPlanRepositoryPort,
         tool_gateway: AgentToolGatewayPort,
-        plan_generator: AgentPlanGeneratorPort,
+        plan_generator: AgentPlanGeneratorPort | None,
         checkpointer: BaseCheckpointSaver[str] | None = None,
     ) -> None:
         self._repository = repository
         self._run_repository = run_repository
         self._tool_gateway = tool_gateway
         self._plan_generator = plan_generator
+        self._rollback = RollbackAgentRunUseCase(repository, run_repository, tool_gateway)
         self._graph = self._build_graph().compile(checkpointer=checkpointer or InMemorySaver())
 
     def process(self, job: AgentJob) -> None:
@@ -76,7 +78,8 @@ class AgentWorker:
         )
         heartbeat.start()
         try:
-            self._run_job(job)
+            with self._repository.execution_lock(job.run_id):
+                self._run_job(job)
             self._repository.complete(job)
         except Exception as exc:
             logger.error(
@@ -128,6 +131,9 @@ class AgentWorker:
         return graph
 
     def _run_job(self, job: AgentJob) -> None:
+        if job.job_type == "rollback":
+            self._rollback.execute(job.run_id)
+            return
         if job.job_type not in {"planning", "execution", "verification"}:
             raise ValueError("Unsupported Agent job type.")
         config = {
@@ -192,7 +198,7 @@ class AgentWorker:
 
     def _start_execution_node(self, state: AgentRunGraphState) -> AgentRunGraphState:
         context = self._repository.load_context(state["run_id"])
-        if context.run.status == "cancelled":
+        if context.run.status in {"cancelled", "cancel_requested", "rolling_back", "rollback_failed"}:
             return {"outcome": "finished"}
         plan = self._repository.load_current_plan(state["run_id"])
         if plan.status != "approved" or context.run.status != "executing":
@@ -219,6 +225,8 @@ class AgentWorker:
         self._plan_run(job.run_id)
 
     def _plan_run(self, run_id: str) -> str | None:
+        if self._plan_generator is None:
+            raise ValueError("Agent planning requires a plan generator.")
         context = self._repository.load_context(run_id)
         if context.run.status not in {"queued", "planning", "clarification_required"}:
             return
@@ -431,7 +439,7 @@ class AgentWorker:
 
     def _active_execution_context(self, run_id: str) -> AgentRunContext | None:
         context = self._repository.load_context(run_id)
-        if context.run.status == "cancelled":
+        if context.run.status in {"cancelled", "cancel_requested", "rolling_back", "rollback_failed"}:
             return None
         if context.run.status != "executing":
             raise ValueError("AgentRun left the executing state.")
@@ -459,6 +467,9 @@ class AgentWorker:
         operation: AgentPlanOperation,
         results: dict[str, dict[str, object]],
     ) -> dict[str, object] | None:
+        if operation.id in results:
+            self._repository.mark_operation(operation.id, ("pending", "running"), "succeeded")
+            return results[operation.id]
         if not self._repository.mark_operation(operation.id, ("pending", "running"), "running"):
             return None
         idempotency_key = f"agent:{context.run.id}:{plan.id}:{operation.id}"
@@ -473,6 +484,15 @@ class AgentWorker:
                 # 호출부가 request_clarification으로 우아하게 처리하도록 한다.
                 self._repository.mark_operation(operation.id, ("running",), "pending")
                 raise _ToolBudgetExhausted()
+            if self._active_execution_context(context.run.id) is None:
+                return None
+            if not self._rollback.prepare(context, plan, operation, arguments):
+                return None
+            self._repository.save_tool_execution(
+                run_id=context.run.id, plan_id=plan.id, operation_id=operation.id,
+                tool_name=operation.tool_name, idempotency_key=idempotency_key, attempt=attempt,
+                status="running", response_metadata={}, error_code=None,
+            )
             try:
                 response = self._tool_gateway.execute(
                     operation.tool_name,

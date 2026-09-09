@@ -15,6 +15,9 @@ AgentRunStatus = Literal[
     "failed",
     "conflicted",
     "rejected",
+    "cancel_requested",
+    "rolling_back",
+    "rollback_failed",
     "cancelled",
 ]
 

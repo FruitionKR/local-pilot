@@ -432,3 +432,84 @@ INSERT INTO checkpoint_migrations (v) VALUES (9) ON CONFLICT (v) DO NOTHING;
 CREATE INDEX IF NOT EXISTS checkpoints_thread_id_idx ON checkpoints (thread_id);
 CREATE INDEX IF NOT EXISTS checkpoint_blobs_thread_id_idx ON checkpoint_blobs (thread_id);
 CREATE INDEX IF NOT EXISTS checkpoint_writes_thread_id_idx ON checkpoint_writes (thread_id);
+
+-- 실행 중인 AI 작업의 변경과 복구 기록은 같은 트랜잭션에서 남긴다.
+CREATE TABLE IF NOT EXISTS ai_task_runs (
+    id text PRIMARY KEY,
+    workspace_id text NOT NULL,
+    user_id text NOT NULL,
+    kind text NOT NULL,
+    parent_run_id text REFERENCES ai_task_runs(id),
+    command_hash text,
+    command jsonb,
+    status text NOT NULL DEFAULT 'running',
+    result jsonb,
+    error_code text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE ai_task_runs ADD COLUMN IF NOT EXISTS command jsonb;
+CREATE INDEX IF NOT EXISTS idx_ai_task_runs_parent ON ai_task_runs(parent_run_id);
+CREATE TABLE IF NOT EXISTS ai_task_changes (
+    id bigserial PRIMARY KEY,
+    run_id text NOT NULL REFERENCES ai_task_runs(id),
+    table_name text NOT NULL,
+    row_key jsonb NOT NULL,
+    before_value jsonb,
+    after_value jsonb,
+    applied boolean NOT NULL DEFAULT true,
+    undone boolean NOT NULL DEFAULT false
+);
+ALTER TABLE ai_task_changes ADD COLUMN IF NOT EXISTS applied boolean NOT NULL DEFAULT true;
+CREATE INDEX IF NOT EXISTS idx_ai_task_changes_run ON ai_task_changes(run_id, id DESC);
+
+CREATE OR REPLACE FUNCTION record_ai_task_change() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    task_id text := nullif(current_setting('app.ai_task_run_id', true), '');
+    task_workspace text;
+    previous jsonb;
+    following jsonb;
+    identity jsonb;
+BEGIN
+    IF task_id IS NULL THEN RETURN NULL; END IF;
+    SELECT workspace_id INTO task_workspace FROM ai_task_runs
+      WHERE id = task_id AND status = 'running';
+    IF NOT FOUND THEN RAISE EXCEPTION 'AI task no longer accepts changes' USING ERRCODE = '57014'; END IF;
+    IF TG_OP <> 'INSERT' THEN previous := to_jsonb(OLD); END IF;
+    IF TG_OP <> 'DELETE' THEN following := to_jsonb(NEW); END IF;
+    IF previous IS NOT DISTINCT FROM following THEN RETURN NULL; END IF;
+    IF COALESCE(following, previous)->>'workspace_id' IS NOT NULL
+       AND COALESCE(following, previous)->>'workspace_id' <> task_workspace THEN
+        RAISE EXCEPTION 'AI task workspace mismatch';
+    END IF;
+    SELECT jsonb_object_agg(key, COALESCE(following, previous)->key) INTO identity
+      FROM unnest(string_to_array(TG_ARGV[0], ',')) AS key;
+    IF previous IS NOT NULL AND following IS NOT NULL AND EXISTS (
+        SELECT 1 FROM jsonb_object_keys(identity) AS key WHERE previous->key IS DISTINCT FROM following->key
+    ) THEN RAISE EXCEPTION 'AI task cannot change a primary key'; END IF;
+    INSERT INTO ai_task_changes(run_id, table_name, row_key, before_value, after_value)
+      VALUES(task_id, TG_TABLE_NAME, identity, previous, following);
+    RETURN NULL;
+END $$;
+
+DO $$
+DECLARE item text[];
+BEGIN
+    FOREACH item SLICE 1 IN ARRAY ARRAY[
+        ['pipeline_runs','id'], ['wiki_pages','id'], ['document_wiki_links','document_id,relation_type,wiki_page_id'],
+        ['wiki_page_links','from_page_id,link_type,to_page_id'], ['source_blocks','block_id,document_id'],
+        ['wiki_page_embeddings','page_id,embedding_model'], ['wiki_embedding_vectors','id'],
+        ['wiki_embedding_units','id'], ['wiki_schemas','id'], ['document_derived_state','document_id']
+    ] LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS ai_task_change ON %I', item[1]);
+        EXECUTE format('CREATE TRIGGER ai_task_change AFTER INSERT OR UPDATE OR DELETE ON %I '
+                       'FOR EACH ROW EXECUTE FUNCTION record_ai_task_change(%L)', item[1], item[2]);
+    END LOOP;
+END $$;
+
+DROP TRIGGER IF EXISTS ai_task_change ON skills;
+CREATE TRIGGER ai_task_change AFTER INSERT OR UPDATE OR DELETE ON skills FOR EACH ROW EXECUTE FUNCTION record_ai_task_change('id');
+DROP TRIGGER IF EXISTS ai_task_change ON skill_versions;
+CREATE TRIGGER ai_task_change AFTER INSERT OR UPDATE OR DELETE ON skill_versions FOR EACH ROW EXECUTE FUNCTION record_ai_task_change('id');
+DROP TRIGGER IF EXISTS ai_task_change ON skill_version_sources;
+CREATE TRIGGER ai_task_change AFTER INSERT OR UPDATE OR DELETE ON skill_version_sources FOR EACH ROW EXECUTE FUNCTION record_ai_task_change('id');

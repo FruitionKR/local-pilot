@@ -16,6 +16,17 @@ class AgentApplyOperationStoreTest {
 
     @Mock JdbcTemplate jdbcTemplate;
 
+    @org.junit.jupiter.api.BeforeEach
+    void registeredTask() {
+        org.mockito.Mockito.lenient().when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("set_config"), org.mockito.ArgumentMatchers.eq(String.class),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn("run");
+        org.mockito.Mockito.lenient().when(jdbcTemplate.queryForList(org.mockito.ArgumentMatchers.contains("FOR UPDATE OF task"),
+                org.mockito.ArgumentMatchers.eq(String.class), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(java.util.List.of("run"));
+    }
+
     @Test
     void consume_acceptsOnlyOneCompletedRun() {
         AgentApplyOperationStore store = new AgentApplyOperationStore(jdbcTemplate);

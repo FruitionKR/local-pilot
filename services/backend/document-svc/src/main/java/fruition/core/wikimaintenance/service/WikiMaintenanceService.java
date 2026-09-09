@@ -60,6 +60,7 @@ public class WikiMaintenanceService {
         WikiLintRequest safe = request == null ? new WikiLintRequest(null, null) : request;
         boolean dryRun = !Boolean.FALSE.equals(safe.dryRun());
         String runId = UUID.randomUUID().toString();
+        outboxWriter.begin(runId, workspaceId, userId, "lint");
         String operationId = dryRun ? null : operationStarter.start(workspaceId, userId);
         WorkspaceAiModelClient.AiModelSelection aiModel = workspaceAiModelClient.get(workspaceId);
         outboxWriter.enqueue(runId, commandTopic, workspaceId,

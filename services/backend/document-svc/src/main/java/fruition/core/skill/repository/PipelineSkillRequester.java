@@ -21,14 +21,19 @@ public class PipelineSkillRequester {
 
     private final RestClient restClient;
     private final String endpoint;
+    private final fruition.core.aitask.service.AiTaskCancellationService cancellation;
+    private final com.fasterxml.jackson.databind.ObjectMapper mapper;
 
     public PipelineSkillRequester(
             PipelineClientFactory clientFactory,
             @Value("${app.skill.endpoint}") String endpoint,
             @Value("${app.skill.agent-token}") String agentToken,
-            @Value("${app.skill.timeout-seconds:60}") int timeoutSeconds
+            @Value("${app.skill.timeout-seconds:60}") int timeoutSeconds,
+            fruition.core.aitask.service.AiTaskCancellationService cancellation, com.fasterxml.jackson.databind.ObjectMapper mapper
     ) {
         this.endpoint = endpoint;
+        this.cancellation = cancellation;
+        this.mapper = mapper;
         this.restClient = RestClient.builder()
                 .requestFactory(clientFactory.requestFactory(timeoutSeconds))
                 .defaultHeader("X-Agent-Service-Token", agentToken)
@@ -36,15 +41,15 @@ public class PipelineSkillRequester {
     }
 
     public JsonNode author(String workspaceId, String userId, SkillAuthoringRequest request,
-                           WorkspaceAiModelClient.AiModelSelection aiModel) {
-        return post("/author", new AuthorPayload(workspaceId, userId, request.scopeType(), request.name(),
+                           WorkspaceAiModelClient.AiModelSelection aiModel, String runId) {
+        return task(runId, "skill_author", workspaceId, userId, null, new AuthorPayload(workspaceId, userId, request.scopeType(), request.name(),
                 request.description(), request.instruction(), request.authoringMode(), request.referenceDocumentIds(),
                 aiModel.provider(), aiModel.model()));
     }
 
     public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request,
-                            WorkspaceAiModelClient.AiModelSelection aiModel) {
-        return post("/author/publish", new PublishPayload(workspaceId, userId, request.scopeType(), request.name(),
+                            WorkspaceAiModelClient.AiModelSelection aiModel, String runId) {
+        return task(runId, "skill_publish", workspaceId, userId, null, new PublishPayload(workspaceId, userId, request.scopeType(), request.name(),
                 request.description(), request.instructionsMarkdown(), request.capabilities(), request.allowedTools(),
                 aiModel.provider(), aiModel.model()));
     }
@@ -66,14 +71,25 @@ public class PipelineSkillRequester {
     }
 
     public JsonNode update(String workspaceId, String userId, String skillId, SkillUpdateRequest request,
-                           WorkspaceAiModelClient.AiModelSelection aiModel) {
-        return patch("/" + skillId, new UpdatePayload(workspaceId, userId, request.name(),
+                           WorkspaceAiModelClient.AiModelSelection aiModel, String runId) {
+        return task(runId, "skill_update", workspaceId, userId, skillId, new UpdatePayload(workspaceId, userId, request.name(),
                 request.description(), request.instructionsMarkdown(), aiModel.provider(), aiModel.model()));
     }
 
     public JsonNode setEnabled(String workspaceId, String userId, String skillId, boolean enabled) {
         return post("/" + skillId + (enabled ? "/enable" : "/disable"),
                 new ActorPayload(workspaceId, userId));
+    }
+
+    private JsonNode task(String runId, String kind, String workspaceId, String userId, String skillId, Object payload) {
+        var command = mapper.createObjectNode().put("run_id", runId).put("kind", kind)
+                .put("workspace_id", workspaceId).put("user_id", userId);
+        command.set("payload", mapper.valueToTree(payload));
+        if (skillId != null) command.put("skill_id", skillId);
+        cancellation.register(command);
+        JsonNode result = post("/tasks", command);
+        cancellation.finish(runId);
+        return result;
     }
 
     private JsonNode get(String uri) {
@@ -89,17 +105,6 @@ public class PipelineSkillRequester {
     private JsonNode post(String path, Object body) {
         try {
             return requireBody(restClient.post().uri(endpoint + path).contentType(MediaType.APPLICATION_JSON)
-                    .body(body).retrieve().body(JsonNode.class));
-        } catch (ResourceAccessException exception) {
-            throw unavailable("Skill 파이프라인 응답 시간이 초과되었습니다.");
-        } catch (RestClientResponseException exception) {
-            throw translate(exception);
-        }
-    }
-
-    private JsonNode patch(String path, Object body) {
-        try {
-            return requireBody(restClient.patch().uri(endpoint + path).contentType(MediaType.APPLICATION_JSON)
                     .body(body).retrieve().body(JsonNode.class));
         } catch (ResourceAccessException exception) {
             throw unavailable("Skill 파이프라인 응답 시간이 초과되었습니다.");

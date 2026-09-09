@@ -66,6 +66,7 @@ class QueryEventBrokerTest {
 
     // Redis list(이벤트 보존)와 pub/sub(방송)을 in-memory로 흉내 낸다.
     // convertAndSend는 실제 Redis처럼 발행 인스턴스의 onMessage로 되돌아온다(loop-back).
+    private final java.util.Set<String> cancelled = new java.util.HashSet<>();
     private final Map<String, List<String>> redisLists = new HashMap<>();
     private final Map<String, AtomicLong> redisCounters = new HashMap<>();
     private final Set<String> redisValues = new java.util.HashSet<>();
@@ -83,6 +84,19 @@ class QueryEventBrokerTest {
         ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
         ListOperations<String, String> listOperations = mock(ListOperations.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(redisTemplate.execute(any(org.springframework.data.redis.core.script.RedisScript.class), any(List.class),
+                anyString(), anyString(), anyString(), anyString())).thenAnswer(invocation -> {
+            List<String> keys = invocation.getArgument(1);
+            boolean cancelling = "true".equals(invocation.getArgument(5));
+            if (cancelling) {
+                cancelled.add(keys.get(1));
+                redisLists.remove(keys.get(0));
+            } else if (cancelled.contains(keys.get(1))) return 0L;
+            listOperations.rightPush(keys.get(0), invocation.<String>getArgument(2));
+            listOperations.trim(keys.get(0), -200, -1);
+            redisTemplate.convertAndSend(invocation.<String>getArgument(3), invocation.<String>getArgument(2));
+            return 1L;
+        });
         when(redisTemplate.opsForList()).thenReturn(listOperations);
         when(redisTemplate.expire(anyString(), any(Duration.class))).thenReturn(true);
         when(valueOperations.increment(anyString())).thenAnswer(invocation ->
@@ -107,6 +121,16 @@ class QueryEventBrokerTest {
             return null;
         }).when(redisTemplate).convertAndSend(anyString(), any());
         return redisTemplate;
+    }
+
+    @Test
+    void cancellationReplacesReplayAndBlocksLateCompletion() throws Exception {
+        broker.publish("run", "progress", "stage", "진행", Map.of());
+        broker.cancel("run");
+        broker.complete("run");
+        broker.fail("run", "늦은 오류");
+        assertThat(redisLists.get("query:events:run")).hasSize(1);
+        assertThat(redisLists.get("query:events:run").getFirst()).contains("query.cancelled");
     }
 
     @Test

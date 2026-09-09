@@ -134,13 +134,30 @@ public class FolderService {
     @Transactional
     public FolderLifecycleResponse delete(String workspaceId, String userId, UUID folderId,
                                           String idempotencyKey, long baseVersion) {
+        return deleteFolder(workspaceId, userId, folderId, idempotencyKey, baseVersion, false);
+    }
+
+    @Transactional
+    public FolderLifecycleResponse deleteEmpty(String workspaceId, String userId, UUID folderId,
+                                               String idempotencyKey, long baseVersion) {
+        return deleteFolder(workspaceId, userId, folderId, idempotencyKey, baseVersion, true);
+    }
+
+    private FolderLifecycleResponse deleteFolder(String workspaceId, String userId, UUID folderId,
+                                                 String idempotencyKey, long baseVersion, boolean requireEmpty) {
         String scope = "DELETE:/api/workspaces/" + workspaceId + "/folders/" + folderId;
+        if (requireEmpty) scope += "/empty";
         String hash = idempotencyService.requestHash(String.valueOf(baseVersion));
         return idempotencyService.execute(
                 userId, scope, idempotencyKey, hash, FolderLifecycleResponse.class, 200,
                 response -> folderId.toString(), () -> {
                     verifyMembership(workspaceId, userId);
-                    requireFolder(workspaceId, folderId);
+                    // 추가·이동도 같은 부모 행을 잠그므로 빈 폴더 검사와 삭제 사이에 자식이 들어올 수 없다.
+                    folderRepository.findActiveForUpdate(folderId, workspaceId)
+                            .orElseThrow(() -> new HierarchyItemNotFoundException("폴더를 찾을 수 없습니다."));
+                    if (requireEmpty && hasChildren(workspaceId, folderId)) {
+                        throw new HierarchyVersionConflictException("폴더에 다른 항목이 있어 취소 삭제할 수 없습니다.");
+                    }
                     if (hasChildren(workspaceId, folderId) && !isWorkspaceOwner(workspaceId, userId)) {
                         throw new HierarchyWriteForbiddenException("내용이 있는 폴더는 워크스페이스 소유자만 삭제할 수 있습니다.");
                     }
@@ -174,7 +191,7 @@ public class FolderService {
                     UUID operationId = deleted.getDeleteOperationId();
                     UUID originalParent = deleted.getParentFolderId();
                     boolean parentActive = originalParent == null
-                            || folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                            || folderRepository.findActiveForUpdate(
                                     originalParent, workspaceId).isPresent();
                     UUID targetParent = parentActive ? originalParent : null;
                     long targetSortOrder = parentActive
@@ -345,7 +362,7 @@ public class FolderService {
 
     private void verifyParentFolder(String workspaceId, UUID parentFolderId) {
         if (parentFolderId != null
-                && folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(parentFolderId, workspaceId).isEmpty()) {
+                && folderRepository.findActiveForUpdate(parentFolderId, workspaceId).isEmpty()) {
             throw new HierarchyItemNotFoundException("상위 폴더를 찾을 수 없습니다.");
         }
     }

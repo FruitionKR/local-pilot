@@ -61,6 +61,11 @@ class AiTaskResultApplierTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(jdbcTemplate.update(
+                eq("UPDATE ai_task_runs SET status = 'completed', updated_at = now() WHERE id = ?"), anyString())).thenReturn(1);
+        org.mockito.Mockito.lenient().when(jdbcTemplate.queryForList(
+                eq("SELECT status FROM ai_task_runs WHERE id = ? FOR UPDATE"), eq(String.class), anyString()))
+                .thenReturn(java.util.List.of("running"));
         applier = new AiTaskResultApplier(jdbcTemplate, objectMapper, queryService,
                 operationIngestService, lintOperationStarter, wikiMaintenanceService,
                 operationLogRepository, restoreApplier, restoreLifecycle, documentService, chatTurnRecorder,

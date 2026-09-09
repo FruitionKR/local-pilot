@@ -477,3 +477,20 @@ docker compose -f infra/compose.monitoring.yml down
 ### MFA 컨테이너 설정
 
 `infra/.env`의 `MFA_ENCRYPTION_KEY`에 Base64로 인코딩한 32바이트 키를 설정한다. `compose.containerized.yml`은 이 값을 access-svc 환경에 전달하며, 누락되면 Compose 단계에서 중단한다. 기존 MFA secret 복호화에 필요한 키이므로 재시작 때 같은 값을 유지한다.
+
+
+## AI 작업 취소 E2E
+
+현재 코드로 구동한 로컬 access-svc(8081), document-svc(8080), pipeline과 Kafka worker, PostgreSQL(5432), Redis, MinIO가 필요합니다.
+`AGENT_SKILLS_ENABLED=true`, `SKILL_API_ENABLED=true`와 유효한 Gemini 모델 설정을 사용합니다.
+테스트는 `infra/.env`의 로컬 DB 접속 설정을 읽고 새 테스트 계정·workspace에 폴더 2개와 문서 6개를 만듭니다.
+로컬 이메일 인증 코드 `9700`을 사용하는 개발 환경에서만 실행합니다. 실제 모델 비용이 발생합니다.
+
+```bash
+RUN_LIVE_TASK_E2E=1 services/ai/pipeline/.venv/bin/python -m pytest \
+  services/ai/pipeline/tests/test_live_task_cancellation_e2e.py -q -s
+```
+
+입력·계획·실행·복구 결과는 `/tmp/ai-cancel-e2e-report.json`에 저장합니다.
+`AI_CANCEL_E2E_REPORT`로 경로를 바꿀 수 있습니다. 테스트 workspace는 결과 확인을 위해 남깁니다.
+기본 테스트 실행에서는 이 검증을 건너뜁니다. 검증 범위는 [AI 작업 취소 API](api/ai/tasks.md#검증-범위)를 참고합니다.

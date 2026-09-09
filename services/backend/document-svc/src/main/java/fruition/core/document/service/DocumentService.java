@@ -132,6 +132,7 @@ public class DocumentService {
     private final AgentApplyOperationStore applyOperationStore;
     private final OperationRecorder operationRecorder;
     private final IngestOperationStarter ingestOperationStarter;
+    private final fruition.core.document.repository.AiCommandOutboxWriter taskWriter;
 
     public DocumentService(DocumentRepository documentRepository,
                            FolderRepository folderRepository,
@@ -158,7 +159,9 @@ public class DocumentService {
                            AgentApplyOperationStore applyOperationStore,
                            OperationRecorder operationRecorder,
                            IngestOperationStarter ingestOperationStarter,
-                           WorkspaceAiModelClient workspaceAiModelClient) {
+                           WorkspaceAiModelClient workspaceAiModelClient,
+                           fruition.core.document.repository.AiCommandOutboxWriter taskWriter) {
+        this.taskWriter = taskWriter;
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
         this.workspaceAccessGuard = workspaceAccessGuard;
@@ -334,6 +337,7 @@ public class DocumentService {
             throw new DocumentWriteForbiddenException("편집 가능한 Markdown 문서만 복제할 수 있습니다.");
         }
 
+        verifyFolder(workspaceId, source.getFolderId());
         List<Document> siblings =
                 documentRepository.findSiblingPagesForUpdate(workspaceId, source.getFolderId());
         editStateInitializer.initializeIfNeeded(source);
@@ -471,7 +475,7 @@ public class DocumentService {
 
     private void verifyFolder(String workspaceId, UUID folderId) {
         if (folderId != null
-                && folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(folderId, workspaceId).isEmpty()) {
+                && folderRepository.findActiveForUpdate(folderId, workspaceId).isEmpty()) {
             throw new HierarchyItemNotFoundException("대상 폴더를 찾을 수 없습니다.");
         }
     }
@@ -771,6 +775,8 @@ public class DocumentService {
             return new ExportDocumentResult(existing.get().getId(), true);
         }
 
+        String exportRunId = UUID.randomUUID().toString();
+        taskWriter.begin(exportRunId, workspaceId, userId, "document");
         String documentId = "chatdoc_" + UUID.randomUUID().toString().replace("-", "");
         String objectPath = "sources/documents/" + documentId + "/original";
         byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
@@ -815,7 +821,7 @@ public class DocumentService {
                 document.getId(), document.getWorkspaceId(), document.getUserId(), document.getFilename(),
                 document.getSelectionMode(), document.getStatus(), document.getSourceUri());
 
-        enqueueIngest(document);
+        enqueueIngest(document, exportRunId);
 
         return new ExportDocumentResult(documentId, false);
     }
@@ -856,6 +862,8 @@ public class DocumentService {
         DocumentEditingRules.MarkdownContent content =
                 DocumentEditingRules.markdown(CONVERT_PLACEHOLDER_MARKDOWN);
         String placeholderId = newDocumentId();
+        String convertRunId = "convert:" + placeholderId;
+        taskWriter.begin(convertRunId, workspaceId, userId, "convert");
         Document placeholder = new Document(
                 placeholderId,
                 workspaceId,
@@ -875,6 +883,7 @@ public class DocumentService {
                 content.bytes().length,
                 sortOrder
         );
+        placeholder.markPipelineStarted(convertRunId, Instant.now());
         documentRepository.save(placeholder);
         editStateRepository.save(new DocumentEditState(
                 placeholderId, content.markdown(), content.contentHash(), 1));
@@ -911,6 +920,7 @@ public class DocumentService {
             log.warn("[문서 변환 생략] documentId={} reason=document_not_found", documentId);
             return;
         }
+        if (!taskWriter.active("convert:" + documentId)) return;
         try {
             Document source = documentRepository.findById(sourceDocumentId)
                     .orElseThrow(() -> new DocumentConvertException(
@@ -921,7 +931,8 @@ public class DocumentService {
             WorkspaceAiModelClient.AiModelSelection aiModel =
                     workspaceAiModelClient.get(placeholder.getWorkspaceId());
             String markdown = converterClient.convertPdf(
-                    source.getFilename(), pdfBytes, aiModel.provider(), aiModel.model());
+                    source.getFilename(), pdfBytes, aiModel.provider(), aiModel.model(),
+                    () -> taskWriter.active("convert:" + documentId));
             DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
             applyConvertedMarkdown(queueId, placeholder, content);
             log.info("[문서 변환 완료] documentId={} sourceDocumentId={} markdownByteSize={}",
@@ -930,6 +941,7 @@ public class DocumentService {
             // DocumentConvertException 메시지에 변환기 상태 코드(422/504/503 등) 원인이 담겨 온다.
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
+                if (!taskWriter.join("convert:" + documentId)) return null;
                 documentRepository.findByIdInActiveWorkspace(documentId).ifPresent(doc ->
                         doc.markProcessingFailed("PDF 변환에 실패했습니다: " + e.getMessage(), now));
                 return null;
@@ -965,6 +977,7 @@ public class DocumentService {
     ) {
         TransactionTemplate saveTransaction = requiresNewSaveTransactionTemplate();
         executeWithSaveRetry(() -> saveTransaction.execute(status -> {
+            if (!taskWriter.join("convert:" + placeholder.getId())) return null;
             PostgresDocumentEditSaveResult result = postgresDocumentEditStore.save(
                     placeholder.getWorkspaceId(),
                     placeholder.getId(),
@@ -981,12 +994,17 @@ public class DocumentService {
                 documentRepository.findByIdInActiveWorkspace(placeholder.getId()).ifPresent(doc ->
                         doc.completeConvert(content.contentHash(), content.bytes().length, now));
             }
+            taskWriter.complete("convert:" + placeholder.getId());
             return null;
         }));
     }
 
     String enqueueIngest(Document document) {
-        String runId = UUID.randomUUID().toString();
+        return enqueueIngest(document, UUID.randomUUID().toString());
+    }
+
+    private String enqueueIngest(Document document, String runId) {
+        ingestCommandOutbox.begin(runId, document.getWorkspaceId(), document.getUserId());
         String documentId = document.getId();
         Instant startedAt = Instant.now();
         document.markPipelineStarted(runId, startedAt);
@@ -1199,6 +1217,10 @@ public class DocumentService {
             boolean applyOperationClaimed
     ) {
         verifyWorkspaceOwnership(workspaceId, userId);
+        if (applyOperationId != null && !applyOperationId.isBlank()
+                && !applyOperationStore.authorizeSave(applyOperationId, userId, documentId)) {
+            throw new InvalidAgentTurnRequestException("취소되었거나 유효하지 않은 Agent 적용 표입니다.");
+        }
         if (baseRevision == null || baseRevision < 1) {
             throw new InvalidMarkdownContentException("base_revision은 1 이상이어야 합니다.");
         }

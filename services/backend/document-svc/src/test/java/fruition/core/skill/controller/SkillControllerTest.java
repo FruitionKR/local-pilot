@@ -56,7 +56,7 @@ class SkillControllerTest {
 
     @Test
     void author_forwardsPathWorkspaceAndPrincipalUser() throws Exception {
-        when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class)))
+        when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(objectMapper.readTree("{\"status\":\"proposal_ready\",\"name\":\"meeting-notes\"}"));
 
         mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/author")
@@ -89,7 +89,7 @@ class SkillControllerTest {
 
     @Test
     void author_pipelineValidationFailureUsesStandardErrorEnvelope() throws Exception {
-        when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class)))
+        when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class), org.mockito.ArgumentMatchers.anyString()))
                 .thenThrow(new PipelineSkillException(
                         "Skill 요청이 거부되었습니다.", 422, "{\"detail\":[{\"type\":\"missing\"}]}"));
 
@@ -108,7 +108,7 @@ class SkillControllerTest {
     @Test
     void author_referenceRoundTripPreservesTooLargeEnvelope() throws Exception {
         HttpServer pipeline = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
-        pipeline.createContext("/skills/author", exchange -> {
+        pipeline.createContext("/skills/tasks", exchange -> {
             MockHttpServletResponse referenceResponse;
             try {
                 referenceResponse = mockMvc.perform(post(
@@ -137,15 +137,15 @@ class SkillControllerTest {
                     new PipelineClientFactory("unused-internal-token"),
                     "http://localhost:" + pipeline.getAddress().getPort() + "/skills",
                     "agent-token",
-                    5
+                    5, mock(fruition.core.aitask.service.AiTaskCancellationService.class), objectMapper
             );
             var service = new SkillService(mock(WorkspaceAccessGuard.class), requester,
                     workspaceAiModelClient());
-            when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class)))
+            when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class), org.mockito.ArgumentMatchers.anyString()))
                     .thenAnswer(invocation -> service.author(
                             WORKSPACE_ID,
                             USER_ID,
-                            invocation.getArgument(2)
+                            invocation.getArgument(2), invocation.getArgument(3)
                     ));
 
             mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/author")

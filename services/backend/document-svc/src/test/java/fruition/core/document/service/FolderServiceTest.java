@@ -140,7 +140,7 @@ class FolderServiceTest {
         UUID targetId = UUID.randomUUID();
         when(folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(movingId, WORKSPACE_ID))
                 .thenReturn(Optional.of(new Folder(movingId, WORKSPACE_ID, null, "이동", 0)));
-        when(folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(targetId, WORKSPACE_ID))
+        when(folderRepository.findActiveForUpdate(targetId, WORKSPACE_ID))
                 .thenReturn(Optional.of(new Folder(targetId, WORKSPACE_ID, movingId, "대상", 0)));
         when(folderRepository.countAncestorMatches(targetId, movingId)).thenReturn(1L);
 

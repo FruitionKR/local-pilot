@@ -5,6 +5,8 @@ from typing import Any
 
 from psycopg.types.json import Json
 
+from app.core.pipeline_control import PipelineRunCancelledError
+
 from app.modules.skill.application.ports import ManageSkillRepositoryPort, SkillRepositoryPort
 from app.modules.skill.domain.entities import Skill, SkillVersion
 from app.modules.skill.infrastructure.workspace_authorization import get_workspace_role
@@ -52,6 +54,31 @@ SKILL_SELECT = """
 
 
 class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
+    def __init__(self, parent_run_id: str | None = None) -> None:
+        self._parent_run_id = parent_run_id
+
+    def _lock_parent(self, conn: Any, actor_id: str) -> None:
+        if self._parent_run_id is None:
+            return
+        parent = conn.execute(
+            "SELECT status, result FROM agent_runs WHERE id = %s AND user_id = %s "
+            "AND action = 'markdown_turn' FOR UPDATE", (self._parent_run_id, actor_id),
+        ).fetchone()
+        if parent is None or parent["status"] != "executing":
+            raise PipelineRunCancelledError("Parent turn no longer accepts a Skill change.")
+        if (parent["result"] or {}).get("skill_undo"):
+            raise ValueError("Parent turn already published a Skill.")
+
+    def _record_publication(self, conn: Any, skill_id: str, version_id: str, before: dict | None) -> None:
+        if self._parent_run_id is None:
+            return
+        after = conn.execute("SELECT to_jsonb(s) AS snapshot FROM skills s WHERE id = %s", (skill_id,)).fetchone()["snapshot"]
+        conn.execute(
+            "UPDATE agent_runs SET result = COALESCE(result, '{}'::jsonb) || %s::jsonb WHERE id = %s",
+            (Json({"skill_undo": {"skill_id": skill_id, "version_id": version_id, "before": before,
+                                  "after": after, "done": False}}), self._parent_run_id),
+        )
+
     def list_accessible_enabled(self, workspace_id: str, user_id: str) -> list[Skill]:
         team_member = _is_team_member(workspace_id, user_id)
         with database.connect_ai() as conn:
@@ -123,6 +150,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
     def create_published(self, skill: Skill, version: SkillVersion) -> Skill:
         _require_manage_scope(skill.workspace_id, version.created_by or "", skill.scope_type)
         with database.connect_ai() as conn:
+            self._lock_parent(conn, version.created_by or "")
             _lock_slug_scope(conn, skill, skill.slug)
             _ensure_slug_available(conn, skill, skill.slug)
             conn.execute(
@@ -137,6 +165,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
                 "UPDATE skills SET enabled_version_id = %s, updated_at = now() WHERE id = %s",
                 (version.id, skill.id),
             )
+            self._record_publication(conn, skill.id, version.id, None)
         saved = self.get_manageable(skill.workspace_id, version.created_by or "", skill.id)
         if saved is None:
             raise ValueError("Published Skill could not be loaded.")
@@ -145,6 +174,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
     def save_published_version(self, skill: Skill, version: SkillVersion) -> Skill:
         team_owner = _is_team_owner(skill.workspace_id, version.created_by or "")
         with database.connect_ai() as conn:
+            self._lock_parent(conn, version.created_by or "")
             if _lock_manageable(
                 conn,
                 skill.workspace_id,
@@ -153,6 +183,8 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
                 team_owner,
             ) is None:
                 raise ValueError("Skill not found or not manageable.")
+            before = (conn.execute("SELECT to_jsonb(s) AS snapshot FROM skills s WHERE id = %s",
+                                   (skill.id,)).fetchone()["snapshot"] if self._parent_run_id is not None else None)
             version = _with_next_version(conn, version)
             _lock_slug_scope(conn, skill, version.name)
             _ensure_slug_available(conn, skill, version.name, exclude_skill_id=skill.id)
@@ -165,6 +197,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
                 """,
                 (version.name, version.id, skill.id),
             )
+            self._record_publication(conn, skill.id, version.id, before)
         saved = self.get_manageable(skill.workspace_id, version.created_by or "", skill.id)
         if saved is None:
             raise ValueError("Updated Skill could not be loaded.")

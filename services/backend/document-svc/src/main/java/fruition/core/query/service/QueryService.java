@@ -7,8 +7,6 @@ import fruition.core.chat.domain.ChatSession;
 import fruition.core.chat.exception.ChatSessionNotFoundException;
 import fruition.core.chat.repository.ChatMessageRepository;
 import fruition.core.chat.repository.ChatSessionRepository;
-import fruition.core.query.exception.PipelineQueryException;
-import fruition.core.query.repository.PipelineQueryRequester;
 import fruition.core.query.repository.PipelineQueryResponse;
 import fruition.core.query.dto.QueryResponse;
 import org.slf4j.Logger;
@@ -29,39 +27,19 @@ public class QueryService {
     private static final Logger log = LoggerFactory.getLogger(QueryService.class);
     private static final int MAX_RECENT_MESSAGE_CONTENT_LENGTH = 4000;
 
-    private final PipelineQueryRequester pipelineQueryClient;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatSessionRepository chatSessionRepository;
     private final ChatTurnRecorder chatTurnRecorder;
     private final ChatEvidenceRecorder chatEvidenceRecorder;
 
-    public QueryService(PipelineQueryRequester pipelineQueryClient,
-                        ChatMessageRepository chatMessageRepository,
+    public QueryService(ChatMessageRepository chatMessageRepository,
                         ChatSessionRepository chatSessionRepository,
                         ChatTurnRecorder chatTurnRecorder,
                         ChatEvidenceRecorder chatEvidenceRecorder) {
-        this.pipelineQueryClient = pipelineQueryClient;
         this.chatMessageRepository = chatMessageRepository;
         this.chatSessionRepository = chatSessionRepository;
         this.chatTurnRecorder = chatTurnRecorder;
         this.chatEvidenceRecorder = chatEvidenceRecorder;
-    }
-
-    public QueryResponse query(String workspaceId, String sessionId, String question) {
-        return query(workspaceId, sessionId, question, "openai", "gpt-5-nano");
-    }
-
-    public QueryResponse query(String workspaceId, String sessionId, String question,
-                               String provider, String model) {
-        return query(workspaceId, sessionId, question, provider, model, false);
-    }
-
-    public QueryResponse query(String workspaceId, String sessionId, String question,
-                               String provider, String model, boolean webSearchEnabled) {
-        QueryMessageContext messageContext = prepareMessages(
-                sessionId, question, null, provider, model, webSearchEnabled);
-        return querySynchronously(
-                workspaceId, sessionId, question, provider, model, webSearchEnabled, messageContext);
     }
 
     public QueryMessageContext prepareMessages(String sessionId, String question, String requestId) {
@@ -99,7 +77,7 @@ public class QueryService {
         return context;
     }
 
-    private List<PipelineQueryRequester.RecentMessage> recentMessages(String sessionId) {
+    private List<QueryService.RecentMessage> recentMessages(String sessionId) {
         List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdInTurnOrder(sessionId);
         Set<String> completePairIds = messages.stream()
                 .collect(Collectors.groupingBy(ChatMessage::getPairId))
@@ -110,62 +88,16 @@ public class QueryService {
                 .filter(pair -> pair.getValue().stream().filter(message -> "assistant".equals(message.getRole())).count() == 1)
                 .map(java.util.Map.Entry::getKey)
                 .collect(Collectors.toSet());
-        List<PipelineQueryRequester.RecentMessage> completedMessages = messages.stream()
+        List<QueryService.RecentMessage> completedMessages = messages.stream()
                 .filter(message -> completePairIds.contains(message.getPairId()))
                 .sorted(Comparator.comparing(ChatMessage::getCreatedAt)
                         .thenComparing(ChatMessage::getPairId)
                         .thenComparingInt(message -> "user".equals(message.getRole()) ? 0 : 1))
-                .map(message -> new PipelineQueryRequester.RecentMessage(message.getRole(),
+                .map(message -> new QueryService.RecentMessage(message.getRole(),
                         message.getContent().substring(0,
                                 Math.min(message.getContent().length(), MAX_RECENT_MESSAGE_CONTENT_LENGTH))))
                 .toList();
         return completedMessages.subList(Math.max(0, completedMessages.size() - 6), completedMessages.size());
-    }
-
-    private QueryResponse querySynchronously(String workspaceId,
-                                             String sessionId,
-                                             String question,
-                                             String provider,
-                                             String model,
-                                             boolean webSearchEnabled,
-                                             QueryMessageContext messageContext) {
-        log.info("[질의 처리 시작] sessionId={} questionLength={}", sessionId, question.length());
-        ChatSession session = chatSessionRepository.findById(sessionId)
-                .orElseThrow(() -> new ChatSessionNotFoundException(sessionId));
-        log.info("[질의 세션 확인] sessionId={} workspaceId={} userId={}",
-                sessionId, session.getWorkspaceId(), session.getUserId());
-
-        String pairId = messageContext.pairId();
-        String assistantMessageId = messageContext.assistantMessageId();
-
-        try {
-            log.info("[질의 파이프라인 호출 시작] sessionId={}", sessionId);
-            PipelineQueryResponse pipelineResponse = webSearchEnabled
-                    ? pipelineQueryClient.query(workspaceId, question, provider, model, true,
-                    messageContext.recentMessages())
-                    : pipelineQueryClient.query(workspaceId, question, provider, model, false,
-                    messageContext.recentMessages());
-            log.info("[질의 파이프라인 응답 수신] answerLength={} relatedPageCount={} evidenceCount={} traversalPathCount={}",
-                    pipelineResponse.answer() != null ? pipelineResponse.answer().length() : 0,
-                    pipelineResponse.relatedPages() != null ? pipelineResponse.relatedPages().size() : 0,
-                    pipelineResponse.evidenceSnippets() != null ? pipelineResponse.evidenceSnippets().size() : 0,
-                    pipelineResponse.traversalPaths() != null ? pipelineResponse.traversalPaths().size() : 0);
-
-            return completeMessages(session, question, null, messageContext, pipelineResponse);
-        } catch (PipelineQueryException e) {
-            String errorBody = e.getPipelineErrorBody();
-            String errorMessage = errorBody != null
-                    ? errorBody.substring(0, Math.min(errorBody.length(), 255))
-                    : e.getMessage();
-            log.warn("[질의 파이프라인 실패 반영] requestId={} pairId={} errorCode={} errorMessage={}",
-                    null, pairId, e.getErrorCode(), errorMessage);
-            markAssistantFailed(null, pairId, assistantMessageId, errorMessage, e);
-            throw e;
-        } catch (Exception e) {
-            log.error("[질의 처리 예상 밖 실패 반영] pairId={}", pairId, e);
-            markAssistantFailed(null, pairId, assistantMessageId, "질의 처리 중 오류가 발생했습니다.", e);
-            throw e;
-        }
     }
 
     /** Kafka Query 결과를 pending assistant 메시지와 참조에 반영한다. */
@@ -214,26 +146,12 @@ public class QueryService {
                 pipelineResponse.resultCount(), pipelineResponse.errorCode());
     }
 
-    private void markAssistantFailed(String requestId,
-                                     String pairId,
-                                     String assistantMessageId,
-                                     String errorMessage,
-                                     Exception originalException) {
-        try {
-            chatTurnRecorder.markFailed(assistantMessageId, errorMessage);
-            log.info("[질의 assistant 실패 상태 commit 완료] requestId={} pairId={} assistantMessageId={}",
-                    requestId, pairId, assistantMessageId);
-        } catch (Exception recordException) {
-            originalException.addSuppressed(recordException);
-            log.error("[질의 assistant 실패 상태 저장 실패] requestId={} pairId={} assistantMessageId={}",
-                    requestId, pairId, assistantMessageId, recordException);
-        }
-    }
-
     private void touchSessionLastMessageAt(ChatSession session) {
         session.touchLastMessageAt(Instant.now());
         chatSessionRepository.save(session);
     }
+
+    public record RecentMessage(String role, String content) {}
 
     public record QueryMessageContext(
             String pairId,
@@ -241,7 +159,7 @@ public class QueryService {
             String assistantMessageId,
             Instant createdAt,
             @com.fasterxml.jackson.annotation.JsonProperty("recent_messages")
-            List<PipelineQueryRequester.RecentMessage> recentMessages
+            List<QueryService.RecentMessage> recentMessages
     ) {
         public QueryMessageContext(String pairId, String userMessageId, String assistantMessageId,
                                    Instant createdAt) {

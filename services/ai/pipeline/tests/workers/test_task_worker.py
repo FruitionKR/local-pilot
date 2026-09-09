@@ -873,19 +873,15 @@ def test_post_ingest_requires_source_and_wiki_quality_to_be_ready(
     assert result["generation_evaluation_status"] == generation_status
 
 
-@pytest.mark.parametrize(("status", "expected"), [("running", False), ("failed", True)])
-def test_post_ingest_failure_durability_follows_pipeline_run(
-    status: str,
-    expected: bool,
-) -> None:
-    with patch.object(
-        task_worker.database,
-        "get_pipeline_run",
-        return_value={"status": status},
-    ):
-        assert task_worker._failure_is_durable(
-            {"run_id": "post-run-1", "kind": "post_ingest"}
-        ) is expected
+@pytest.mark.parametrize("kind", ["query", "post_ingest", "lint", "restore_ingest", "restore_lint"])
+@pytest.mark.parametrize("status", [None, "running", "failed", "cancel_requested", "rolling_back", "rollback_failed", "cancelled"])
+def test_failure_is_durable_only_with_registered_terminal_or_rollback_state(kind, status):
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = {"status": status} if status else None
+    context = MagicMock()
+    context.__enter__.return_value = connection
+    with patch("app.modules.task_cancellation.infrastructure.postgres_task_journal.connect", return_value=context):
+        assert task_worker._failure_is_durable({"run_id": "run", "kind": kind}) is (status not in {None, "running"})
 
 
 @pytest.mark.parametrize(
@@ -1008,19 +1004,6 @@ def test_agent_command_rejects_auto_skill_id() -> None:
         task_worker._handle_agent(command)
 
     use_case.execute.assert_not_called()
-
-
-def test_maintenance_failure_requires_terminal_run() -> None:
-    command = {"run_id": "run-1", "kind": "lint"}
-
-    with patch.object(task_worker.database, "get_pipeline_run", return_value=None):
-        assert task_worker._failure_is_durable(command) is False
-    with patch.object(
-        task_worker.database,
-        "get_pipeline_run",
-        return_value={"status": "failed"},
-    ):
-        assert task_worker._failure_is_durable(command) is True
 
 
 def test_unregistered_agent_failure_is_not_durable() -> None:

@@ -34,13 +34,13 @@ public class QueryEventBroker implements MessageListener {
     public static final String CHANNEL = "query-events";
 
     private static final Logger log = LoggerFactory.getLogger(QueryEventBroker.class);
-    private static final int MAX_BUFFERED_EVENTS = 200;
     private static final String EVENTS_KEY_PREFIX = "query:events:";
     private static final String SEQUENCE_KEY_PREFIX = "query:events-seq:";
     private static final String SOURCE_EVENT_KEY_PREFIX = "query:source-event:";
     private static final Duration EVENT_TTL = Duration.ofMinutes(30);
     private static final String EVENT_COMPLETED = "query.completed";
     private static final String EVENT_FAILED = "query.failed";
+    private static final String EVENT_CANCELLED = "query.cancelled";
 
     private final Clock clock;
     private final StringRedisTemplate redisTemplate;
@@ -128,6 +128,11 @@ public class QueryEventBroker implements MessageListener {
         log.warn("[질의 SSE 실패 이벤트 발행] requestId={} error={}", requestId, errorMessage);
     }
 
+    public void cancel(String requestId) {
+        storeAndBroadcast(new StoredEvent(requestId, nextSequence(requestId), EVENT_CANCELLED,
+                Map.of("request_id", requestId, "status", "cancelled")));
+    }
+
     @Override
     public void onMessage(Message message, byte[] pattern) {
         StoredEvent event = parse(new String(message.getBody(), StandardCharsets.UTF_8));
@@ -158,10 +163,13 @@ public class QueryEventBroker implements MessageListener {
     private void storeAndBroadcast(StoredEvent event) {
         String json = serialize(event);
         String key = EVENTS_KEY_PREFIX + event.requestId();
-        redisTemplate.opsForList().rightPush(key, json);
-        redisTemplate.opsForList().trim(key, -MAX_BUFFERED_EVENTS, -1);
-        redisTemplate.expire(key, EVENT_TTL);
-        redisTemplate.convertAndSend(CHANNEL, json);
+        var script = new org.springframework.data.redis.core.script.DefaultRedisScript<Long>(
+                "if ARGV[4] == 'true' then redis.call('SET', KEYS[2], '1', 'EX', ARGV[3]); redis.call('DEL', KEYS[1]) "
+                + "elseif redis.call('EXISTS', KEYS[2]) == 1 then return 0 end "
+                + "redis.call('RPUSH', KEYS[1], ARGV[1]); redis.call('LTRIM', KEYS[1], -200, -1); "
+                + "redis.call('EXPIRE', KEYS[1], ARGV[3]); redis.call('PUBLISH', ARGV[2], ARGV[1]); return 1", Long.class);
+        redisTemplate.execute(script, List.of(key, "query:cancelled:" + event.requestId()), json, CHANNEL,
+                Long.toString(EVENT_TTL.toSeconds()), Boolean.toString(EVENT_CANCELLED.equals(event.name())));
         log.debug("[질의 Redis 이벤트 저장·발행 완료] requestId={} sequence={} event={}",
                 event.requestId(), event.sequence(), event.name());
     }
@@ -187,7 +195,7 @@ public class QueryEventBroker implements MessageListener {
         // 파생 값이라 Redis 저장 JSON에 필드로 직렬화되지 않게 한다.
         @com.fasterxml.jackson.annotation.JsonIgnore
         boolean isTerminal() {
-            return EVENT_COMPLETED.equals(name) || EVENT_FAILED.equals(name);
+            return EVENT_COMPLETED.equals(name) || EVENT_FAILED.equals(name) || EVENT_CANCELLED.equals(name);
         }
     }
 

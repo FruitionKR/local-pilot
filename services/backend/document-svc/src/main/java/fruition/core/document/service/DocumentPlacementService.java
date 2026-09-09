@@ -52,7 +52,7 @@ public class DocumentPlacementService {
                     documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                             .orElseThrow(() -> new HierarchyItemNotFoundException("문서를 찾을 수 없습니다."));
                     if (targetFolderId != null && folderRepository
-                            .findByIdAndWorkspaceIdAndDeletedAtIsNull(targetFolderId, workspaceId).isEmpty()) {
+                            .findActiveForUpdate(targetFolderId, workspaceId).isEmpty()) {
                         throw new HierarchyItemNotFoundException("대상 폴더를 찾을 수 없습니다.");
                     }
                     long sortOrder = siblingReorderer.placeDocument(

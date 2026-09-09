@@ -111,6 +111,54 @@ paths:
       summary: 질의 진행 이벤트 구독
       tags:
       - Query Runs
+  /api/workspaces/{workspaceId}/ai/tasks/{id}:
+    get:
+      operationId: status_1
+      parameters:
+      - in: path
+        name: workspaceId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
+          description: OK
+      tags:
+      - ai-task-cancellation-controller
+  /api/workspaces/{workspaceId}/ai/tasks/{id}/cancel:
+    post:
+      operationId: cancel_1
+      parameters:
+      - in: path
+        name: workspaceId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
+          description: OK
+      tags:
+      - ai-task-cancellation-controller
   /api/workspaces/{workspace_id}/agent/runs/{run_id}:
     get:
       description: 자율 AgentRun 계획과 실행 상태를 조회합니다.
@@ -889,6 +937,11 @@ paths:
         in: path
         name: session_id
         required: true
+        schema:
+          type: string
+      - in: query
+        name: run_id
+        required: false
         schema:
           type: string
       requestBody:
@@ -2712,6 +2765,11 @@ paths:
         schema:
           type: string
           default: ws_9d47a0e9a6324341b47562553b75f92a
+      - in: query
+        name: run_id
+        required: false
+        schema:
+          type: string
       requestBody:
         content:
           application/json:
@@ -2784,6 +2842,11 @@ paths:
         schema:
           type: string
           default: ws_9d47a0e9a6324341b47562553b75f92a
+      - in: query
+        name: run_id
+        required: false
+        schema:
+          type: string
       requestBody:
         content:
           application/json:
@@ -2911,6 +2974,11 @@ paths:
         in: path
         name: skill_id
         required: true
+        schema:
+          type: string
+      - in: query
+        name: run_id
+        required: false
         schema:
           type: string
       requestBody:
@@ -3623,6 +3691,86 @@ paths:
           description: OK
       tags:
       - agent-tool-controller
+  /internal/agent/tools/rollback/{id}/changes:
+    post:
+      operationId: changes
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Actor"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  type: integer
+                  format: int64
+          description: OK
+      tags:
+      - ai-task-cancellation-controller
+  /internal/agent/tools/rollback/{id}/changes/{changeId}:
+    post:
+      operationId: undo
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: changeId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Actor"
+        required: true
+      responses:
+        "200":
+          description: OK
+      tags:
+      - ai-task-cancellation-controller
+  /internal/agent/tools/rollback/{id}/finalize-edits:
+    post:
+      operationId: finalizeEdits
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Actor"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: {}
+          description: OK
+      tags:
+      - ai-task-cancellation-controller
   /internal/documents/{document_id}/pipeline-source:
     get:
       operationId: findPipelineSource
@@ -3699,6 +3847,18 @@ paths:
       - internal-document-controller
 components:
   schemas:
+    Actor:
+      type: object
+      properties:
+        user_id:
+          type: string
+          minLength: 1
+        workspace_id:
+          type: string
+          minLength: 1
+      required:
+      - user_id
+      - workspace_id
     AgentRunApproveRequest:
       type: object
       description: Agent 편집안 승인 요청. 정의되지 않은 필드가 있으면 거절된다.

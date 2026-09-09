@@ -37,8 +37,8 @@ public class AgentRunCommandRepository {
         jdbcTemplate.update("""
                 INSERT INTO agent_apply_projections (
                     run_id, workspace_id, user_id, document_id, base_version,
-                    apply_operation_id, status, ready_markdown
-                ) VALUES (?, ?, ?, ?, ?, ?, 'ready', ?)
+                    apply_operation_id, status, ready_markdown, autonomous_tool
+                ) VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, true)
                 ON CONFLICT (run_id) DO NOTHING
                 """, projectionId, workspaceId, userId, documentId, baseVersion,
                 applyOperationId, markdown);

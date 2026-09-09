@@ -25,6 +25,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class QueryRunServiceTest {
 
+    @Mock fruition.core.aitask.service.AiTaskCancellationService cancellation;
     @Mock QueryRunStore queryRunStore;
     @Mock QueryService queryService;
     @Mock ChatSessionService chatSessionService;
@@ -36,9 +37,11 @@ class QueryRunServiceTest {
 
     @BeforeEach
     void setUp() {
-        outboxWriter = spy(new AiCommandOutboxWriter(outboxRepository, objectMapper));
+        outboxWriter = spy(new AiCommandOutboxWriter(outboxRepository, objectMapper,
+                org.mockito.Mockito.mock(org.springframework.jdbc.core.JdbcTemplate.class),
+                org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class)));
         service = new QueryRunService(queryRunStore, queryService, chatSessionService, outboxWriter,
-                "ai.query.command");
+                "ai.query.command", cancellation, 30);
     }
 
     @Test
@@ -51,8 +54,8 @@ class QueryRunServiceTest {
                 "openai", "gpt-5-nano"))
                 .thenReturn(new QueryService.QueryMessageContext(
                         "pair_abc123", "chat_user_abc123", "chat_assistant_abc123", pending.createdAt(),
-                        List.of(new fruition.core.query.repository.PipelineQueryRequester.RecentMessage("user", "이전 질문"),
-                                new fruition.core.query.repository.PipelineQueryRequester.RecentMessage("assistant", "이전 답변"))));
+                        List.of(new QueryService.RecentMessage("user", "이전 질문"),
+                                new QueryService.RecentMessage("assistant", "이전 답변"))));
 
         QueryRun returned = service.start("ws_abc123", "user_abc123", "session_abc123", "질문");
 
@@ -64,7 +67,7 @@ class QueryRunServiceTest {
         ArgumentCaptor<AiCommandOutbox> outbox = ArgumentCaptor.forClass(AiCommandOutbox.class);
         verify(outboxRepository).save(outbox.capture());
         assertThat(command.getValue().recentMessages()).extracting(
-                fruition.core.query.repository.PipelineQueryRequester.RecentMessage::content)
+                QueryService.RecentMessage::content)
                 .containsExactly("이전 질문", "이전 답변");
         assertThat(outbox.getValue().getPayload())
                 .contains("\"provider\":\"openai\"", "\"model\":\"gpt-5-nano\"",
@@ -93,6 +96,28 @@ class QueryRunServiceTest {
         verify(outboxRepository).save(outbox.capture());
         assertThat(outbox.getValue().getPayload())
                 .contains("\"recent_conversation_summary\":\"지금까지 인덱싱을 다뤘다.\"");
+    }
+
+    @Test
+    void synchronousWaitReturnsFinishedResultAndRejectsCancellation() {
+        QueryRun run = QueryRun.pending("query_test", "ws_test", "session_test", "질문", Instant.now());
+        var response = new fruition.core.query.dto.QueryResponse(null, null, null, null, null, null, false, false, 0, null);
+        when(queryRunStore.find(run.requestId())).thenReturn(java.util.Optional.of(run.completed(response, Instant.now())));
+        assertThat(service.awaitResult(run, "user_test")).isSameAs(response);
+        when(queryRunStore.find(run.requestId())).thenReturn(java.util.Optional.of(run.cancelled(Instant.now())));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.awaitResult(run, "user_test"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("409");
+    }
+
+    @Test
+    void synchronousTimeoutRequestsFullRollback() {
+        service = new QueryRunService(queryRunStore, queryService, chatSessionService, outboxWriter,
+                "ai.query.command", cancellation, 0);
+        QueryRun run = QueryRun.pending("query_test", "ws_test", "session_test", "질문", Instant.now());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.awaitResult(run, "user_test"))
+                .isInstanceOf(fruition.core.query.exception.PipelineQueryException.class);
+        verify(cancellation).cancel("query_test", "ws_test", "user_test");
     }
 
 }

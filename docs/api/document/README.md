@@ -8,6 +8,7 @@ Backend가 ai-svc 내부 계약에 필요한 사용자·워크스페이스·모�
 
 | 도메인 | API 수 | 역할 |
 |---|---:|---|
+| [작업 취소](../ai/tasks.md) | 5 | 공개 취소·상태와 Python의 업무 변경 역순 복구 |
 | [AI](ai.md) | 9 | AI 모델 설정과 작업·변환·ingest 관리 |
 | [Agent](agent.md) | 10 | Agent 실행·승인과 내부 Tool 호출 |
 | [Chat](chat.md) | 7 | 채팅 세션·메시지와 Wiki 내보내기 |

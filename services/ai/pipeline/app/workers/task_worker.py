@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from app.modules.agent_run.infrastructure.postgres_agent_run_repository import agent_command_hash as _agent_command_hash
+from app.modules.agent_run.infrastructure.postgres_agent_job_repository import PostgresAgentJobRepository
+
 import asyncio
 import hashlib
 import json
@@ -15,6 +18,7 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from psycopg.types.json import Json
 
 from app.core.llm_env import api_key_from_env, resolve_llm_selection
+from app.core.pipeline_control import PipelineRunCancelledError, ensure_task_active, task_cancellation_scope
 from app.modules.agent.domain.exceptions import (
     AgentConfigurationError,
     AgentTurnRouteContractError,
@@ -188,6 +192,7 @@ def _handle_agent(
                 provider=payload.provider,
                 model=payload.model,
                 event_publisher=event_publisher,
+                parent_run_id=run_id,
             ).execute(payload.to_domain())
         ).model_dump(mode="json")
     except Exception as exc:
@@ -201,8 +206,9 @@ def _handle_agent(
         with database.connect_ai() as conn:
             conn.execute(
                 """
-                UPDATE agent_runs SET status = 'failed', error_code = %s, result = %s,
-                    updated_at = now(), finished_at = now() WHERE id = %s
+                UPDATE agent_runs SET status = 'failed', error_code = %s,
+                    result = %s::jsonb || COALESCE(result, '{}'::jsonb),
+                    updated_at = now(), finished_at = now() WHERE id = %s AND status = 'executing'
                 """,
                 (error_code, Json(_agent_failure_result(exc)), run_id),
             )
@@ -212,21 +218,36 @@ def _handle_agent(
             )
         raise
     with database.connect_ai() as conn:
-        conn.execute(
+        updated = conn.execute(
             """
-            UPDATE agent_runs SET status = 'completed', result = %s, error_code = NULL,
-                updated_at = now(), finished_at = now() WHERE id = %s
+            UPDATE agent_runs SET status = 'completed', result = %s::jsonb || COALESCE(result, '{}'::jsonb), error_code = NULL,
+                updated_at = now(), finished_at = now() WHERE id = %s AND status = 'executing'
+            RETURNING id
             """,
             (Json(result), run_id),
-        )
-        conn.execute(
-            "UPDATE agent_jobs SET status = 'completed', updated_at = now() WHERE run_id = %s AND job_type = 'markdown_turn'",
-            (run_id,),
-        )
+        ).fetchone()
+        if updated is not None:
+            conn.execute(
+                "UPDATE agent_jobs SET status = 'completed', updated_at = now() WHERE run_id = %s AND job_type = 'markdown_turn'",
+                (run_id,),
+            )
+        else:
+            # 응답은 발행하지 않지만 복구 worker가 실제 갈래를 확인할 기록은 남긴다.
+            conn.execute("UPDATE agent_runs SET result = %s::jsonb || COALESCE(result, '{}'::jsonb), updated_at = now() "
+                         "WHERE id = %s AND status IN ('cancel_requested', 'rolling_back')", (Json(result), run_id))
+            conn.execute(
+                "UPDATE agent_jobs SET status = 'cancelled', updated_at = now() "
+                "WHERE run_id = %s AND job_type = 'markdown_turn' AND status = 'executing'",
+                (run_id,),
+            )
+    if updated is None:
+        raise PipelineRunCancelledError("Agent run no longer accepts a result.")
     return result
 
 
 def _agent_failure_code(error: Exception) -> str:
+    if isinstance(error, PipelineRunCancelledError):
+        return "agent_turn_cancelled"
     if isinstance(error, AgentTurnRouteContractError):
         return "agent_turn_route_contract_failed"
     if isinstance(error, MarkdownCreateOutputContractError):
@@ -253,11 +274,6 @@ def _agent_failure_result(error: Exception) -> dict[str, object]:
     if isinstance(error, AgentTurnRouteContractError):
         result["contract_failures"] = error.failures
     return result
-
-
-def _agent_command_hash(command: dict[str, Any]) -> str:
-    canonical = json.dumps(command, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
@@ -341,6 +357,8 @@ def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any
             return "completed", dict(run["result"] or {})
         elif run["status"] == "failed":
             raise ValueError("Agent run is already failed")
+        elif run["status"] in {"cancel_requested", "rolling_back", "rollback_failed", "cancelled"}:
+            raise PipelineRunCancelledError("Agent run cancellation has been requested.")
         elif run["status"] == "executing":
             raise RuntimeError("Agent run is already executing")
         else:
@@ -775,6 +793,7 @@ def _handle(
     command: dict[str, Any],
     event_publisher: QueryEventPublisherPort | None = None,
 ) -> dict[str, Any]:
+    ensure_task_active()
     kind = str(command.get("kind") or "")
     if kind == "query":
         return _handle_query(command, event_publisher)
@@ -785,6 +804,7 @@ def _handle(
     if kind == "post_ingest":
         for attempt in range(POST_INGEST_MAX_ATTEMPTS):
             try:
+                ensure_task_active()
                 return _handle_post_ingest(command)
             except Exception:
                 if (
@@ -795,6 +815,23 @@ def _handle(
     if kind in {"restore_ingest", "restore_lint"}:
         return _handle_restore(command)
     raise ValueError(f"unsupported AI command kind: {kind}")
+
+
+
+def _handle_controlled(command: dict[str, Any], event_publisher: QueryEventPublisherPort | None = None) -> dict[str, Any]:
+    from app.modules.task_cancellation.infrastructure import postgres_task_journal as journal
+    if command["kind"] != "agent":
+        return journal.execute(command, lambda: _handle(command, event_publisher))
+
+    def active() -> bool:
+        with database.connect_ai() as conn:
+            row = conn.execute("SELECT status FROM agent_runs WHERE id = %s", (command["run_id"],)).fetchone()
+        return row is None or row["status"] not in journal.STOPPING
+
+    with PostgresAgentJobRepository().execution_lock(command["run_id"]), task_cancellation_scope(active):
+        result = _handle(command, event_publisher)
+        ensure_task_active()
+        return result
 
 
 def _event(
@@ -893,7 +930,8 @@ class KafkaQueryEventPublisher(QueryEventPublisherPort):
 def _failure_is_durable(command: dict[str, Any]) -> bool:
     kind = str(command.get("kind") or "")
     run_id = str(command.get("run_id") or "")
-    if kind == "query" or kind not in {
+    if kind not in {
+        "query",
         "agent",
         "lint",
         "post_ingest",
@@ -908,9 +946,13 @@ def _failure_is_durable(command: dict[str, Any]) -> bool:
                     "SELECT status FROM agent_runs WHERE id = %s",
                     (run_id,),
                 ).fetchone()
-            return row is not None and row["status"] in {"completed", "failed"}
-        run = database.get_pipeline_run(run_id)
-        return run is not None and run.get("status") in {"succeeded", "failed"}
+            return row is not None and row["status"] in {
+                "completed", "failed", "cancel_requested", "rolling_back", "rollback_failed", "cancelled",
+            }
+        from app.modules.task_cancellation.infrastructure import postgres_task_journal as journal
+        with journal.connect() as conn:
+            controlled = conn.execute("SELECT status FROM ai_task_runs WHERE id = %s", (run_id,)).fetchone()
+        return controlled is not None and controlled["status"] in {*journal.STOPPING, "failed", "completed"}
     except Exception:
         return False
 
@@ -945,6 +987,8 @@ async def consume() -> None:
     logger.info("[worker 기동] topic=%s group=%s", COMMAND_TOPIC, GROUP_ID)
     try:
         while not stop.is_set():
+            from app.modules.task_cancellation.infrastructure import postgres_task_journal as journal
+            await asyncio.to_thread(journal.rollback_pending)
             batch = await consumer.getmany(timeout_ms=1000, max_records=1)
             for _tp, messages in batch.items():
                 for message in messages:
@@ -953,9 +997,9 @@ async def consume() -> None:
                         # agent도 질의 갈래(chat_answer)로 갈리면 같은 진행 이벤트를 낸다.
                         if command.get("kind") in {"query", "agent"}:
                             event_publisher = KafkaQueryEventPublisher(producer, loop, command)
-                            result = await asyncio.to_thread(_handle, command, event_publisher)
+                            result = await asyncio.to_thread(_handle_controlled, command, event_publisher)
                         else:
-                            result = await asyncio.to_thread(_handle, command)
+                            result = await asyncio.to_thread(_handle_controlled, command)
                         event = _event(
                             command,
                             "succeeded",

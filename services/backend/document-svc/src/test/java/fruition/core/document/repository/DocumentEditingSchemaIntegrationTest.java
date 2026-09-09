@@ -603,6 +603,7 @@ class DocumentEditingSchemaIntegrationTest {
     void agentApplyProjectionCanBeConsumedOnlyOnceWhenReady() {
         String runId = "agent_" + UUID.randomUUID().toString().replace("-", "");
         String operationId = "op_" + UUID.randomUUID();
+        jdbcTemplate.update("INSERT INTO ai_task_runs(id, workspace_id, user_id, kind) VALUES (?, 'ws-1', 'user-1', 'agent')", runId);
         jdbcTemplate.update("""
                 INSERT INTO agent_apply_projections (
                     run_id, workspace_id, user_id, document_id, base_version,

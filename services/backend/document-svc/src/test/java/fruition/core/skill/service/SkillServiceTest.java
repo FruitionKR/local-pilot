@@ -43,12 +43,12 @@ class SkillServiceTest {
                 "personal", "meeting-notes", null,
                 "회의록 Skill을 만들어줘", "enhance", List.of("doc_1"));
 
-        service.author("ws_1", "user_1", request);
+        service.author("ws_1", "user_1", request, "run");
 
         verify(workspaceAccessGuard).requireMember("ws_1", "user_1");
         verify(workspaceAiModelClient).get("ws_1");
         verify(requester).author("ws_1", "user_1", request,
-                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
+                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"), "run");
     }
 
     @Test
@@ -58,13 +58,13 @@ class SkillServiceTest {
                 List.of("list_root_items", "list_folder_children", "create_document"));
         var update = new SkillUpdateRequest("meeting-notes", "회의록 수정", "# 수정 절차");
 
-        service.publish("ws_1", "user_1", publish);
-        service.update("ws_1", "user_1", "skill_1", update);
+        service.publish("ws_1", "user_1", publish, "run");
+        service.update("ws_1", "user_1", "skill_1", update, "run");
 
         verify(requester).publish("ws_1", "user_1", publish,
-                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
+                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"), "run");
         verify(requester).update("ws_1", "user_1", "skill_1", update,
-                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
+                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"), "run");
     }
 
     @Test
@@ -75,7 +75,7 @@ class SkillServiceTest {
         doThrow(new WorkspaceNotFoundException("ws_1"))
                 .when(workspaceAccessGuard).requireMember("ws_1", "user_2");
 
-        assertThatThrownBy(() -> service.author("ws_1", "user_2", request))
+        assertThatThrownBy(() -> service.author("ws_1", "user_2", request, "run"))
                 .isInstanceOf(WorkspaceNotFoundException.class);
         verifyNoInteractions(requester);
     }

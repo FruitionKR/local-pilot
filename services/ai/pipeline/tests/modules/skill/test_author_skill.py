@@ -1203,10 +1203,11 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
                 "app.modules.skill.infrastructure.backend_skill_reference_reader.urlopen",
                 side_effect=HTTPError("url", 413, "Payload Too Large", {}, None),
             ),
+            patch("app.modules.task_cancellation.infrastructure.postgres_task_journal.execute", side_effect=lambda command, execute: execute()),
         ):
             response = TestClient(application).post(
-                "/skills/author",
-                json={
+                "/skills/tasks",
+                json={"run_id": "skill-test", "kind": "skill_author", "workspace_id": "workspace-1", "user_id": "user-1", "payload": {
                     "workspace_id": "workspace-1",
                     "user_id": "user-1",
                     "provider": "openai",
@@ -1214,7 +1215,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
                     "scope_type": "personal",
                     "instruction": "회의록 Skill을 만들어줘",
                     "reference_document_ids": ["document-1"],
-                },
+                }},
             )
 
         self.assertEqual(response.status_code, 413)

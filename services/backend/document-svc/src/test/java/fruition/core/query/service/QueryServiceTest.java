@@ -14,8 +14,6 @@ import fruition.core.chat.repository.ChatSessionRepository;
 import fruition.core.document.domain.Document;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.query.dto.QueryResponse;
-import fruition.core.query.exception.PipelineQueryException;
-import fruition.core.query.repository.PipelineQueryRequester;
 import fruition.core.query.repository.PipelineQueryResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -48,7 +46,6 @@ class QueryServiceTest {
     private static final String WORKSPACE_ID = "ws_aaa11111";
     private static final String DOCUMENT_ID = "doc_1f9a74af";
 
-    @Mock PipelineQueryRequester pipelineQueryRequester;
     @Mock ChatMessageRepository chatMessageRepository;
     @Mock ChatMessageReferenceRepository referenceRepository;
     @Mock ChatMessageRelatedPageRepository relatedPageRepository;
@@ -62,7 +59,7 @@ class QueryServiceTest {
     void setUp() {
         // 근거 저장은 recorder 로 옮겼지만 규칙은 그대로다. 실제 구현을 물려 기존 검증을 유지한다.
         queryService = new QueryService(
-                pipelineQueryRequester, chatMessageRepository,
+                chatMessageRepository,
                 chatSessionRepository, chatTurnRecorder,
                 new ChatEvidenceRecorder(chatMessageRepository, referenceRepository, relatedPageRepository,
                         documentRepository));
@@ -89,10 +86,8 @@ class QueryServiceTest {
     @DisplayName("파이프라인 응답이 DTO에 담기고 DB에 저장되어 응답으로 반환된다")
     void query_pipelineResponse_savedAndReturned() {
         PipelineQueryResponse mockResponse = samplePipelineResponse();
-        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("Self-Attention이 뭐야?"),
-                eq("openai"), eq("gpt-5-nano"), eq(false), anyList())).thenReturn(mockResponse);
 
-        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?");
+        QueryResponse result = complete("Self-Attention이 뭐야?", false, mockResponse);
 
         // 응답 형태 검증
         assertThat(result.assistantMessage().content()).isEqualTo(mockResponse.answer());
@@ -165,12 +160,8 @@ class QueryServiceTest {
                         new PipelineQueryResponse.SourceRef("web:search-123", "web-block")), "웹 근거")
         );
         PipelineQueryResponse response = responseWithEvidence(evidence);
-        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(true), anyList()))
-                .thenReturn(response);
 
-        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "질문",
-                "openai", "gpt-5-nano", true);
+        QueryResponse result = complete("질문", true, response);
 
         assertThat(result.evidenceSnippets()).containsExactlyElementsOf(evidence);
         ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
@@ -198,12 +189,8 @@ class QueryServiceTest {
         doReturn(List.of(documentInWorkspace(DOCUMENT_ID, WORKSPACE_ID)))
                 .when(documentRepository).findAllById(any());
         PipelineQueryResponse response = responseWithEvidence(evidence);
-        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(true), anyList()))
-                .thenReturn(response);
 
-        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "질문",
-                "openai", "gpt-5-nano", true);
+        QueryResponse result = complete("질문", true, response);
 
         // 응답에는 그대로 실어 보낸다. 저장만 걸러 낸다.
         assertThat(result.evidenceSnippets()).containsExactlyElementsOf(evidence);
@@ -233,11 +220,8 @@ class QueryServiceTest {
         lenient().when(deleted.getDeletedAt()).thenReturn(java.time.Instant.parse("2026-08-01T00:00:00Z"));
         doReturn(List.of(deleted)).when(documentRepository).findAllById(any());
         PipelineQueryResponse response = responseWithEvidence(evidence);
-        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(true), anyList()))
-                .thenReturn(response);
 
-        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+        complete("질문", true, response);
 
         ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
         verify(referenceRepository).saveAll(refCaptor.capture());
@@ -259,11 +243,8 @@ class QueryServiceTest {
         doReturn(List.of(documentInWorkspace(DOCUMENT_ID, "ws_other999")))
                 .when(documentRepository).findAllById(any());
         PipelineQueryResponse response = responseWithEvidence(evidence);
-        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(true), anyList()))
-                .thenReturn(response);
 
-        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+        complete("질문", true, response);
 
         ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
         verify(referenceRepository).saveAll(refCaptor.capture());
@@ -283,11 +264,8 @@ class QueryServiceTest {
                 List.of(new PipelineQueryResponse.RelatedPage(
                         "wiki_1", "concept", longTitle, "slug", 0.9, "seed_source", 0)),
                 List.of(), null, List.of(), false, false, 0, null);
-        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(true), anyList()))
-                .thenReturn(response);
 
-        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+        complete("질문", true, response);
 
         ArgumentCaptor<List<ChatMessageRelatedPage>> pageCaptor = ArgumentCaptor.forClass(List.class);
         verify(relatedPageRepository).saveAll(pageCaptor.capture());
@@ -305,11 +283,8 @@ class QueryServiceTest {
                 List.of(new PipelineQueryResponse.RelatedPage(
                         "wiki_1", "concept", longTitle, "slug", 0.9, "seed_source", 0)),
                 List.of(), null, List.of(), false, false, 0, null);
-        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(true), anyList()))
-                .thenReturn(response);
 
-        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+        complete("질문", true, response);
 
         ArgumentCaptor<List<ChatMessageRelatedPage>> pageCaptor = ArgumentCaptor.forClass(List.class);
         verify(relatedPageRepository).saveAll(pageCaptor.capture());
@@ -327,12 +302,8 @@ class QueryServiceTest {
                         new PipelineQueryResponse.SourceRef("web:search-123", "web-block")), "웹 근거")
         );
         PipelineQueryResponse response = responseWithEvidence(evidence);
-        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(true), anyList()))
-                .thenReturn(response);
 
-        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "질문",
-                "openai", "gpt-5-nano", true);
+        QueryResponse result = complete("질문", true, response);
 
         assertThat(result.assistantMessage().status()).isEqualTo("completed");
         assertThat(result.evidenceSnippets()).containsExactlyElementsOf(evidence);
@@ -342,31 +313,10 @@ class QueryServiceTest {
     }
 
     @Test
-    @DisplayName("파이프라인 실패 시 pending assistant가 failed로 변경되고 예외가 전파된다")
-    void query_pipelineFailure_marksAssistantFailedAndRethrows() {
-        PipelineQueryException pipelineError = new PipelineQueryException("PIPELINE_UNAVAILABLE", "pipeline 연결 실패", 503, "{\"error\": \"service unavailable\"}");
-        when(pipelineQueryRequester.query(anyString(), anyString(), anyString(), anyString(), eq(false), anyList()))
-                .thenThrow(pipelineError);
-
-        assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?"))
-                .isInstanceOf(PipelineQueryException.class);
-
-        verify(chatTurnRecorder).createPendingPair(
-                eq(SESSION_ID), anyString(), anyString(), anyString(), eq("Self-Attention이 뭐야?"), any(),
-                eq("openai"), eq("gpt-5-nano"));
-        verify(chatTurnRecorder).markFailed(anyString(), eq("{\"error\": \"service unavailable\"}"));
-    }
-
-    @Test
-    @DisplayName("예상 밖 오류 시 pending assistant가 일반화된 오류로 failed 처리된다")
-    void query_unexpectedFailure_marksAssistantFailedWithGeneralMessage() {
-        when(pipelineQueryRequester.query(anyString(), anyString(), anyString(), anyString(), eq(false), anyList()))
-                .thenThrow(new IllegalStateException("DB 연결 종료"));
-
-        assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, SESSION_ID, "질문"))
-                .isInstanceOf(IllegalStateException.class);
-
-        verify(chatTurnRecorder).markFailed(anyString(), eq("질의 처리 중 오류가 발생했습니다."));
+    void failAsync_marksPendingAssistantFailed() {
+        var context = queryService.prepareMessages(SESSION_ID, "질문", "query_test");
+        queryService.failAsync("query_test", context, "처리 실패");
+        verify(chatTurnRecorder).markFailed(context.assistantMessageId(), "처리 실패");
     }
 
     @Test
@@ -374,7 +324,8 @@ class QueryServiceTest {
     void query_unknownSession_throwsChatSessionNotFound() {
         when(chatSessionRepository.findById("session_unknown")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, "session_unknown", "질문"))
+        assertThatThrownBy(() -> queryService.completeAsync("session_unknown", "질문", "query_test",
+                new QueryService.QueryMessageContext("pair", "user", "assistant", java.time.Instant.now()), samplePipelineResponse()))
                 .isInstanceOf(ChatSessionNotFoundException.class);
     }
 
@@ -396,15 +347,10 @@ class QueryServiceTest {
                 message(session, "user_4", "pair_4", "user", "질문4", "completed", 9),
                 message(session, "assistant_4", "pair_4", "assistant", "답변4", "completed", 10)
         ));
-        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("새 질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(false), anyList())).thenReturn(responseWithEvidence(List.of()));
 
-        queryService.query(WORKSPACE_ID, SESSION_ID, "새 질문");
+        var context = queryService.prepareMessages(SESSION_ID, "새 질문", "query_test");
 
-        ArgumentCaptor<List<PipelineQueryRequester.RecentMessage>> history = ArgumentCaptor.forClass(List.class);
-        verify(pipelineQueryRequester).query(eq(WORKSPACE_ID), eq("새 질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(false), history.capture());
-        assertThat(history.getValue()).extracting(PipelineQueryRequester.RecentMessage::content)
+        assertThat(context.recentMessages()).extracting(QueryService.RecentMessage::content)
                 .containsExactly("질문2", "답변2", "질문3", "답변3", "질문4", "답변4");
 
         InOrder order = org.mockito.Mockito.inOrder(chatMessageRepository, chatTurnRecorder);
@@ -428,9 +374,9 @@ class QueryServiceTest {
 
         QueryService.QueryMessageContext context = queryService.prepareMessages(SESSION_ID, "새 질문", null);
 
-        assertThat(context.recentMessages()).extracting(PipelineQueryRequester.RecentMessage::content)
+        assertThat(context.recentMessages()).extracting(QueryService.RecentMessage::content)
                 .containsExactly("질문A", "답변A", "질문B", "답변B");
-        assertThat(context.recentMessages()).extracting(PipelineQueryRequester.RecentMessage::role)
+        assertThat(context.recentMessages()).extracting(QueryService.RecentMessage::role)
                 .containsExactly("user", "assistant", "user", "assistant");
     }
 
@@ -444,16 +390,16 @@ class QueryServiceTest {
                 message(session, "user_long", "pair_long", "user", longUserContent, "completed", 1),
                 message(session, "assistant_long", "pair_long", "assistant", longAssistantContent, "completed", 2)
         ));
-        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("새 질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(false), anyList())).thenReturn(responseWithEvidence(List.of()));
 
-        queryService.query(WORKSPACE_ID, SESSION_ID, "새 질문");
+        var context = queryService.prepareMessages(SESSION_ID, "새 질문", "query_test");
 
-        ArgumentCaptor<List<PipelineQueryRequester.RecentMessage>> history = ArgumentCaptor.forClass(List.class);
-        verify(pipelineQueryRequester).query(eq(WORKSPACE_ID), eq("새 질문"), eq("openai"), eq("gpt-5-nano"),
-                eq(false), history.capture());
-        assertThat(history.getValue()).extracting(PipelineQueryRequester.RecentMessage::content)
+        assertThat(context.recentMessages()).extracting(QueryService.RecentMessage::content)
                 .containsExactly("u".repeat(4000), "a".repeat(4000));
+    }
+
+    private QueryResponse complete(String question, boolean webSearch, PipelineQueryResponse response) {
+        var context = queryService.prepareMessages(SESSION_ID, question, "query_test", "openai", "gpt-5-nano", webSearch);
+        return queryService.completeAsync(SESSION_ID, question, "query_test", context, response);
     }
 
     private ChatMessage message(ChatSession session, String id, String pairId, String role, String content,

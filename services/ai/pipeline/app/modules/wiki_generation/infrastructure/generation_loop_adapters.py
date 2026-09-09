@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -92,7 +93,8 @@ class SemanticGenerationAdapter:
         with ThreadPoolExecutor(
             max_workers=min(self.max_workers, len(packets_to_extract) or 1)
         ) as executor:
-            extracted = iter(executor.map(extract, packets_to_extract))
+            futures = [executor.submit(copy_context().run, extract, packet) for packet in packets_to_extract]
+            extracted = iter(future.result() for future in futures)
 
         notes = []
         for packet, previous_note in work:

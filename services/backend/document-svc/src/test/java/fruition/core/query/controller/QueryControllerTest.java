@@ -67,8 +67,9 @@ class QueryControllerTest {
                 new QueryResponse.MessageSummary("chat_user_1", "user", "질문", "completed", Instant.now()),
                 new QueryResponse.MessageSummary("chat_assistant_1", "assistant", "답변", "completed", Instant.now()),
                 null, null, null, null, false, false, 0, null);
-        when(queryService.query(eq(WORKSPACE_ID), eq(SESSION_ID), eq("질문"),
-                eq("openai"), eq("gpt-5-nano"), eq(false))).thenReturn(response);
+        QueryRun run = QueryRun.pending("query_test", WORKSPACE_ID, SESSION_ID, "질문", Instant.now());
+        when(queryRunService.start(WORKSPACE_ID, USER_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", false, null)).thenReturn(run);
+        when(queryRunService.awaitResult(run, USER_ID)).thenReturn(response);
 
         mockMvc.perform(post(basePath() + "/query")
                         .header("Authorization", bearerToken())
@@ -88,8 +89,9 @@ class QueryControllerTest {
                 new QueryResponse.MessageSummary("chat_user_1", "user", "질문", "completed", Instant.now()),
                 new QueryResponse.MessageSummary("chat_assistant_1", "assistant", "답변", "completed", Instant.now()),
                 null, null, null, null, true, true, 1, null);
-        when(queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true))
-                .thenReturn(response);
+        QueryRun run = QueryRun.pending("query_test", WORKSPACE_ID, SESSION_ID, "질문", Instant.now());
+        when(queryRunService.start(WORKSPACE_ID, USER_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true, null)).thenReturn(run);
+        when(queryRunService.awaitResult(run, USER_ID)).thenReturn(response);
 
         mockMvc.perform(post(basePath() + "/query")
                         .header("Authorization", bearerToken())
@@ -97,7 +99,7 @@ class QueryControllerTest {
                         .content(objectMapper.writeValueAsString(new QueryRequest("질문", null, null, true))))
                 .andExpect(status().isOk());
 
-        verify(queryService).query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+        verify(queryRunService).start(WORKSPACE_ID, USER_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true, null);
     }
 
     @Test
