@@ -275,3 +275,42 @@ def test_cancel_snapshot_before_dispatch_finishes_persistent_undo(journal_databa
     assert runs.get_for_user("ws", "user", run.id).status == "cancelled"
     assert jobs.get_undo_record(run.id, plan.operations[0].id)["status"] == "undo_done"
     gateway.execute.assert_not_called()
+
+
+@pytest.mark.parametrize("fail_recovered", [False, True])
+def test_last_rollback_lease_is_reclaimed_and_failure_can_be_retried(journal_database, monkeypatch, fail_recovered):
+    from unittest.mock import MagicMock
+    from app.modules.agent_run.infrastructure.agent_worker import AgentWorker
+    from app.modules.agent_run.infrastructure.postgres_agent_job_repository import PostgresAgentJobRepository
+    from app.modules.agent_run.infrastructure.postgres_agent_run_repository import PostgresAgentRunRepository, register_cancelled_turn
+    from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
+
+    connect = journal_database
+    monkeypatch.setattr(database, "connect_ai", connect)
+    runs, jobs = PostgresAgentRunRepository(), PostgresAgentJobRepository()
+    register_cancelled_turn(dict(command("turn"), kind="agent", message="정리해 줘"))
+    runs.cancel("ws", "user", "turn")
+    for attempt in range(1, 4):
+        job = jobs.claim_next("worker")
+        assert job.attempt_count == attempt
+        if attempt < 3:
+            jobs.fail(job, "setup_unavailable")
+            with connect() as conn:
+                conn.execute("UPDATE agent_jobs SET available_at = now() WHERE id = %s", (job.id,))
+    jobs.mark_run_status("turn", ("cancel_requested",), "rolling_back")
+    assert jobs.claim_next("replacement") is None  # 유효한 lease는 회수하지 않는다.
+    with connect() as conn:
+        conn.execute("UPDATE agent_jobs SET leased_until = now() - interval '1 second' WHERE id = %s", (job.id,))
+    recovered = jobs.claim_next("replacement")
+    assert recovered is not None and recovered.id == job.id
+    assert recovered.attempt_count == 4
+    assert not jobs.heartbeat(job)  # 이전 소유자는 회수된 lease를 연장할 수 없다.
+    if fail_recovered:
+        jobs.fail(recovered, "database_unavailable")
+        assert runs.get_for_user("ws", "user", "turn").status == "rollback_failed"
+        runs.cancel("ws", "user", "turn")
+        recovered = jobs.claim_next("retry-worker")
+        assert recovered is not None and recovered.id != job.id
+    AgentWorker(jobs, runs, MagicMock(), None).process(recovered)
+    assert runs.get_for_user("ws", "user", "turn").status == "cancelled"
+    assert jobs.claim_next("replacement") is None

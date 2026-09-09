@@ -51,7 +51,11 @@ class PostgresAgentJobRepository:
                 WITH candidate AS (
                     SELECT pending.id
                     FROM agent_jobs pending
-                    WHERE pending.attempt_count < 3
+                    WHERE (
+                          pending.attempt_count < 3
+                          OR (pending.job_type = 'rollback' AND pending.status = 'leased'
+                              AND pending.leased_until < now())
+                      )
                       AND pending.job_type IN ('planning', 'execution', 'rollback')
                       AND pending.available_at <= now()
                       AND (
@@ -69,7 +73,7 @@ class PostgresAgentJobRepository:
                           SELECT 1
                           FROM agent_jobs predecessor
                           WHERE predecessor.run_id = pending.run_id
-                            AND predecessor.attempt_count < 3
+                            AND (predecessor.attempt_count < 3 OR predecessor.job_type = 'rollback')
                             AND predecessor.status IN ('queued', 'leased')
                             AND (predecessor.created_at, predecessor.id)
                                 < (pending.created_at, pending.id)

@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from app.modules.skill.application.author_skill import AuthorSkillUseCase
 from app.modules.skill.application.manage_skill import ManageSkillUseCase
@@ -35,15 +37,23 @@ def execute_skill_task(task: SkillTaskRequest):
     from app.modules.task_cancellation.infrastructure import postgres_task_journal as journal
     if any(task.payload.get(key) != getattr(task, key) for key in ("workspace_id", "user_id")):
         raise HTTPException(409, "Skill task actor mismatch.")
+    schema = {"skill_author": SkillAuthoringRequest, "skill_publish": PublishAuthoredSkillRequest,
+              "skill_update": UpdateSkillRequest}[task.kind]
+    try:
+        payload = schema.model_validate(task.payload)
+    except ValidationError as exc:
+        raise RequestValidationError([
+            {**error, "loc": ("body", "payload", *error["loc"])} for error in exc.errors()
+        ]) from exc
     def execute():
         if task.kind == "skill_author":
-            result = author_skill(SkillAuthoringRequest.model_validate(task.payload))
+            result = author_skill(payload)
         elif task.kind == "skill_publish":
-            result = publish_authored_skill(PublishAuthoredSkillRequest.model_validate(task.payload))
+            result = publish_authored_skill(payload)
         else:
             if not task.skill_id:
                 raise HTTPException(400, "skill_id is required.")
-            result = update_skill(task.skill_id, UpdateSkillRequest.model_validate(task.payload))
+            result = update_skill(task.skill_id, payload)
         if isinstance(result, JSONResponse):
             import json
             raise HTTPException(result.status_code, json.loads(result.body))
