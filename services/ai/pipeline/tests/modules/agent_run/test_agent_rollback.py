@@ -540,3 +540,125 @@ def test_unstarted_or_definitively_rejected_step_still_restores_previous_steps(f
     worker._rollback.execute("run")
     assert journal.run.status == "cancelled"
     assert workspace.state() == before
+
+
+@pytest.mark.parametrize("crash", [False, True], ids=["before-delivery", "worker-killed"])
+def test_postgres_turn_cancellation_through_worker_main(monkeypatch, crash):
+    """실제 진입점에서 모델 없는 취소와 실행 프로세스 종료 후 복구를 검증한다."""
+    import os
+    import select
+    import json
+    import subprocess
+    import sys
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    from pathlib import Path
+    from uuid import uuid4
+
+    import agent_worker
+    import psycopg
+    from psycopg import sql
+    from psycopg.rows import dict_row
+    from app.modules.agent_run.infrastructure.postgres_agent_job_repository import PostgresAgentJobRepository
+    from app.modules.agent_run.infrastructure.postgres_agent_run_repository import (
+        PostgresAgentRunRepository, register_cancelled_turn,
+    )
+    from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
+
+    dsn = os.environ.get("TEST_AGENT_DATABASE_URL")
+    if not dsn:
+        pytest.skip("격리 PostgreSQL 테스트 URL이 지정되지 않았습니다.")
+    schema = "test_turn_cancel_" + uuid4().hex
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+
+    def connect():
+        return psycopg.connect(dsn, row_factory=dict_row, options=f"-csearch_path={schema}")
+
+    process = None
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        with connect() as conn:
+            conn.execute((Path(__file__).parents[3] / "db/ai_schema.sql").read_text())
+        monkeypatch.setattr(database, "connect_ai", connect)
+        command = dict(kind="agent", run_id="turn", workspace_id="ws", user_id="user",
+                       message="현재까지 업로드 한 문서, 알맞은 폴더 이름 생성해서 주제별로 정리해 줘",
+                       provider="openai", model="gpt-5-nano")
+        runs, jobs = PostgresAgentRunRepository(), PostgresAgentJobRepository()
+        if crash:
+            # 별도 프로세스에서 실제 Kafka 처리 진입점의 잠금을 획득한다.
+            process = subprocess.Popen([sys.executable, "-u", "-c", '''
+import json, os, time
+import psycopg
+from psycopg.rows import dict_row
+from app.workers import task_worker
+from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
+
+def connect():
+    return psycopg.connect(os.environ["TEST_AGENT_DATABASE_URL"], row_factory=dict_row,
+                           options="-csearch_path=" + os.environ["TEST_TURN_SCHEMA"])
+database.connect_ai = connect
+
+def handle(command, publisher):
+    task_worker._register_agent_command(command)
+    print("executing", flush=True)
+    time.sleep(60)
+task_worker._handle = handle
+task_worker._handle_controlled(json.loads(os.environ["TEST_TURN_COMMAND"]))
+'''], env={**os.environ, "TEST_TURN_SCHEMA": schema, "TEST_TURN_COMMAND": json.dumps(command)},
+                stdout=subprocess.PIPE, text=True, cwd=Path(__file__).parents[3])
+            assert select.select([process.stdout], [], [], 15)[0], "턴 시작 시간 초과"
+            assert process.stdout.readline().strip() == "executing"
+        else:
+            register_cancelled_turn(command)
+            context = jobs.load_context("turn")
+            assert context.run.provider is None and context.run.model is None
+        runs.cancel("ws", "user", "turn")
+        job = jobs.claim_next("test-worker")
+        assert job is not None and job.job_type == "rollback"
+        monkeypatch.setattr(jobs, "claim_next", MagicMock(side_effect=[job, KeyboardInterrupt]))
+        monkeypatch.setattr(agent_worker, "PostgresAgentJobRepository", lambda: jobs)
+        monkeypatch.setattr(database, "verify_schema", lambda: None)
+        monkeypatch.setattr(database, "verify_agent_schema", lambda: None)
+        monkeypatch.setattr(agent_worker, "PostgresSaver", lambda *args, **kwargs: None)
+        monkeypatch.setattr(agent_worker, "_cleanup_expired_runs_if_due", lambda *args: 0)
+        gateway = MagicMock()
+        builder = MagicMock(side_effect=AssertionError("복구가 모델을 생성하면 안 됩니다."))
+        monkeypatch.setattr(agent_worker, "build_backend_tool_gateway", lambda: gateway)
+        monkeypatch.setattr(agent_worker, "build_plan_generator", builder)
+        future = executor.submit(agent_worker.main)
+        if crash:
+            # 실제 잠금 대기를 확인한 뒤 SIGKILL로 연결과 실행 잠금을 해제한다.
+            deadline = time.monotonic() + 10
+            waiting = False
+            while time.monotonic() < deadline and not future.done():
+                with connect() as conn:
+                    waiting = conn.execute(
+                        "SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted "
+                        "AND objid = (hashtextextended('agent:turn', 0) & 4294967295)::oid"
+                    ).fetchone() is not None
+                if waiting:
+                    break
+                time.sleep(0.02)
+            assert waiting, "살아 있는 턴과 복구가 실행 잠금을 공유해야 합니다."
+            assert runs.get_for_user("ws", "user", "turn").status == "cancel_requested"
+            process.kill()
+            process.wait(timeout=5)
+        with pytest.raises(KeyboardInterrupt):
+            future.result(timeout=10)
+        final = runs.get_for_user("ws", "user", "turn")
+        assert final.status == "cancelled", final.error_code
+        builder.assert_not_called()
+        gateway.execute.assert_not_called()
+        with connect() as conn:
+            rollback = conn.execute("SELECT status, attempt_count FROM agent_jobs WHERE id = %s", (job.id,)).fetchone()
+            assert rollback == {"status": "completed", "attempt_count": 1}
+    finally:
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=5)
+            process.stdout.close()
+        executor.shutdown(wait=True)
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            conn.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))

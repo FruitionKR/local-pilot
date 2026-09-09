@@ -59,11 +59,6 @@ class PostgresAgentJobRepository:
                           OR (pending.status = 'leased' AND pending.leased_until < now())
                       )
                       AND NOT EXISTS (
-                          SELECT 1 FROM agent_jobs turn
-                          WHERE turn.run_id = pending.run_id AND turn.job_type = 'markdown_turn'
-                            AND turn.status = 'executing'
-                      )
-                      AND NOT EXISTS (
                           SELECT 1 FROM agent_runs parent
                           JOIN agent_runs child ON child.id = parent.result->>'run_id'
                           WHERE parent.id = pending.run_id AND parent.action = 'markdown_turn'

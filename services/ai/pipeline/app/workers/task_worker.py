@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.modules.agent_run.infrastructure.postgres_agent_run_repository import agent_command_hash as _agent_command_hash
+from app.modules.agent_run.infrastructure.postgres_agent_job_repository import PostgresAgentJobRepository
 
 import asyncio
 import hashlib
@@ -827,7 +828,7 @@ def _handle_controlled(command: dict[str, Any], event_publisher: QueryEventPubli
             row = conn.execute("SELECT status FROM agent_runs WHERE id = %s", (command["run_id"],)).fetchone()
         return row is None or row["status"] not in journal.STOPPING
 
-    with task_cancellation_scope(active):
+    with PostgresAgentJobRepository().execution_lock(command["run_id"]), task_cancellation_scope(active):
         result = _handle(command, event_publisher)
         ensure_task_active()
         return result

@@ -63,24 +63,21 @@ def main() -> None:
                 time.sleep(poll_seconds)
                 continue
             try:
-                context = repository.load_context(job.run_id)
-                missing_llm_selection = context.run.provider is None or context.run.model is None
-            except Exception as exc:
-                logger.exception("Agent worker setup 실패: job_id=%s", job.id)
-                repository.fail(job, type(exc).__name__)
-                continue
-            if missing_llm_selection:
-                repository.fail(job, "missing_llm_selection")
-                continue
-            try:
+                plan_generator = None
+                if job.job_type != "rollback":
+                    context = repository.load_context(job.run_id)
+                    if context.run.provider is None or context.run.model is None:
+                        repository.fail(job, "missing_llm_selection")
+                        continue
+                    plan_generator = build_plan_generator(
+                        provider=context.run.provider,
+                        model=context.run.model,
+                    )
                 worker = AgentWorker(
                     repository=repository,
                     run_repository=run_repository,
                     tool_gateway=tool_gateway,
-                    plan_generator=build_plan_generator(
-                        provider=context.run.provider,
-                        model=context.run.model,
-                    ),
+                    plan_generator=plan_generator,
                     checkpointer=checkpointer,
                 )
             except Exception as exc:

@@ -59,7 +59,7 @@ class AgentWorker:
         repository: AgentJobRepositoryPort,
         run_repository: AgentPlanRepositoryPort,
         tool_gateway: AgentToolGatewayPort,
-        plan_generator: AgentPlanGeneratorPort,
+        plan_generator: AgentPlanGeneratorPort | None,
         checkpointer: BaseCheckpointSaver[str] | None = None,
     ) -> None:
         self._repository = repository
@@ -225,6 +225,8 @@ class AgentWorker:
         self._plan_run(job.run_id)
 
     def _plan_run(self, run_id: str) -> str | None:
+        if self._plan_generator is None:
+            raise ValueError("Agent planning requires a plan generator.")
         context = self._repository.load_context(run_id)
         if context.run.status not in {"queued", "planning", "clarification_required"}:
             return
