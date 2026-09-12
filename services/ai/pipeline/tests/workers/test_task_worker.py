@@ -1023,6 +1023,26 @@ def test_agent_route_contract_failure_keeps_specific_error_code() -> None:
     assert task_worker._agent_failure_code(error) == "agent_turn_route_contract_failed"
 
 
+def test_disabled_agent_feature_is_not_an_invalid_user_request() -> None:
+    from app.modules.agent_run.application.start_agent_run import StartAgentRunUseCase
+    from app.modules.agent_run.domain.entities import StartAgentRunRequest
+
+    repository = MagicMock()
+    try:
+        StartAgentRunUseCase(repository, feature_enabled=False).start(
+            StartAgentRunRequest(
+                workspace_id="workspace-1", user_id="user-1",
+                instruction="현재까지 업로드 한 문서, 알맞은 폴더 이름 생성해서 주제별로 정리해 줘",
+            )
+        )
+    except task_worker.AgentConfigurationError as error:
+        assert task_worker._agent_failure_code(error) == "agent_not_configured"
+        assert task_worker._agent_failure_result(error)["error_code"] == "agent_not_configured"
+    else:
+        raise AssertionError("비활성화된 기능은 설정 오류로 종료해야 한다.")
+    repository.create_with_planning_job.assert_not_called()
+
+
 def test_agent_route_contract_failure_persists_safe_diagnostic() -> None:
     command = {
         "run_id": "agent_route_failure",

@@ -2,6 +2,7 @@ import hashlib
 from uuid import uuid4
 
 from app.core.llm_env import resolve_llm_selection
+from app.modules.agent.domain.exceptions import AgentConfigurationError
 from app.modules.agent_run.application.ports import AgentRunRepositoryPort, AgentRunStarterPort
 from app.modules.agent_run.domain.entities import AgentRun, StartAgentRunArtifact, StartAgentRunRequest
 
@@ -13,7 +14,7 @@ class StartAgentRunUseCase(AgentRunStarterPort):
 
     def start(self, request: StartAgentRunRequest) -> tuple[str, str]:
         if not self._feature_enabled:
-            raise ValueError("Agent Skill 기능이 비활성화되어 있습니다.")
+            raise AgentConfigurationError("Agent Skill 기능이 비활성화되어 있습니다.")
         if not request.workspace_id or not request.user_id or not request.instruction.strip():
             raise ValueError("workspace_id, user_id, and instruction are required.")
         provider, model = resolve_llm_selection(request.provider, request.model)

@@ -33,23 +33,6 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
 DEFAULT_AGENT_TURN_ROUTER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "agent_turn_router.system.md"
-NEW_SKILL_REQUEST_PATTERN = re.compile(
-    r"(?:스킬|skill)(?:을|를|로)?\s*(?:(?:하나|새로|새로운|신규로|직접)\s*){0,2}"
-    r"(?:만들어|생성해|정의해|작성해)|"
-    r"(?:스킬|skill)로\s+[a-z0-9][a-z0-9-]{0,62}(?:을|를)?\s*(?:만들어|생성해|정의해|작성해)|"
-    r"(?:create|make|define|write)\s+(?:a\s+)?(?:new\s+)?skill\b",
-    re.IGNORECASE,
-)
-SKILL_NEGATION_PATTERN = re.compile(
-    r"(?:스킬|skill).{0,30}(?:만들지\s*(?:마|말고)|생성하지\s*(?:마|말고)|작성하지\s*(?:마|말고)|하지\s*말|취소|cancel)|"
-    r"(?:don't|do not|never)\s+(?:create|make|define|write)\s+(?:a\s+)?(?:new\s+)?skill\b",
-    re.IGNORECASE,
-)
-COMPLETED_WORK_REQUEST_PATTERN = re.compile(
-    r"(?:방금|아까|이전|앞서).{0,20}(?:방식|작업|결과|과정|흐름)|"
-    r"(?:just now|earlier|previous).{0,30}(?:method|work|result|process|workflow)",
-    re.IGNORECASE,
-)
 PUBLISH_SKILL_PATTERN = re.compile(
     r"(?:이대로\s*)?(?:게시|등록)(?:해|해줘|해주세요|하자)|"
     r"(?:please\s+)?(?:publish|post)(?:\s+(?:it|this|the\s+skill))?",
@@ -182,7 +165,6 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
         }
         route, failures = self._complete_route(payload)
         failures.extend(_route_failures(route, request))
-        failures.extend(_skill_authoring_failures(route, request))
         if failures:
             logger.warning("[Agent route 재시도] contractFailures=%s", failures)
             retry_payload = {
@@ -195,7 +177,6 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                 trusted_contract_failures=failures,
             )
             failures.extend(_route_failures(route, request))
-            failures.extend(_skill_authoring_failures(route, request))
             if failures:
                 raise AgentTurnRouteContractError(failures)
 
@@ -268,10 +249,6 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
             reason="explicit approval for pending Skill proposal",
         )
     return None
-
-
-def _requests_new_skill(message: str) -> bool:
-    return NEW_SKILL_REQUEST_PATTERN.search(message) is not None
 
 
 def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:
@@ -379,45 +356,6 @@ def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[st
     } and required_capabilities:
         failures.append(f"action {route.action} must not require Skill capabilities")
     return failures
-
-
-def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:
-    if (
-        route.action in {"skill_authoring", "conversation_reply"}
-        and (
-            request.skill_draft_sources
-            or COMPLETED_WORK_REQUEST_PATTERN.search(request.message)
-        )
-        and _requests_new_skill(request.message)
-    ):
-        return ["completed work must use skill_draft_proposal instead of another action"]
-    if route.action != "skill_authoring":
-        return []
-    summary = (
-        request.conversation_context.recent_conversation_summary
-        if request.conversation_context and request.conversation_context.recent_conversation_summary
-        else ""
-    )
-    recent_messages = (
-        request.conversation_context.recent_messages
-        if request.conversation_context
-        else ()
-    )
-    recent_user_message = next(
-        (message.content for message in reversed(recent_messages) if message.role == "user"),
-        "",
-    )
-    intent_context = recent_user_message if recent_messages else summary
-    has_pending_proposal = bool(
-        request.conversation_context and request.conversation_context.pending_skill_proposal
-    )
-    if SKILL_NEGATION_PATTERN.search(request.message):
-        return ["skill_authoring must not override an explicit current Skill refusal"]
-    if not has_pending_proposal and not _requests_new_skill(
-        f"{request.message}\n{intent_context}"
-    ):
-        return ["skill_authoring requires an explicit request to create a new Skill"]
-    return []
 
 
 def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:
