@@ -498,7 +498,7 @@ def test_pipeline_run_status_uses_repository_dependency() -> None:
     repository.get_run.assert_called_once_with("run-1")
 
 
-def test_pipeline_run_logs_use_manifest_log_path() -> None:
+def test_pipeline_run_logs_use_durable_run_key() -> None:
     repository = _repository()
     repository.get_run.return_value = {
         "id": "run-1",
@@ -514,7 +514,7 @@ def test_pipeline_run_logs_use_manifest_log_path() -> None:
 
     assert response.status_code == 200
     assert response.text == "파이프라인 완료"
-    log_reader.read_text.assert_called_once_with("runs/custom/pipeline.log")
+    log_reader.read_text.assert_called_once_with(pipeline_routes.pipeline_log_uri("run-1"))
 
 
 def test_chat_wiki_inline_markdown_uses_document_id_as_source_key() -> None:
@@ -703,3 +703,40 @@ def test_health_does_not_require_internal_token(monkeypatch) -> None:
     response = TestClient(api.app).get("/health")
 
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize("status", ["running", "succeeded", "failed", "cancelled"])
+def test_pipeline_log_survives_worker_directory_removal(tmp_path, monkeypatch, status):
+    import shutil
+    from io import BytesIO
+    from app.modules.wiki_generation.infrastructure.pipeline_log import PipelineLog
+    from app.modules.wiki_ingestion.infrastructure import object_storage
+    from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import ObjectStoragePipelineLogReader
+
+    objects = {}
+    client = Mock()
+    client.put_object.side_effect = lambda bucket, key, data, **kwargs: objects.__setitem__((bucket, key), data.read())
+    def get_object(bucket, key):
+        response = BytesIO(objects[bucket, key])
+        response.release_conn = lambda: None
+        return response
+    client.get_object.side_effect = get_object
+    monkeypatch.setattr(object_storage, "client", lambda: client)
+    worker = tmp_path / "worker"
+    worker.mkdir()
+    monkeypatch.chdir(worker)
+    log = PipelineLog(pipeline_routes.pipeline_log_uri("run-1"), run_id="run-1")
+    log.emit("진행", "다른 Pod에서도 조회")
+    api_dir = tmp_path / "api"
+    api_dir.mkdir()
+    monkeypatch.chdir(api_dir)
+    shutil.rmtree(worker)
+    repository = _repository()
+    repository.get_run.return_value = {"id": "run-1", "status": status, "output_dir": str(worker), "manifest": None}
+    with _pipeline_client(repository=repository, log_reader=ObjectStoragePipelineLogReader()) as api_client:
+        response = api_client.get("/pipeline/runs/run-1/logs")
+        state = api_client.get("/pipeline/runs/run-1")
+    assert response.status_code == 200
+    assert "다른 Pod에서도 조회" in response.text
+    assert state.json()["status"] == status
+    assert not list(api_dir.iterdir())

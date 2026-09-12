@@ -8,6 +8,7 @@ services:
     # access/core/ai 3개 database·runtime/migration 계정 분리 (docs/backlog/Fruition_AWS_MSA_Architecture.md §3)
     # 계정·권한 생성은 postgres/init-db-isolation.sh가 최초 기동 시 수행한다.
     environment:
+      DB_ISOLATION_TARGET: all
       POSTGRES_DB: postgres
       POSTGRES_USER: ${POSTGRES_ADMIN_USER:-fruition_admin}
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-fruition_admin_dev_password}
@@ -31,6 +32,7 @@ services:
     volumes:
       - postgresql-data:/var/lib/postgresql/data
       - ./postgres/init-db-isolation.sh:/docker-entrypoint-initdb.d/10-db-isolation.sh:ro
+      - ./postgres/db-isolation-config.bash:/docker-entrypoint-initdb.d/db-isolation-config.bash:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
       interval: 5s
@@ -46,8 +48,9 @@ services:
       postgresql:
         condition: service_healthy
     environment:
-      POSTGRES_HOST: postgresql
-      POSTGRES_PORT: 5432
+      DB_ISOLATION_TARGET: all
+      PGHOST: postgresql
+      PGPORT: 5432
       POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER:-fruition_admin}
       POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-fruition_admin_dev_password}
       ACCESS_DB_NAME: ${ACCESS_DB_NAME:-access_db}
@@ -67,7 +70,8 @@ services:
       AI_DB_MIGRATION_PASSWORD: ${AI_DB_MIGRATION_PASSWORD:-ai_migration_dev_password}
     volumes:
       - ./postgres/validate-db-isolation.sh:/usr/local/bin/validate-db-isolation:ro
-    entrypoint: ["/bin/sh", "/usr/local/bin/validate-db-isolation"]
+      - ./postgres/db-isolation-config.bash:/usr/local/bin/db-isolation-config.bash:ro
+    entrypoint: ["/bin/bash", "/usr/local/bin/validate-db-isolation"]
 
   kafka:
     image: apache/kafka:3.9.0
@@ -132,7 +136,7 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: fruition-minio-dev
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -146,7 +150,7 @@ services:
       - minio-data:/data
 
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
     container_name: fruition-minio-init-dev
     depends_on:
       minio:

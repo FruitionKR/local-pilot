@@ -2,6 +2,14 @@ output "cluster_name" {
   value = module.eks.cluster_name
 }
 
+output "cluster_arn" {
+  value = module.eks.cluster_arn
+}
+
+output "cluster_endpoint" {
+  value = module.eks.cluster_endpoint
+}
+
 output "ecr_repository_urls" {
   value = { for k, r in aws_ecr_repository.services : k => r.repository_url }
 }
@@ -18,7 +26,7 @@ output "core_rds_endpoint" {
 
 output "redis_endpoint" {
   description = "k8s/overlays/aws configmap의 REDIS_HOST에 넣을 값"
-  value       = aws_elasticache_cluster.main.cache_nodes[0].address
+  value       = aws_elasticache_replication_group.main.primary_endpoint_address
 }
 
 output "s3_bucket" {
@@ -41,5 +49,17 @@ output "irsa_role_arns" {
     alb_controller     = module.alb_controller_irsa.iam_role_arn
     external_secrets   = module.external_secrets_irsa.iam_role_arn
     cluster_autoscaler = module.cluster_autoscaler_irsa.iam_role_arn
+  }
+}
+
+output "storage_role_arns" {
+  value = { for service, role in module.storage_irsa : service => role.iam_role_arn }
+}
+output "network_deploy_inputs" {
+  value = {
+    vpc_cidr          = module.vpc.vpc_cidr_block
+    alb_subnet_cidr_1 = module.vpc.public_subnets_cidr_blocks[0]
+    alb_subnet_cidr_2 = module.vpc.public_subnets_cidr_blocks[1]
+    smtp_port         = tostring(var.smtp_port)
   }
 }

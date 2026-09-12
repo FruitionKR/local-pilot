@@ -11,6 +11,13 @@ public class StorageProperties {
     private String accessKey;
     private String secretKey;
     private String bucket;
+    private String credentialsMode = "local";
+    private String region;
+
+    public String getCredentialsMode() { return credentialsMode; }
+    public void setCredentialsMode(String credentialsMode) { this.credentialsMode = credentialsMode; }
+    public String getRegion() { return region; }
+    public void setRegion(String region) { this.region = region; }
 
     public String getEndpoint() { return endpoint; }
     public void setEndpoint(String endpoint) { this.endpoint = endpoint; }

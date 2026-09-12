@@ -37,7 +37,7 @@ public class TestcontainersConfiguration {
 	@Bean
 	MinIOContainer minioContainer() {
 		return new MinIOContainer(DockerImageName.parse("quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z")
-				.asCompatibleSubstituteFor("minio/minio"));
+			.asCompatibleSubstituteFor("minio/minio"));
 	}
 
 	@Bean

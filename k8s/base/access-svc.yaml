@@ -28,14 +28,37 @@ spec:
           # 다른데(document 8082 / access 8083) k8s는 ALB healthcheck-port 주석이
           # Ingress 단위라 두 서비스가 같은 번호를 써야 한다. envFrom보다 우선한다.
           env:
+            - name: ACCESS_DB_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: ACCESS_DB_RUNTIME_PASSWORD
+            - name: ACCESS_DB_MIGRATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: ACCESS_DB_MIGRATION_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: JWT_SECRET
+            - name: INTERNAL_CALLBACK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: INTERNAL_CALLBACK_TOKEN
+            - name: MFA_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-mfa
+                  key: MFA_ENCRYPTION_KEY
             - name: MANAGEMENT_PORT
               value: "8082"
           envFrom:
             - configMapRef:
                 name: fruition-config
-            - secretRef:
-                name: fruition-secret
-          # flyway migration은 document-svc가 소유 — access-svc는 schema가 준비될 때까지 재시작될 수 있다.
+          # 로컬에서는 자기 access_db migration 후 기동한다. AWS는 별도 Job으로 실행한다.
           startupProbe:
             httpGet:
               path: /actuator/health

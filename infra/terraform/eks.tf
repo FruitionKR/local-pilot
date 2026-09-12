@@ -2,7 +2,7 @@
 # Kafka(Strimzi)·API는 General node, ingest·converter는 AI Worker node(taint로 분리).
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.0"
+  version = "20.37.2"
 
   cluster_name    = "${var.project}-eks"
   cluster_version = var.eks_version
@@ -15,13 +15,18 @@ module "eks" {
   enable_cluster_creator_admin_permissions = true
 
   cluster_addons = {
-    coredns    = {}
-    kube-proxy = {}
-    vpc-cni    = {}
-    # Strimzi Kafka·pipeline-runs PVC용 EBS gp3
+    coredns    = { addon_version = var.eks_addon_versions["coredns"] }
+    kube-proxy = { addon_version = var.eks_addon_versions["kube-proxy"] }
+    vpc-cni    = { addon_version = var.eks_addon_versions["vpc-cni"], configuration_values = jsonencode({ enableNetworkPolicy = "true" }) }
+    # Strimzi Kafka PVC용 EBS gp3
     aws-ebs-csi-driver = {
+      addon_version            = var.eks_addon_versions["aws-ebs-csi-driver"]
       service_account_role_arn = module.ebs_csi_irsa.iam_role_arn
     }
+  }
+
+  eks_managed_node_group_defaults = {
+    ami_type = "AL2023_x86_64_STANDARD"
   }
 
   eks_managed_node_groups = {
@@ -51,18 +56,11 @@ module "eks" {
     }
   }
 
-  # GitHub Actions deploy role에 cluster admin 부여 (kubectl apply용)
+  # 실제 권한은 플랫폼 관리자가 설치하는 fruition namespace RoleBinding으로 제한한다.
   access_entries = {
     github_deploy = {
-      principal_arn = aws_iam_role.github_deploy.arn
-      policy_associations = {
-        admin = {
-          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-          access_scope = {
-            type = "cluster"
-          }
-        }
-      }
+      principal_arn     = aws_iam_role.github_deploy.arn
+      kubernetes_groups = ["fruition:deployers"]
     }
   }
 }
@@ -71,7 +69,7 @@ module "eks" {
 
 module "ebs_csi_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.0"
+  version = "5.60.0"
 
   role_name             = "${var.project}-ebs-csi"
   attach_ebs_csi_policy = true
@@ -86,10 +84,10 @@ module "ebs_csi_irsa" {
 
 module "alb_controller_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.0"
+  version = "5.60.0"
 
   role_name                              = "${var.project}-alb-controller"
-  attach_load_balancer_controller_policy = true
+  attach_load_balancer_controller_policy = false
 
   oidc_providers = {
     main = {
@@ -101,7 +99,7 @@ module "alb_controller_irsa" {
 
 module "external_secrets_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.0"
+  version = "5.60.0"
 
   role_name                             = "${var.project}-external-secrets"
   attach_external_secrets_policy        = true
@@ -117,11 +115,10 @@ module "external_secrets_irsa" {
 
 module "cluster_autoscaler_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.0"
+  version = "5.60.0"
 
   role_name                        = "${var.project}-cluster-autoscaler"
-  attach_cluster_autoscaler_policy = true
-  cluster_autoscaler_cluster_names = [module.eks.cluster_name]
+  attach_cluster_autoscaler_policy = false
 
   oidc_providers = {
     main = {
@@ -129,4 +126,69 @@ module "cluster_autoscaler_irsa" {
       namespace_service_accounts = ["kube-system:cluster-autoscaler"]
     }
   }
+}
+
+
+// EKS v20은 ASG 태그 입력이 없다. 생성된 ASG에 별도 태그를 부여한다.
+// for_each 키는 plan 시점에 고정되며 실제 ASG 이름만 apply 뒤 결정된다.
+locals {
+  autoscaler_tags = merge(
+    { for group in ["general", "ai_worker"] : group => {
+      "k8s.io/cluster-autoscaler/enabled"      = "true"
+      "k8s.io/cluster-autoscaler/fruition-eks" = "owned"
+    } },
+    { ai_worker = {
+      "k8s.io/cluster-autoscaler/enabled"                                   = "true"
+      "k8s.io/cluster-autoscaler/fruition-eks"                              = "owned"
+      "k8s.io/cluster-autoscaler/node-template/label/fruition.io/node-role" = "ai-worker"
+      "k8s.io/cluster-autoscaler/node-template/taint/fruition.io/ai-worker" = "true:NoSchedule"
+    } }
+  )
+  autoscaler_tag_entries = merge([for group, tags in local.autoscaler_tags : {
+    for key, value in tags : "${group}/${key}" => { group = group, key = key, value = value }
+  }]...)
+}
+
+resource "aws_autoscaling_group_tag" "discovery" {
+  for_each               = local.autoscaler_tag_entries
+  autoscaling_group_name = module.eks.eks_managed_node_groups[each.value.group].node_group_autoscaling_group_names[0]
+  tag {
+    key                 = each.value.key
+    value               = each.value.value
+    propagate_at_launch = false
+  }
+}
+
+
+# 모듈 기본 정책의 다른 tag 계약 대신 실제 discovery tag 두 개로 쓰기를 제한한다.
+resource "aws_iam_role_policy" "cluster_autoscaler" {
+  name = "tag-scoped-autoscaling"
+  role = module.cluster_autoscaler_irsa.iam_role_name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["autoscaling:DescribeAutoScalingGroups", "autoscaling:DescribeAutoScalingInstances", "autoscaling:DescribeLaunchConfigurations", "autoscaling:DescribeScalingActivities", "autoscaling:DescribeTags", "ec2:DescribeLaunchTemplateVersions", "ec2:DescribeInstanceTypes", "ec2:DescribeImages", "ec2:GetInstanceTypesFromInstanceRequirements", "eks:DescribeNodegroup"]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["autoscaling:SetDesiredCapacity", "autoscaling:TerminateInstanceInAutoScalingGroup"]
+        Resource = "*"
+        Condition = { StringEquals = {
+          "autoscaling:ResourceTag/k8s.io/cluster-autoscaler/enabled"      = "true"
+          "autoscaling:ResourceTag/k8s.io/cluster-autoscaler/fruition-eks" = "owned"
+        } }
+      }
+    ]
+  })
+}
+
+
+# Controller와 같은 release의 공식 IAM policy를 사용한다.
+resource "aws_iam_role_policy" "alb_controller" {
+  name   = "controller-v3-5-0"
+  role   = module.alb_controller_irsa.iam_role_name
+  policy = file("${path.module}/policies/aws-load-balancer-controller-v3.5.0.json")
 }

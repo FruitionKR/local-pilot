@@ -89,12 +89,12 @@ ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 
 
 ## 7. 배포
 
-배포 단위 = 이미지 = 폴더. 로컬 compose·kind 검증 그대로 AWS 매핑 (코드 변경 0, env만 교체).
+배포 단위는 서비스 이미지와 Deployment로 나눈다. AWS는 별도 migration Job과 서비스별 Secret을 사용한다. 실제 AWS 배포·복구의 나머지 제약은 AWS 배포 준비 계획에 따라 검증한다.
 
 | 로컬 | AWS |
 |---|---|
 | kind | Amazon EKS (`infra/terraform/eks.tf`) |
-| Strimzi Kafka | Strimzi on EKS (또는 MSK) |
+| Strimzi Kafka | Strimzi on EKS (현재 MSK 리소스 없음) |
 | postgres 컨테이너 | Access RDS + Core RDS 2 instance |
 | redis 컨테이너 | ElastiCache |
 | minio | S3 |
@@ -110,12 +110,125 @@ ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 
 - actuator는 업무 포트가 아니라 관리 포트로 분리한다(로컬 8082·8083, k8s는 configmap `MANAGEMENT_PORT`로 8082 통일).
   ALB는 업무 포트만 라우팅하므로 `/actuator/prometheus`가 인터넷에 열리지 않는다. probe와 ALB healthcheck만 관리 포트를 본다.
 
+### 7.1 AWS 배치 구조
+
+아래는 **2026-09-11 기준 저장소의 Terraform·Kubernetes·배포 스크립트가 정의하는 구조**다. 실제 AWS 계정에 배포되어 있다는 뜻은 아니다. 서울 리전의 feedback 환경을 대상으로 하며, 실제 AWS 검증은 수행하지 않았다.
+
+쉽게 말하면 Vercel은 손님이 보는 화면, ALB는 안내 데스크, EKS는 여러 담당자가 일하는 건물이다. Access는 회원·권한 담당, Document는 문서·업무 담당, AI는 분석 담당이다. Kafka는 오래 걸리는 일을 맡겨 두는 작업함이며, DB와 S3는 담당자별 열쇠로 여는 보관함이다.
+
+```mermaid
+flowchart TB
+    user["사용자 브라우저"] --> frontend["Vercel · Next.js 화면/API rewrite"]
+    frontend --> alb
+    subgraph aws["AWS 서울 리전"]
+        subgraph vpc["VPC · 2개 가용 영역"]
+            subgraph public["Public subnet"]
+                alb["ALB · HTTPS / ACM 인증서"]
+                nat["NAT Gateway · 외부 통신 출구"]
+            end
+            subgraph private["Private subnet"]
+                subgraph eks["EKS · fruition namespace"]
+                    subgraph general["General · On-Demand 노드"]
+                        access["Access API"]
+                        document["Document API"]
+                        pipeline["Pipeline API"]
+                        kafka["Strimzi Kafka · EBS 저장"]
+                    end
+                    subgraph spot["AI · Spot 노드"]
+                        workers["AI worker들"]
+                        converter["Converter"]
+                    end
+                end
+                accessdb["Access RDS · access_db"]
+                coredb["Core RDS · core_db / ai_db"]
+                redis["ElastiCache Redis"]
+            end
+        end
+        s3["S3 · 문서/AI 객체/실행 로그"]
+        secrets["Secrets Manager · 서비스별 Secret 공급"]
+        ecr["ECR · 서비스 이미지 4개"]
+    end
+    alb -->|"access 도메인"| access
+    alb -->|"api 도메인"| document
+    document -->|"내부 권한 API"| access
+    document -->|"내부 HTTP"| pipeline
+    document -->|"파일 변환 HTTP"| converter
+    document -->|"작업 요청"| kafka
+    kafka --> workers
+    workers -->|"결과 이벤트"| kafka
+    kafka -->|"결과 반영"| document
+    access --> accessdb
+    document -->|"core_db"| coredb
+    pipeline -->|"ai_db"| coredb
+    workers -->|"ai_db"| coredb
+    access --> redis
+    document --> redis
+    workers --> redis
+    document --> s3
+    workers --> s3
+```
+
+화살표는 주요 논리 흐름이며 모든 연결을 표시하지 않는다. EKS 제어 영역은 AWS가 관리하고, 애플리케이션 노드는 private subnet에 배치한다. S3·ECR·Secrets Manager는 VPC 내부 서버가 아닌 AWS 관리 서비스다. private subnet의 외부 HTTPS 통신에는 NAT 경로를 사용한다. 도메인 DNS와 ACM 인증서는 배포 입력으로 준비해야 하며 현재 Terraform에 Route 53 레코드 생성은 없다.
+
+| 구성 | 현재 배치와 책임 |
+|---|---|
+| 공개 진입점 | 인터넷용 ALB가 host별로 Access 8081·Document 8080에 전달한다. `target-type: ip`로 Pod IP를 대상으로 삼는다. 관리 포트 8082는 probe·healthcheck용이다. AI·Converter·DB는 공개 Ingress 대상이 아니다. |
+| General 노드 | `t3.large` On-Demand, 최소·초기 2대, 최대 3대. API와 Kafka를 배치한다. |
+| AI 노드 | `m5.xlarge`/`m6i.xlarge` Spot, 최소·초기 0대, 최대 2대. nodeSelector와 taint/toleration으로 AI worker·Converter를 배치한다. |
+| PostgreSQL | RDS 2개다. Access 인스턴스는 `access_db`, Core 인스턴스는 `core_db`와 `ai_db`를 가진다. **AI와 Document는 물리 인스턴스를 공유하지만 DB와 접속 권한은 분리한다.** runtime DML 계정과 migration DDL 계정도 분리한다. |
+| Redis | ElastiCache를 공유하되 서비스별 ACL로 key 값 접근을 제한한다. 업무 원장의 대체물이 아니라 캐시·일시 상태·권한 projection 저장소다. |
+| 파일·이벤트 저장 | 파일과 실행 로그는 S3, Kafka 데이터는 EBS gp3에 저장한다. Kafka는 EKS 안의 Strimzi 단일 broker 구성이다. |
+| 배포 이미지 | Access·Document·Pipeline·Converter의 ECR 이미지 4개다. Pipeline 이미지로 API와 여러 worker Deployment를 실행한다. worker는 독립 확장 단위지만 별도 DB를 소유하는 새로운 업무 서비스는 아니다. |
+
+구현 근거: [VPC](../infra/terraform/vpc.tf), [EKS](../infra/terraform/eks.tf), [RDS](../infra/terraform/rds.tf), [AWS overlay](../k8s/overlays/aws/kustomization.yaml), [ALB Ingress](../k8s/overlays/aws/ingress.yaml), [frontend rewrite](../services/frontend/next.config.mjs).
+
+### 7.2 사용하는 아키텍처 패턴과 판단
+
+| 패턴 | 현재 구현과 선택 이유 | 해석의 범위 |
+|---|---|---|
+| 책임별 MSA와 서비스별 데이터 소유권 | Access·Document·AI가 자기 업무와 DB를 소유하고 다른 서비스의 업무는 내부 API·이벤트로 요청한다. Converter는 저장소 없는 변환 서비스다. | 서비스마다 물리 DB 서버나 EKS 클러스터를 따로 두는 구성은 아니다. DB 권한 분리로 데이터 경계를 지킨다. |
+| 동기 HTTP + 이벤트 기반 비동기 처리 | 권한 확인·파일 변환 등은 내부 HTTP, 오래 걸리는 AI 작업은 Kafka command와 결과 이벤트로 처리한다. 요청 처리와 무거운 작업의 실행량을 분리한다. | 내부 주소는 Kubernetes Service DNS를 사용한다. Access·Document·Pipeline의 내부 API는 token 인가를 사용하며, Converter는 token 검증 없이 NetworkPolicy로 호출자를 제한한다. 별도 API Gateway나 service mesh를 도입한 구조는 아니다. |
+| Transactional Outbox + 멱등 처리 | Document의 업무 변경과 outbox를 같은 DB 트랜잭션에 저장하고 이후 Kafka에 발행한다. 중복 결과는 처리 기록·revision으로 제어한다. | 재전달 가능한 at-least-once 처리다. 전체 시스템의 exactly-once나 서비스 간 단일 ACID 트랜잭션을 뜻하지 않는다. |
+| 최종 일관성 | 문서 저장 후 AI 분석·Wiki 파생 데이터가 비동기로 따라온다. 사용자는 작업 상태를 통해 완료·실패를 구분한다. | 원문 저장과 AI 결과 완성이 같은 순간에 일어나지는 않는다. |
+| 상태 외부화와 역할별 확장 | 업무 상태는 DB, 파일·로그는 S3에 두고 Pod의 작업 디렉터리는 임시 공간으로 쓴다. API와 worker를 따로 늘리거나 재배치할 수 있다. | 프로세스 중단 뒤 복구는 영속 기록·재시도에 의존한다. Spot 중단 시 진행 중 메모리 작업이 그대로 보존되는 것은 아니다. |
+| 다층 권한 분리 | private subnet·Security Group·NetworkPolicy, 내부 API 인가, DB role·Redis ACL·S3 IAM을 함께 적용한다. | 네트워크 연결 허용과 데이터 접근 권한은 별개다. 공유 key 이름 등 metadata 예외는 아래 저장소 권한 절을 따른다. |
+| IaC와 플랫폼/앱 배포 권한 분리 | Terraform이 인프라를 정의하고 플랫폼 관리자가 operator·공통 자원을 설치한다. 앱 CI는 namespace 안에서 이미지·업무 리소스를 배포한다. | 현재는 GitHub Actions와 스크립트 기반 배포다. Argo CD 같은 GitOps controller는 사용하지 않는다. |
+
+패턴 명칭은 AWS의 [서비스별 데이터 소유권 설명](https://docs.aws.amazon.com/prescriptive-guidance/latest/modernization-data-persistence/introduction.html), [Transactional Outbox 설명](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html)과 대조했다. 시스템 전체를 CQRS·Event Sourcing으로 분류하지 않는다. 일부 권한 조회 캐시와 이벤트 전달만으로 해당 패턴 전체를 구현했다고 볼 수 없기 때문이다.
+
+### 7.3 요청 처리와 자동 확장
+
+1. 사용자가 화면에서 요청하면 Next.js rewrite가 인증·워크스페이스 자체 CRUD·복구·아이콘·멤버·초대 관리 경로를 Access 도메인으로 보낸다. 워크스페이스 하위 문서·폴더·채팅 등 나머지 업무 경로는 Document 도메인으로 보낸다. ALB가 해당 서비스에 전달한다.
+2. Document가 권한을 확인할 때 캐시에 없으면 Access 내부 API를 호출한다. 권한 확인에 실패하면 접근을 거부한다. 다른 서비스의 DB를 직접 읽어 권한을 판단하지 않는다.
+3. AI 작업은 Document가 요청을 기록하고 Kafka로 전달한다. worker는 자기 `ai_db`와 허용된 S3 경로를 사용하며, Document 소유 업무 변경은 내부 API 또는 결과 이벤트로 요청한다.
+4. Document는 결과를 자기 DB에 반영하고 사용자에게 작업 상태를 전달한다. 중복 메시지가 와도 이미 처리한 결과를 다시 적용하지 않도록 검사한다.
+
+KEDA는 Kafka에 밀린 작업량을 보고 ingest·query·agent worker를 각각 1~4개, maintenance worker를 1~2개로 조절한다. Pod를 배치할 자리가 부족하면 Cluster Autoscaler가 노드 수를 조절한다. **KEDA는 작업자 수, Cluster Autoscaler는 작업자가 앉을 서버 수를 조절한다.** 모든 API·worker가 KEDA 대상인 것은 아니다. [KEDA 설정](../k8s/base/keda-scaledobject.yaml)
+
+AI 노드 그룹의 초기·최소값은 0이지만 worker의 최소 replica는 1이고 다른 상시 Pod도 있다. 따라서 이 설정을 “일이 없으면 AI 서버가 항상 0대로 줄어든다”는 뜻으로 해석하면 안 된다. 실제 용량 확보와 Spot 중단 복구는 AWS에서 별도로 확인해야 한다.
+
+### 7.4 배포와 자격증명의 흐름
+
+플랫폼 관리자는 Terraform state용 S3 bootstrap → VPC·EKS·RDS·Redis·S3·ECR·IAM 등 인프라 → ALB controller·External Secrets·Strimzi·KEDA·Cluster Autoscaler와 공통 Kubernetes 자원 순으로 준비한다. Terraform state는 S3의 버전 관리·암호화·잠금으로 관리한다.
+
+앱 배포는 GitHub Actions의 전용 runner에서 실행한다. GitHub OIDC로 배포 role을 받아 장기 AWS access key 없이 ECR 이미지를 올리고 EKS에 접근한다. 반면 실행 중인 Document·AI가 S3에 접근할 때는 각 Kubernetes ServiceAccount에 연결한 **IRSA** role을 사용한다. 두 경로는 서로 다른 신원과 권한이다. 비밀번호 등 앱 설정은 Secrets Manager → External Secrets → 서비스별 Kubernetes Secret으로 공급한다. [IRSA 공식 설명](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
+
+workflow가 입력 검증·임시 manifest 렌더와 commit SHA 이미지 준비를 수행한다. 배포 스크립트는 실제 계정·클러스터를 대조하고, 새 release에 대해 서비스별 Secret 준비 → DB 소유권·접속 사전검증 → 세 migration Job 완료 → Kafka/topic 준비 → Deployment rollout → KEDA 준비 → 공개 OpenAPI smoke를 확인한다. 성공 시 manifest·설정·DB schema fingerprint를 release 기록으로 남긴다. 기존 성공 SHA 재배포·복구는 현재 schema와 설정 조건을 검사한 뒤 저장된 manifest를 사용하며 migration을 다시 실행하거나 자동으로 되돌리지 않는다. 현재 방식은 Deployment rollout이며 별도 blue/green·canary 전환은 구현하지 않았다.
+
+정확한 명령·필수 입력·복구 조건은 [AWS 순차 배포 절차](script.md#aws-순차-배포와-동일-스키마-sha-복구), 관리자의 준비 작업은 [IaC·플랫폼 운영 절차](script.md#aws-iac플랫폼-운영-절차)를 따른다.
+
+### 7.5 배포 준비 수준과 가용성의 한계
+
+현재 구성은 서비스 경계와 AWS 배포 절차를 갖춘 **feedback 환경 구성**으로 판단한다. 2개 가용 영역에 네트워크와 노드를 둘 수 있지만 RDS는 Single-AZ, Redis는 단일 primary, Kafka는 단일 broker, NAT Gateway는 1개이며 주요 앱도 기본 replica 1 구성이다. 따라서 가용 영역 하나가 고장 나도 서비스 전체가 계속 운영되는 고가용성 구성이 완성됐다고 볼 수 없다. 물리 Core RDS 공유로 Document와 AI의 자원 경합·인스턴스 장애 영향도 공유한다.
+
+기존 로컬 검증은 서비스 간 DB 권한 거부, migration/runtime 역할 분리, 내부 API 계약, Redis ACL, Terraform validate, Kubernetes 렌더·스키마 검사, 배포 스크립트의 실패·복구 조건을 확인했다. 이는 코드와 로컬 실행의 근거이며 실제 AWS의 IAM·CNI·ALB·인증서·addon 호환·Spot 용량·복구 동작을 보장하지 않는다. 이번 문서 추가에서도 AWS 배포나 실제 AWS 검증은 실행하지 않았다. 검증 이력과 미실행 항목은 [배포 준비 계획](backlog/aws-msa-deployment-readiness-plan.md)에 보관한다.
+
 ## 8. 남은 결합 지점 (트리거 대기 — 분할 미비 아님)
 
 | 항목 | 상태 · 트리거 |
 |---|---|
 | JWT HS256 공유 시크릿 | 외부 공개·시크릿 유출 리스크 대두 시 RS256+JWKS 전환 |
-| pipeline-runs PVC | S3 아티팩트 이전 완료 시 ingest-worker Spot 노드 활성화 가능 |
+| AI 실행 로그·임시 파일 | 로그는 S3 `pipeline-runs/{run_id}/pipeline.log`, 상태·manifest는 ai_db. Pod의 `/app/runs`는 독립 `emptyDir`이며 worker·converter는 Spot node group에 배치 |
 
 
 ## AI 작업 취소
@@ -128,3 +241,46 @@ Backend는 각 행의 현재 값·후속 참조를 검증하고 원자적으로 
 동기 Query도 Kafka 작업을 시작한 뒤 완료를 기다린다. Skill 작성·게시·수정은 동일한 작업 ID envelope를
 내부 HTTP로 전달한다. 새 의존성을 추가하지 않고 PostgreSQL trigger·행/권고 잠금과 기존 Redis·MinIO를 사용한다.
 구버전 실행에는 변경 전 기록이 없으므로 배포 전 작업과 큐를 비운다. 운영용 단발 내부 HTTP 호출은 제품 취소 경로와 구분한다.
+
+### AWS 자격증명과 migration 경계
+
+
+AWS의 Access·Document·AI·converter는 `fruition-access`, `fruition-document`, `fruition-pipeline`, `fruition-converter` Secret/ServiceAccount를 사용한다. AI 실행 역할들은 같은 AI 서비스 계정을 공유한다. ServiceAccount token 자동 마운트는 끈다. ExternalSecret은 Secrets Manager `fruition/app`에서 허용 키만 개별 투영하며 runtime에는 타 서비스 DB 또는 migration 자격증명을 넣지 않는다. Access에는 provider/S3 키를 넣지 않는다. Document·AI의 S3는 서로 다른 IRSA role을 사용하고 Access·converter는 S3 권한이 없다.
+
+DB bootstrap 이후 `access-migration`, `document-migration`, `ai-migration` Job을 실행하고 세 Job의 Complete를 확인한 후 runtime을 rollout한다. Java Job은 동일 bootJar의 `--migrate-only` 분기로 Spring 웹 서버를 시작하지 않고 자기 Flyway만 실행한다. AI Job은 `ai_schema.sql` 전체를 적용한다. production Java runtime은 Flyway를 끄고 Hibernate validate를 수행하며, AI runtime은 migration URL 없이 필수 Wiki·Agent·checkpoint 테이블을 검증한다.
+
+로컬 Compose/kind는 자기 서비스의 startup migration을 유지한다. kind도 Secret 전체 주입 대신 자기 서비스 키만 선택하며, MFA 키는 별도 `fruition-mfa` Secret으로 주입한다. 로컬 startup migration은 AWS runtime 무DDL 자격증명 계약의 개발 환경 예외다. 실제 AWS 순차 배포·Secret 동기화·회전 검증은 별도 배포 gate다.
+
+
+AWS 배포 스크립트는 임시 Kustomize 렌더 입력 검증 → 서비스별 Secret 준비 → 실제 DB 소유권·접속 사전검증 Job → 세 migration Job → Kafka/topic → 전체 Deployment/KEDA → 공개 OpenAPI smoke 순서를 강제한다. 성공 release는 manifest와 실제 public schema fingerprint를 기록하며, 자동 SHA 복구는 현재 schema가 이전 성공 기록과 동일할 때만 허용한다. DB 변경을 자동 되돌리지 않는다. GitHub feedback Environment 승인자/branch 제한은 외부 설정이며 OIDC trust는 동일 Environment subject를 사용한다. 실행 입력과 제한은 [배포 절차](script.md#aws-순차-배포와-동일-스키마-sha-복구)를 따른다.
+
+
+### AI 실행 로그와 Pod 확장
+
+Wiki ingestion 실행 로그는 실행 중부터 `s3://{bucket}/pipeline-runs/{run_id}/pipeline.log`에 저장한다. API는 ai_db의 run 존재·상태를 확인하고 동일 object를 조회하므로 worker의 작업 디렉터리나 노드에 의존하지 않는다. `log_path`와 manifest의 `pipeline_log`는 S3 URI이고, `output_dir`/`out`은 재처리·조회에 사용하지 않는 임시 작업 경로다. 명시적 CLI 디버그 실행은 로컬 로그를 유지한다.
+
+병렬 source/concept 로그는 실행별 lock 안에서 누적 후 저장한다. heartbeat·callback 실패 기록도 같은 저장 경로를 쓰며, 실행 로그는 취소에 따른 업무 object rollback journal에 포함하지 않는다. 종료된 run의 Kafka 재전달은 기존 DB 결과를 사용하고, running run의 전체 재시도는 첫 로그 저장부터 이전 시도의 로그를 대체한다. S3 저장 장애는 숨기지 않고 실행 실패로 전달한다.
+
+base의 API·ingest scratch는 개별 `emptyDir`이며 Compose도 공유 runs volume을 사용하지 않는다. AWS의 ingest·query·agent·maintenance·edit worker와 converter는 `fruition.io/node-role=ai-worker`, `fruition.io/ai-worker=true:NoSchedule` 계약으로 Spot node group을 사용한다. API와 Kafka는 이 taint를 허용하지 않아 General node에 남는다. 실제 다중 노드 재배치·Spot 중단 복구는 AWS 검증 gate다.
+
+
+### AWS 저장소·통신 권한
+
+S3 값 접근은 서비스 책임에 맞춰 prefix로 제한한다. Document는 `sources/documents/*`·`assets/*` 읽기/쓰기/삭제와 `wiki/*` 읽기를 갖는다. AI API·worker는 `sources/documents/*` 읽기, `wiki/*`·`agent-runs/*` 읽기/쓰기/삭제, `pipeline-runs/*` 읽기/쓰기를 갖는다. Document의 취소는 자기 문서·asset 파일만 삭제하고 AI object 복구는 내부 API로 AI에 위임한다. 로그는 취소 복구 대상이 아니므로 AI role에도 로그 삭제 권한을 주지 않는다. multipart 업로드의 중단·part 조회는 쓰기 prefix에만 허용한다.
+
+Document·AI에 해당 앱 bucket의 ListBucket은 허용한다. 없는 객체 GET을 404로 구분해야 신규 object journal/로그 조회가 동작하기 때문이다. 따라서 bucket 내부 key 이름은 공유되는 metadata 예외이며 object 값·쓰기·삭제 권한과 구분한다. 다른 bucket 권한은 없다. [S3 GET의 403/404 계약](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)
+
+Redis Access는 `auth:mfa:attempts:*`·`auth:email-availability:*` rate limit, `oauth:exchange:*` 일회용 교환 코드, `authz:role:*` 삭제만 허용한다. Document는 `authz:role:*` 적재/조회와 `query:*` 상태·이벤트, `query-events` pub/sub를 소유한다. AI는 `wiki:concept-index:*`만 읽기/쓰기/삭제한다. selectors로 Access의 projection SET을 거부하고 기본 사용자는 비활성화한다. Access의 workspace 단위 무효화에 쓰는 SCAN은 다른 서비스 key 이름까지 열람 가능한 metadata 예외다. 다른 key 값 조회·변경은 계속 거부한다. Concept write lock은 Redis가 아니라 ai_db advisory lock이다.
+
+AWS NetworkPolicy는 앱 Deployment와 migration/preflight Job에만 ingress/egress 기본 거부를 적용한다. Access↔Document, Document→Pipeline/Converter, AI→Access/Document/Converter의 실제 target port만 허용한다. ALB public subnet에서 업무 포트와 8082 healthcheck를 허용하고 DNS는 kube-system CoreDNS UDP/TCP 53, DB/Redis는 VPC CIDR의 5432/6379로 제한한다. migration/preflight는 DNS·DB만 갖고 앱은 외부 HTTPS, Access는 동일 설정 SMTP port를 허용한다. private·link-local 목적지는 외부 HTTPS 허용에서 제외한다. Kafka broker는 이 앱 deny 대상에서 제외하므로 Strimzi 내부 통신과 KEDA lag 조회가 유지되며 앱→broker 9092만 허용한다. VPC CNI `enableNetworkPolicy=true`를 IaC에서 켠다.
+
+정책은 IP/port 계층이므로 같은 VPC RDS 간의 endpoint별·DB별 구분은 DB role이 최종 경계다. 외부 HTTPS의 provider FQDN·HTTP path까지 제한하지 않는다. L4 허용은 내부 token/JWT 인가를 대체하지 않으며 실제 CNI/ALB/IRSA 연결은 AWS 검증 gate다.
+
+
+### IaC와 플랫폼 운영 경계
+
+현재 AWS 코드는 서울 feedback profile의 EKS 1.35와 AL2023 node, 명시적 managed addon build를 사용한다. app Terraform state는 S3 versioning·암호화·TLS·native lockfile로 관리하고 state bucket은 별도 bootstrap root가 소유한다. bootstrap local state는 관리자 보관 대상이다.
+
+플랫폼 관리자가 namespace·gp3·SecretStore·RBAC와 고정 버전 operator를 설치하고, 앱 deploy role은 fruition namespace 안의 업무 리소스만 변경한다. EKS cluster admin access policy는 앱 role에 부여하지 않는다. 플랫폼과 앱 명령은 쓰기 전에 실제 AWS 계정/EKS ARN 및 kubeconfig endpoint를 대조한다. 앱 workflow는 고정 egress/VPC 전용 runner와 feedback Environment를 사용하며 관리자 IAM·state 권한과 분리한다.
+
+IaC CI는 AWS credential 없이 Terraform backend=false init/validate, 실제 Kustomize 렌더, 가짜 CLI와 격리 DB/Redis 계약을 검증한다. 실제 addon build 가용성, ESO 2.9/EKS 1.35 호환, RBAC/IRSA/NetworkPolicy 집행, Spot 확장과 재해 복구는 미실행 AWS gate다. 실행과 승인·복구 절차는 [현행 운영 문서](script.md#aws-iac플랫폼-운영-절차)를 따른다.

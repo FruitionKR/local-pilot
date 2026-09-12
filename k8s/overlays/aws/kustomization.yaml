@@ -1,15 +1,18 @@
 # AWS(EKS) overlay — docs/backlog/Fruition_AWS_MSA_Architecture.md §8 소규모 profile.
 # 상태 계층은 RDS·ElastiCache·S3(Terraform: infra/terraform), Kafka는 base의 Strimzi 그대로.
-# REPLACE_ME_* 값은 README.md 절차대로 terraform output으로 치환한 뒤 apply한다.
+# scripts/aws_deploy.py가 임시 사본에서 입력 치환·검증한 뒤 순차 적용한다.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
+  - networkpolicy.yaml
   - ../../base
   - ingress.yaml
   - external-secrets.yaml
+  - service-accounts.yaml
+  - migration-jobs.yaml
 
-# CI가 kustomize edit set image로 태그를 커밋 SHA로 덮어쓴다.
+# 배포 스크립트가 임시 사본의 태그를 커밋 SHA로 설정한다.
 images:
   - name: fruition-document-svc
     newName: REPLACE_ME_ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/fruition-document-svc
@@ -29,8 +32,16 @@ images:
     newTag: latest
 
 patches:
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: internal-only-ingress
+        namespace: fruition
+      $patch: delete
   # 관리형 서비스 endpoint 주입
   - path: configmap-aws.yaml
+  - path: workload-credentials.yaml
 
   # NodePort(kind 전용) → ClusterIP. ALB Ingress가 대신 노출한다.
   - target:
@@ -121,8 +132,6 @@ patches:
             containers:
               - name: pipeline-agent-worker
                 imagePullPolicy: IfNotPresent
-  # pipeline-runs PVC(RWO, EBS)를 pipeline-api와 공유하므로 같은 노드에 강제 배치.
-  # S3 기반 아티팩트 저장으로 이전하면 이 affinity와 함께 AI Worker 노드 분리를 진행한다.
   - patch: |-
       apiVersion: apps/v1
       kind: Deployment
@@ -132,13 +141,6 @@ patches:
       spec:
         template:
           spec:
-            affinity:
-              podAffinity:
-                requiredDuringSchedulingIgnoredDuringExecution:
-                  - labelSelector:
-                      matchLabels:
-                        app: pipeline-api
-                    topologyKey: kubernetes.io/hostname
             containers:
               - name: ingest-worker
                 imagePullPolicy: IfNotPresent
@@ -208,3 +210,34 @@ patches:
             containers:
               - name: maintenance-task-worker
                 imagePullPolicy: IfNotPresent
+  # AI 비동기 처리와 변환을 Spot node group에 배치한다.
+  - target:
+      kind: Deployment
+      name: (ingest-worker|pipeline-agent-worker|query-task-worker|agent-task-worker|maintenance-task-worker|edit-event-consumer|converter)
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          fruition.io/node-role: ai-worker
+      - op: add
+        path: /spec/template/spec/tolerations
+        value:
+          - key: fruition.io/ai-worker
+            operator: Equal
+            value: "true"
+            effect: NoSchedule
+
+  - target:
+      kind: Kafka
+      name: kafka
+    patch: |-
+      - op: add
+        path: /spec/kafka/version
+        value: "4.3.0"
+  - target:
+      kind: KafkaNodePool
+      name: dual-role
+    patch: |-
+      - op: add
+        path: /spec/storage/volumes/0/class
+        value: gp3

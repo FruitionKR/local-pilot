@@ -1,5 +1,7 @@
 package fruition.access;
 
+import java.util.Arrays;
+import org.flywaydb.core.Flyway;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Import;
@@ -22,7 +24,25 @@ import fruition.shared.util.OpenApiConfig;
 public class AccessApplication {
 
     public static void main(String[] args) {
+        if (Arrays.asList(args).contains("--migrate-only")) {
+            Flyway.configure()
+                    .dataSource("jdbc:postgresql://" + requiredEnv("POSTGRES_HOST") + ":"
+                                    + requiredEnv("POSTGRES_PORT") + "/" + requiredEnv("ACCESS_DB_NAME")
+                                    + "?sslmode=" + System.getenv().getOrDefault("PGSSLMODE", "prefer"),
+                            requiredEnv("ACCESS_DB_MIGRATION_USER"), requiredEnv("ACCESS_DB_MIGRATION_PASSWORD"))
+                    .locations("classpath:db/migration")
+                    .load().migrate();
+            return;
+        }
         SpringApplication.run(AccessApplication.class, args);
+    }
+
+    private static String requiredEnv(String key) {
+        String value = System.getenv(key);
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("필수 migration 설정 누락: " + key);
+        }
+        return value;
     }
 
 }
