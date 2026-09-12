@@ -16,6 +16,9 @@
 | Python | 3.10+ | `python3 --version` |
 | curl | 기본 | `curl --version` |
 
+로컬 인프라와 backend 테스트는 Quay의 공식 MinIO 서버 `RELEASE.2025-09-07T16-13-09Z`를 사용한다.
+로컬 버킷 초기화용 `mc`도 `RELEASE.2025-08-13T08-35-41Z`로 고정한다.
+
 환경변수는 `infra/.env`에서 관리. 없으면 예시에서 복사.
 
 구동·재검증 명령에서 `infra/.env`를 shell source하지 않는다. `scripts/*.sh`의

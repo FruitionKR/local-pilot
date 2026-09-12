@@ -36,7 +36,8 @@ public class TestcontainersConfiguration {
 	// MinIO는 @ServiceConnection 지원이 없어 app.storage.* 를 직접 덮어쓴다.
 	@Bean
 	MinIOContainer minioContainer() {
-		return new MinIOContainer(DockerImageName.parse("minio/minio:latest"));
+		return new MinIOContainer(DockerImageName.parse("quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z")
+			.asCompatibleSubstituteFor("minio/minio"));
 	}
 
 	@Bean

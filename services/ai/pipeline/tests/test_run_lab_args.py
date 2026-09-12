@@ -237,6 +237,7 @@ def test_run_pipeline_parallelizes_concept_resolution_and_source_polish(
         concept_page_mode="skeleton",
     )
     with (
+        patch("run_lab.PipelineLog"),
         patch("run_lab._prepare_api_client", return_value=object()),
         patch(
             "run_lab._extract_pipeline_source",
