@@ -17,6 +17,6 @@ test("폴더 행의 파일 업로드 버튼은 idle 상태에서 숨긴다", () 
 test("폴더 행 hover 또는 keyboard focus 상태에서 파일 업로드 버튼을 표시한다", () => {
   assert.match(
     sidebarStyles,
-    /\.project-title:hover \.project-add-file,\s*\.project-title:focus-within \.project-add-file\s*\{[^}]*opacity:\s*1;[^}]*pointer-events:\s*auto;/s
+    /\.project-title:hover \.project-add-file,\s*\.project-title:has\(:focus-visible\) \.project-add-file\s*\{[^}]*opacity:\s*1;[^}]*pointer-events:\s*auto;/s
   );
 });

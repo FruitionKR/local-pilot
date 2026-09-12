@@ -92,6 +92,7 @@
 }
 
 .retry-button:hover {
+  --button-hover-overlay: none;
   background: #f3bd22;
 }
 
@@ -102,6 +103,7 @@
 }
 
 .login-button:hover {
+  --button-hover-overlay: none;
   border-color: #666;
   color: #fff;
   background: #262626;

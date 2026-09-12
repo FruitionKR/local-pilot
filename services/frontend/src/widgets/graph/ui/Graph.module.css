@@ -103,6 +103,7 @@
 
 .filter-chips .filter-chip:hover,
 .filter-chips .filter-chip:focus-visible {
+  --button-hover-overlay: none;
   background: rgba(255, 255, 255, 0.2);
 }
 

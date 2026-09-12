@@ -17,17 +17,21 @@ const MIME_TYPE_BADGES: [pattern: string, label: string][] = [
   ["plain", "TXT"]
 ];
 
-/** 파일 항목의 우측에 표시할 타입 배지 문구를 구한다. 알 수 없으면 null */
-function fileTypeBadge(item: TreeItem): string | null {
-  if (!isFileItem(item)) return null;
+/** 실제 파일명은 유지하고 표시할 이름과 우측 확장자를 분리한다. */
+function fileDisplay(item: TreeItem) {
+  if (!isFileItem(item)) return { name: item.label, badge: null };
+
+  const dotIndex = item.label.lastIndexOf(".");
+  if (dotIndex > 0 && dotIndex < item.label.length - 1) {
+    return {
+      name: item.label.slice(0, dotIndex),
+      badge: item.label.slice(dotIndex + 1).toUpperCase()
+    };
+  }
 
   const mimeType = item.mimeType ?? "";
   const matched = MIME_TYPE_BADGES.find(([pattern]) => mimeType.includes(pattern));
-  if (matched) return matched[1];
-
-  const extension = item.label.includes(".") ? item.label.split(".").pop() ?? "" : "";
-  const fromExtension = MIME_TYPE_BADGES.find(([, label]) => label.toLowerCase() === extension.toLowerCase());
-  return fromExtension ? fromExtension[1] : null;
+  return { name: item.label, badge: matched?.[1] ?? null };
 }
 
 export function TreeNode({
@@ -54,6 +58,7 @@ export function TreeNode({
   const isDropTarget = dropTarget?.projectId === projectId && dropTarget.targetId === item.id;
   const isFileDropTarget = fileDropTarget?.projectId === projectId && fileDropTarget.folderId === item.id;
   const isEditing = editing?.projectId === projectId && editing.itemId === item.id;
+  const display = fileDisplay(item);
   const {
     canDrag,
     handleDragStart,
@@ -110,8 +115,8 @@ export function TreeNode({
           />
         ) : (
           <>
-            <span>{item.label}</span>
-            {fileTypeBadge(item) && <small className={styles["tree-type-badge"]}>{fileTypeBadge(item)}</small>}
+            <span>{display.name}</span>
+            {display.badge && <small className={styles["tree-type-badge"]}>{display.badge}</small>}
             {isFileDropTarget && <small className={styles["tree-drop-hint"]}>여기에 추가</small>}
           </>
         )}

@@ -29,6 +29,7 @@ import { useTreeSelection } from "../model/useTreeSelection";
 import { buildGraphFromBackend } from "@/entities/graph/lib/graph";
 import { reflectDocumentToWiki, subscribeConvertStarted, uploadDocumentFile } from "@/entities/document";
 import { getErrorMessage } from "@/shared/lib/errors";
+import { getSelectedWorkspaceId } from "@/shared/lib/auth";
 import { buildGeneratedMarkdownFilename } from "@/features/agent-chat/lib/markdownAgent";
 import type { GeneratedMarkdownDraft } from "@/features/agent-chat/lib/markdownAgent";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
@@ -202,14 +203,50 @@ export function HomeWorkspace() {
     return null;
   }, [documents, projectTree.projects]);
 
-  // 최초 데이터 로딩 후 선택이 비어 있으면 사이드바에서 가장 위에 있는 노트를 연다.
+  // 같은 탭·워크스페이스의 마지막 문서를 복원하고, 없으면 첫 노트를 연다.
   const didAutoOpenRef = useRef(false);
   useEffect(() => {
-    if (!isHomeView || isGraphLoading || didAutoOpenRef.current || !firstSidebarNote) return;
+    if (!isHomeView || isGraphLoading || apiError || didAutoOpenRef.current) return;
     if (selection.selectedDocumentId || selection.selectedPreviewTarget) return;
+    const workspaceId = getSelectedWorkspaceId();
+    if (!workspaceId) return;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(`fruition.last-document.${workspaceId}`) ?? "null");
+      const document = documents.find((item) => item.id === saved?.documentId);
+      if (document) {
+        didAutoOpenRef.current = true;
+        selection.openSourceBlockPreview(document.id, document.filename, []);
+        return;
+      }
+      const page = wikiGraph.nodes.find((node) => node.id === saved?.pageId);
+      if (page && (page.page_type === "source" || page.page_type === "concept")) {
+        didAutoOpenRef.current = true;
+        selection.openWikiPagePreview(page.id, page.title, page.page_type);
+        return;
+      }
+    } catch {
+      // 저장소를 사용할 수 없거나 값이 손상되면 첫 노트를 연다.
+    }
+    if (!firstSidebarNote) return;
     didAutoOpenRef.current = true;
     selection.selectTreeGraphNode(firstSidebarNote);
-  }, [firstSidebarNote, isGraphLoading, isHomeView, selection]);
+  }, [apiError, documents, firstSidebarNote, isGraphLoading, isHomeView, selection, wikiGraph.nodes]);
+
+  useEffect(() => {
+    const documentId = selection.selectedDocumentId;
+    const pageId = selection.selectedPreviewTarget?.pageId;
+    if (!documentId && !pageId) return;
+    const workspaceId = getSelectedWorkspaceId();
+    if (!workspaceId) return;
+    try {
+      window.sessionStorage.setItem(
+        `fruition.last-document.${workspaceId}`,
+        JSON.stringify({ documentId, pageId })
+      );
+    } catch {
+      // 저장소가 차단되어도 문서 열람은 계속한다.
+    }
+  }, [selection.selectedDocumentId, selection.selectedPreviewTarget?.pageId]);
 
   function handleViewChange(view: RailView) {
     // 다른 화면에서 열어 둔 문서(홈 자동 열기 포함)의 포커스가 그래프 선택으로 이어지지 않게 한다.
@@ -467,10 +504,6 @@ export function HomeWorkspace() {
             operationId={operationLogFeed.selectedOperationId}
             restoredOperationIds={operationLogFeed.restoredOperationIds}
             documentTitles={documentTitles}
-            onOpenTargetDocument={(documentId, title) => {
-              selection.openSourceBlockPreview(documentId, title, []);
-              setActiveView("home");
-            }}
             onRestoreComplete={operationLogFeed.refresh}
           />
         ) : activeView === "settings" ? (
