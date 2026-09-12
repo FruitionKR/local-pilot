@@ -153,6 +153,12 @@ docker compose --env-file infra/.env \
 ./scripts/back-test.sh :document-svc:test --tests 'fruition.core.aihistory.*'
 ```
 
+백엔드 통합 테스트에는 실행 중인 Docker가 필요하다. 테스트용 MinIO는 공개
+`minio/minio:latest`를 내려받지 않고 `document-svc/src/test/resources/minio/Dockerfile`의
+고정 소스 커밋으로 빌드한다. 첫 실행에는 Go 빌더·Alpine 이미지와 Go 모듈을 내려받고
+컴파일하는 시간이 추가되며, 같은 테스트 JVM의 Spring 컨텍스트들은 빌드 결과를 공유한다.
+이 설정은 백엔드 테스트에만 적용한다. 개발 Compose와 Kubernetes의 MinIO 이미지는 별도 설정이다.
+
 스크립트 사용(인프라 기동 포함, Flyway 소유자인 document-svc를 먼저 시작).
 
 ```sh
@@ -494,3 +500,20 @@ RUN_LIVE_TASK_E2E=1 services/ai/pipeline/.venv/bin/python -m pytest \
 입력·계획·실행·복구 결과는 `/tmp/ai-cancel-e2e-report.json`에 저장합니다.
 `AI_CANCEL_E2E_REPORT`로 경로를 바꿀 수 있습니다. 테스트 workspace는 결과 확인을 위해 남깁니다.
 기본 테스트 실행에서는 이 검증을 건너뜁니다. 검증 범위는 [AI 작업 취소 API](api/ai/tasks.md#검증-범위)를 참고합니다.
+
+## Markdown 편집 평가자 비교
+
+`services/ai/pipeline`에서 실행한다. 생성·재시도에는 `OPENAI_API_KEY`, 별도 블라인드 평가에는 `GEMINI_API_KEY` 환경 변수가 필요하며 실제 모델 비용이 발생한다. 저장된 최초 초안은 합성 편집 사례이며, 재생 이후 호출만 새로 실행한다.
+
+```sh
+python evaluate_markdown_edit.py --baseline-ref 0c46c9de \
+  --replay evals/markdown_edit_evaluator/first_drafts.json \
+  --workers 6 --output /tmp/markdown-edit-paired.json
+python review_markdown_edit_results.py --results /tmp/markdown-edit-paired.json \
+  --calibration evals/markdown_edit_evaluator/judge_cases.json \
+  --output /tmp/markdown-edit-reviewed.json
+```
+
+평가자 제거 대조군은 실험 코드에서만 사용하며 서비스에는 평가 우회 옵션이 없다. 별도 평가자는 버전 정보를 받지 않고 동일한 출력은 한 번만 평가한다. 성공 건수는 결과 반환·코드 검사·별도 모델 평가를 모두 통과한 경우만 센다. 평가자 자체의 통과율을 정답률로 세지 않는다.
+
+초안을 새로 수집하려면 `--replay`를 빼고 `--repeat 3`으로 실행한다. [측정 결과와 한계](adr/0011-user-approved-markdown-edits.md#검증)를 함께 확인한다.

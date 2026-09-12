@@ -12,12 +12,16 @@ import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.utility.DockerImageName;
 
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
 
 	private static final String TEST_BUCKET = "fruition-test";
+	// 공개 MinIO 이미지 대신 고정 소스로 빌드하며, 여러 Spring 컨텍스트에서 같은 이미지를 사용한다.
+	private static final ImageFromDockerfile MINIO_IMAGE = new ImageFromDockerfile()
+			.withFileFromClasspath("Dockerfile", "minio/Dockerfile");
 
 	@Bean
 	@ServiceConnection
@@ -36,7 +40,8 @@ public class TestcontainersConfiguration {
 	// MinIO는 @ServiceConnection 지원이 없어 app.storage.* 를 직접 덮어쓴다.
 	@Bean
 	MinIOContainer minioContainer() {
-		return new MinIOContainer(DockerImageName.parse("minio/minio:latest"));
+		return new MinIOContainer(DockerImageName.parse(MINIO_IMAGE.get())
+				.asCompatibleSubstituteFor("minio/minio"));
 	}
 
 	@Bean
