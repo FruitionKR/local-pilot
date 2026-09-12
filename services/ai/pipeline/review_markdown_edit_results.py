@@ -106,10 +106,11 @@ def main():
         errors = 0
         failures = []
         for r in rows:
+            draft_id = r.get("draft_id", f"{r['variant']}:{r['id']}:{r['run']}")
             if not r["returned"]:
                 failures.append(
                     {
-                        "draft_id": r["draft_id"],
+                        "draft_id": draft_id,
                         "reason": "blocked",
                         "failures": r["contract_failures"],
                     }
@@ -123,7 +124,7 @@ def main():
             errors += a["passed"] is None
             if not r["passed"] or a["passed"] is not True:
                 failures.append(
-                    {"draft_id": r["draft_id"], "reason": "assessor", "assessment": a}
+                    {"draft_id": draft_id, "reason": "assessor", "assessment": a}
                 )
         payload["summary"][variant] = {
             "total": len(rows),

@@ -1,9 +1,36 @@
+import json
 from unittest.mock import Mock, patch
 
 from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownOutputContractError,
 )
 from evaluate_markdown_edit import CASES, RecordingClient, run_case, summarize
+
+
+def test_independent_review_handles_fresh_and_replayed_failure_ids(tmp_path, monkeypatch):
+    import review_markdown_edit_results as review
+
+    calibration = tmp_path / "calibration.json"
+    calibration.write_text(json.dumps([{"id": str(i), "expected_passed": True} for i in range(12)]))
+    rows = [
+        {"variant": "candidate", "id": CASES[0].id, "run": run,
+         "returned": returned, "passed": False, "contract_failures": ["rejected"],
+         "replacement_markdown": "invalid"}
+        for run, returned in [(1, False), (2, True), (3, False)]
+    ]
+    rows[2]["draft_id"] = "recorded-id"
+    results, output = tmp_path / "results.json", tmp_path / "review.json"
+    results.write_text(json.dumps({"results": rows}))
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr("sys.argv", ["review", "--results", str(results),
+                                    "--calibration", str(calibration), "--output", str(output)])
+    monkeypatch.setattr(review, "assess", lambda item, **kwargs: {
+        "passed": item.get("expected_passed", False), "raw": {}})
+    review.main()
+    summary = json.loads(output.read_text())["summary"]["candidate"]
+    assert summary["passed"] == 0
+    assert [r["draft_id"] for r in summary["failures"]] == [
+        f"candidate:{CASES[0].id}:1", f"candidate:{CASES[0].id}:2", "recorded-id"]
 
 
 def test_replay_consumes_first_generation_once_without_a_model_call():
