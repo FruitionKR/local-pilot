@@ -238,14 +238,20 @@ export function AgentBody({
             className={cx(
               styles["chat-pair"],
               isPairSelectionMode && isSelectable && styles["is-selection-candidate"],
-              isPairSelectionMode && isExcluded && styles["is-excluded"],
-              isPairSelectionMode && !isSelected && !isExcluded && styles["is-dimmed"],
+              isPairSelectionMode && !isSelectable && styles["is-excluded"],
               isSelected && styles["is-selected"],
               isRangeStart && styles["is-range-start"],
               isRangeEnd && styles["is-range-end"]
             )}
-            aria-disabled={isPairSelectionMode && isExcluded ? true : undefined}
+            aria-disabled={isPairSelectionMode && !isSelectable ? true : undefined}
           >
+            {isPairSelectionMode && (
+              <div className={styles["chat-pair-selection-label"]}>
+                {isSelectable
+                  ? isSelected ? "✓ 선택됨" : "선택 가능 · 클릭하여 범위 지정"
+                  : isExcluded ? "선택 불가 · 문서·Skill 명령" : "선택 불가 · 완료된 문답이 아닙니다"}
+              </div>
+            )}
             {isPairSelectionMode && isSelectable && (
               <button
                 type="button"

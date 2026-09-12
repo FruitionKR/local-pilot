@@ -1297,20 +1297,61 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("채팅 export 문서는 일반 재처리를 거절한다(재-export 경로만 사용)")
-    void ingest_chatExport_isRejected() {
+    @DisplayName("채팅 export 문서는 저장한 문답과 출처 블록으로 수동 ingest한다")
+    void ingest_chatExport_preservesSourceBlocks() {
         stubOwnedWorkspace();
         Document chatDoc = new Document(
                 "chatdoc_ro2", WORKSPACE_ID, USER_ID, "대화.md", "text/markdown", 4,
                 "sources/documents/chatdoc_ro2/original", "chat-hash", "chat_export");
+        chatDoc.updateStatus(fruition.core.document.domain.DocumentStatus.uploaded, null, null, null);
+        chatDoc.assignSelectionMode("full");
+        chatDoc.assignPipelineInput("Q : 질문\nA : 답변", "[{\"block_id\":\"session_1:pair_1\",\"text\":\"문답\"}]");
         when(documentRepository.findByIdAndWorkspaceIdForUpdate(chatDoc.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(chatDoc));
 
+        documentService.ingest(WORKSPACE_ID, USER_ID, chatDoc.getId());
+
+        assertThat(chatDoc.getStatus()).isEqualTo(fruition.core.document.domain.DocumentStatus.processing);
+        assertThat(chatDoc.getPipelineInputBlocks()).contains("session_1:pair_1");
+        verify(ingestCommandOutbox).enqueue(
+                anyString(), eq(chatDoc.getId()), eq(USER_ID), eq(WORKSPACE_ID), eq("full"),
+                eq(chatDoc.getPipelineInputMarkdown()), eq(chatDoc.getPipelineInputBlocks()),
+                eq(false), any(), anyLong(), any());
+        verifyNoInteractions(editLockService, editStateInitializer, minioClient);
+
         assertThatThrownBy(() -> documentService.ingest(WORKSPACE_ID, USER_ID, chatDoc.getId()))
-                .isInstanceOf(InvalidMarkdownContentException.class)
-                .hasMessageContaining("재-export");
-        verify(ingestCommandOutbox, never()).enqueue(
-                any(), any(), any(), any(), any(), any(), any(), anyBoolean(), any(), anyLong(), any());
+                .isInstanceOf(fruition.core.document.exception.DocumentAlreadyProcessingException.class);
+    }
+
+    @Test
+    @DisplayName("채팅 편입은 원문과 출처 블록만 저장하고 ingest 작업을 만들지 않는다")
+    void createChatExportDocument_savesWithoutIngest() throws Exception {
+        when(documentRepository.findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
+                any(), any(), any(), any())).thenReturn(Optional.empty());
+        AtomicReference<Document> saved = new AtomicReference<>();
+        when(documentRepository.reserveChatExport(
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyLong(), anyString(), anyString(), anyString(), anyString(),
+                anyLong(), anyString(), anyLong(), any(), any(), anyString())).thenAnswer(invocation -> {
+                    assertThat((String) invocation.getArgument(8)).isEqualTo("uploaded");
+                    Document document = new Document(invocation.getArgument(0), WORKSPACE_ID, USER_ID,
+                            invocation.getArgument(3), "text/markdown", 10L, invocation.getArgument(9),
+                            "hash-1", "chat_export");
+                    document.updateStatus(fruition.core.document.domain.DocumentStatus.uploaded, null, null, null);
+                    saved.set(document);
+                    return 1;
+                });
+        when(documentRepository.findById(anyString())).thenAnswer(invocation -> Optional.of(saved.get()));
+
+        var result = documentService.createChatExportDocument(WORKSPACE_ID, USER_ID, "질문", "Q : 질문\nA : 답변",
+                "hash-1", DELTA_BLOCKS);
+
+        assertThat(result.skipped()).isFalse();
+        assertThat(saved.get().getPipelineInputMarkdown()).isEqualTo("Q : 질문\nA : 답변");
+        assertThat(saved.get().getPipelineInputBlocks()).contains("session_1:pair_1");
+        assertThat(saved.get().getProcessingStartedAt()).isNull();
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+        verifyNoInteractions(ingestCommandOutbox, ingestOperationStarter, taskWriter);
     }
 
     @Test

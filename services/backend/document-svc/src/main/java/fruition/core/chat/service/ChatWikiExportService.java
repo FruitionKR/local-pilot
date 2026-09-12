@@ -26,7 +26,7 @@ import java.util.Set;
 /**
  * 채팅 세션을 Wiki page화하기 위한 export 오케스트레이션.
  *
- * 세션을 Markdown으로 직렬화·마스킹한 뒤, 문서 저장/큐 등록은 {@link DocumentService}에 위임한다.
+ * 세션을 Markdown으로 직렬화·마스킹한 뒤, 문서 저장은 {@link DocumentService}에 위임한다.
  * 실제 위키 생성은 기존 문서 ingestion 파이프라인이 담당한다. (docs/backlog/spec/chat-to-wiki-contract.md)
  *
  * export는 언제나 선택한 문답만 담은 새 문서를 만든다. 세션에 누적하거나 기존 문서를 재사용하지 않으므로
@@ -69,7 +69,7 @@ public class ChatWikiExportService {
         return buildMaskedSource(session, messages).markdown();
     }
 
-    /** 선택된(full=전체 / partial=선택 문답) 채팅을 원문 문서로 저장한 뒤 일반 ingest 큐에 등록한다. */
+    /** 선택된(full=전체 / partial=선택 문답) 채팅을 원문 문서로 저장한다. Ingest는 별도로 요청한다. */
     @Transactional
     public ChatWikiExportResponse export(String workspaceId, String userId, String sessionId,
                                          ChatWikiExportRequest request) {
@@ -91,7 +91,7 @@ public class ChatWikiExportService {
                 workspaceId, userId, titleOf(source, session), source.markdown(), contentHash,
                 pipelineBlocks(source));
 
-        String status = result.skipped() ? "skipped" : "processing";
+        String status = result.skipped() ? "skipped" : "saved";
         log.info("[chat-wiki][export] 등록 session={} document={} status={}", sessionId, result.documentId(), status);
         return new ChatWikiExportResponse(result.documentId(), status);
     }
@@ -111,11 +111,13 @@ public class ChatWikiExportService {
     /** 본문과 블록 텍스트 모두 같은 규칙으로 마스킹한다. 블록이 파이프라인 입력이므로 여기서 새는 값이 없어야 한다. */
     private ChatWikiSource buildMaskedSource(ChatSession session, List<ChatMessage> messages) {
         ChatWikiSource source = serializer.serialize(session, messages);
-        return new ChatWikiSource(
+        ChatWikiSource masked = new ChatWikiSource(
                 secretMasker.mask(source.markdown()),
                 source.blocks().stream()
                         .map(block -> new ChatSourceBlock(block.blockId(), secretMasker.mask(block.text())))
                         .toList());
+        String title = secretMasker.mask(titleOf(masked, session)).replaceAll("\\s+", " ").strip();
+        return new ChatWikiSource("# " + title + "\n\n" + masked.markdown(), masked.blocks());
     }
 
     private List<DocumentService.PipelineSourceBlock> pipelineBlocks(ChatWikiSource source) {
@@ -144,7 +146,7 @@ public class ChatWikiExportService {
      * 질문을 못 쓰는 경우에만 세션 제목으로 떨어진다. 세션 ID는 사용자에게 보이는 이름에 넣지 않는다.
      */
     private String titleOf(ChatWikiSource source, ChatSession session) {
-        String question = firstQuestion(source);
+        String question = source.isEmpty() ? "" : firstQuestion(source);
         if (!question.isBlank()) {
             return question;
         }

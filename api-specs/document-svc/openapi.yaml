@@ -1039,7 +1039,7 @@ paths:
       - Query
   /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki:
     post:
-      description: 세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다.
+      description: 세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 저장합니다. Ingest는 문서에서 별도로 요청합니다.
       operationId: exportToWiki
       parameters:
       - example: ws_9d47a0e9a6324341b47562553b75f92a
@@ -1063,12 +1063,12 @@ paths:
               $ref: "#/components/schemas/ChatWikiExportRequest"
         required: true
       responses:
-        "202":
+        "200":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ChatWikiExportResponse"
-          description: Wiki 생성 작업이 대기열에 등록됨
+          description: 채팅 원문 문서 저장 완료 또는 기존 문서 반환
       summary: 채팅 Wiki page화
       tags:
       - Chat Sessions
@@ -1856,7 +1856,7 @@ paths:
       - Documents
   /api/workspaces/{workspace_id}/documents/{document_id}/ingest:
     post:
-      description: 편집 가능 Markdown 문서를 최신 편집본으로 다시 Wiki 파이프라인에 넣습니다. 편집본을 원본으로 승격한 뒤 재처리합니다.
+      description: Markdown 문서를 Wiki 파이프라인에 넣습니다. 일반 문서는 최신 편집본을 원본으로 승격하고, 채팅 문서는 저장된 문답과 출처 블록을 그대로 사용합니다.
       operationId: ingest
       parameters:
       - example: ws_9d47a0e9a6324341b47562553b75f92a
@@ -4400,7 +4400,7 @@ components:
           example: doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83
     ChatWikiExportRequest:
       type: object
-      description: 채팅 내용을 Markdown 원문 문서로 추출한 뒤 일반 Ingest로 보내는 요청
+      description: 채팅 내용을 Markdown 원문 문서로 저장하는 요청
       properties:
         pair_ids:
           type: array
@@ -4409,7 +4409,7 @@ components:
             type: string
     ChatWikiExportResponse:
       type: object
-      description: 채팅 원문 문서 생성 및 일반 Ingest 접수 결과. 실제 처리는 비동기다.
+      description: 채팅 원문 문서 저장 결과. Ingest는 별도로 요청한다.
       properties:
         exportDocumentId:
           type: string
@@ -4417,11 +4417,11 @@ components:
           example: doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83
         status:
           type: string
-          description: "processing은 새로 등록, skipped는 같은 내용이 이미 있어 건너뜀을 뜻한다."
+          description: "saved는 저장 완료, skipped는 같은 내용이 이미 있어 건너뜀을 뜻한다."
           enum:
-          - processing
+          - saved
           - skipped
-          example: processing
+          example: saved
     ContributionRequest:
       type: object
       properties:
