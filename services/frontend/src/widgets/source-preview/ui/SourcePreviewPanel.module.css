@@ -1,6 +1,6 @@
 /* source-preview 위젯 스타일. 기존 app/styles/source-preview.css의 source-preview-* / document-review-button
    규칙과 responsive.css의 source-preview 소유분을 병합했다.
-   .workspace.is-* 상태와 .agent-panel.is-markdown-reviewing 은 전역 앵커라 :global 로 참조하고,
+   .workspace.is-* 상태는 전역 앵커라 :global 로 참조하고,
    markdown-* 콘텐츠 어휘 override 역시 :global 로 참조한다. */
 
 .source-preview-panel {
@@ -28,10 +28,6 @@
 }
 
 :global(.workspace.is-agent-collapsed) .source-preview-panel.is-main {
-  right: 0;
-}
-
-:global(.workspace.is-document-main:has(.agent-panel.is-markdown-reviewing)) .source-preview-panel.is-main {
   right: 0;
 }
 
