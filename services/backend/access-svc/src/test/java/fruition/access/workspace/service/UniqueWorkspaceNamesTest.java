@@ -110,6 +110,34 @@ class UniqueWorkspaceNamesTest {
     }
 
     @Test
+    void concurrentOwnerAddsPreserveForeignKeyLocksWithoutDeadlock() throws Exception {
+        String workspace = workspace(user(), "동시 소유자 추가");
+        String firstOwner = user();
+        String secondOwner = user();
+        var barrier = new CyclicBarrier(2);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            java.util.function.Function<String, java.util.concurrent.Callable<Boolean>> addOwner = owner -> () ->
+                    transaction.execute(status -> {
+                        // FK 검증이 얻는 KEY SHARE를 두 요청 모두 보유한 상태에서 트리거를 실행한다.
+                        jdbc.queryForObject("SELECT id FROM workspaces WHERE id = ? FOR KEY SHARE", String.class, workspace);
+                        try {
+                            barrier.await(5, TimeUnit.SECONDS);
+                        } catch (Exception error) {
+                            throw new IllegalStateException(error);
+                        }
+                        member(workspace, owner, "OWNER");
+                        return true;
+                    });
+            var first = executor.submit(addOwner.apply(firstOwner));
+            var second = executor.submit(addOwner.apply(secondOwner));
+            assertThat(first.get(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(second.get(10, TimeUnit.SECONDS)).isTrue();
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM workspace_name_reservations WHERE workspace_id = ?",
+                Integer.class, workspace)).isEqualTo(3);
+    }
+
+    @Test
     void concurrentCreatesCommitExactlyOneWorkspaceWithoutOrphans() throws Exception {
         String owner = user();
         var barrier = new CyclicBarrier(2);

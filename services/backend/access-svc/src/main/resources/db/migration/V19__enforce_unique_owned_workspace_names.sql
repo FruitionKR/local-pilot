@@ -19,7 +19,8 @@ DECLARE
     current_workspace workspaces%ROWTYPE;
 BEGIN
     -- 이름 변경과 소유권 변경이 동시에 일어나도 같은 workspace를 기준으로 직렬화한다.
-    SELECT * INTO current_workspace FROM workspaces WHERE id = target_id FOR UPDATE;
+    -- 멤버십 FK의 KEY SHARE와 호환되도록 키를 바꾸지 않는 잠금을 사용한다.
+    SELECT * INTO current_workspace FROM workspaces WHERE id = target_id FOR NO KEY UPDATE;
     DELETE FROM workspace_name_reservations WHERE workspace_id = target_id;
     IF current_workspace.id IS NOT NULL AND current_workspace.deleted_at IS NULL THEN
         INSERT INTO workspace_name_reservations (workspace_id, user_id, normalized_name)
