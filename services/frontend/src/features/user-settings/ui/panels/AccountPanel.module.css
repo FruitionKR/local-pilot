@@ -1,5 +1,12 @@
 /* 계정 설정 패널 전용 스타일 (Figma 963:8660). */
 
+.password-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+
 /* 로그인된 기기 수 표시용 알약 버튼 */
 .pill {
   flex: 0 0 auto;
@@ -14,4 +21,64 @@
 
 .pill:disabled {
   cursor: default;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.user-agent {
+  overflow-wrap: anywhere;
+}
+
+.recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.recovery-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mfa-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.mfa-qr {
+  width: 224px;
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+.mfa-manual {
+  width: 100%;
+  color: var(--muted);
+}
+
+.mfa-manual summary {
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.mfa-manual input {
+  width: 100%;
+}
+
+.mfa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }

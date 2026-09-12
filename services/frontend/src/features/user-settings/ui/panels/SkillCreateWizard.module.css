@@ -211,6 +211,7 @@
 
 .scope-option:hover,
 .scope-option:focus-visible {
+  --button-hover-overlay: none;
   background: var(--soft, #323232);
 }
 

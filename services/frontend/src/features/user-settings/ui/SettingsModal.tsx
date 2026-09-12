@@ -11,7 +11,7 @@ import {
   type AiModel,
   type AiModelSelection
 } from "@/entities/ai";
-import { fetchMe, useUserPreferences } from "@/entities/user";
+import { useMe, useUserPreferences } from "@/entities/user";
 import { useWorkspaceName } from "@/entities/workspace/model/useWorkspaceName";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { useEscapeKey } from "@/shared/lib/useEscapeKey";
@@ -34,11 +34,11 @@ type SettingsSection = "account" | "notifications" | "general" | "members" | "sk
 
 /** 설정 모달 (Figma 963:8660 / 963:8257 / 771:18800 / 981:10091). */
 export function SettingsModal({ onClose }: { onClose: () => void }) {
+  const [mfaNavigationLocked, setMfaNavigationLocked] = useState(false);
   const workspaceName = useWorkspaceName();
   const { preferences, updatePreferences } = useUserPreferences();
   const [activeSection, setActiveSection] = useState<SettingsSection>("account");
-  const [displayName, setDisplayName] = useState("");
-  const [email, setEmail] = useState("");
+  const { data: me } = useMe();
   const [aiModels, setAiModels] = useState<AiModel[]>([]);
   const [aiModelSelection, setAiModelSelection] = useState<AiModelSelection | null>(null);
   const [aiModelError, setAiModelError] = useState<string | null>(null);
@@ -48,15 +48,6 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchMe()
-      .then((me) => {
-        if (cancelled) return;
-        setDisplayName(me.display_name || "");
-        setEmail(me.email || "");
-      })
-      .catch(() => {
-        // 표시용 데이터라 실패 시 빈 값을 유지한다.
-      });
     fetchAiModels()
       .then((models) => {
         if (!cancelled) setAiModels(models);
@@ -79,9 +70,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  useEscapeKey(true, onClose);
+  useEscapeKey(!mfaNavigationLocked, onClose);
 
-  const name = displayName || "사용자";
+  const name = me?.display_name || "사용자";
   const wsName = workspaceName ?? "워크스페이스";
 
   async function selectAiProvider(provider: string) {
@@ -107,7 +98,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
   // 사이드바(z-index 스태킹 컨텍스트) 내부에 렌더되면 편집기 등에 가려지므로 body로 portal한다.
   return createPortal(
-    <div className={styles.overlay} onClick={onClose}>
+    <div className={styles.overlay} onClick={() => { if (!mfaNavigationLocked) onClose(); }}>
       <div
         className={styles.modal}
         role="dialog"
@@ -121,6 +112,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className={`${styles["nav-row"]} ${activeSection === "account" ? styles["is-active"] : ""}`}
+              disabled={mfaNavigationLocked}
               onClick={() => setActiveSection("account")}
             >
               <span className={styles["nav-avatar"]} aria-hidden>{name.charAt(0)}</span>
@@ -129,6 +121,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className={`${styles["nav-row"]} ${activeSection === "notifications" ? styles["is-active"] : ""}`}
+              disabled={mfaNavigationLocked}
               onClick={() => setActiveSection("notifications")}
             >
               <SvgIcon src={bellIcon} className={styles["nav-icon"]} />
@@ -140,6 +133,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className={`${styles["nav-row"]} ${activeSection === "general" ? styles["is-active"] : ""}`}
+              disabled={mfaNavigationLocked}
               onClick={() => setActiveSection("general")}
             >
               <SvgIcon src={settingIcon} className={styles["nav-icon"]} />
@@ -148,6 +142,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className={`${styles["nav-row"]} ${activeSection === "members" ? styles["is-active"] : ""}`}
+              disabled={mfaNavigationLocked}
               onClick={() => setActiveSection("members")}
             >
               <SvgIcon src={userCircleOutlineIcon} className={styles["nav-icon"]} />
@@ -156,6 +151,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className={`${styles["nav-row"]} ${activeSection === "skills" ? styles["is-active"] : ""}`}
+              disabled={mfaNavigationLocked}
               onClick={() => setActiveSection("skills")}
             >
               <SvgIcon src={lightningIcon} className={styles["nav-icon"]} />
@@ -164,8 +160,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           </div>
         </nav>
 
-        <div className={styles.content}>
-          {activeSection === "account" && <AccountPanel name={name} email={email} />}
+        <div className={styles.content} data-section={activeSection}>
+          {activeSection === "account" && <AccountPanel onMfaNavigationLockChange={setMfaNavigationLocked} />}
           {activeSection === "notifications" && (
             <NotificationsPanel
               notifications={preferences.notifications}
@@ -187,9 +183,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               onSelectProvider={(provider) => void selectAiProvider(provider)}
             />
           )}
-          {activeSection === "members" && <MembersPanel name={name} email={email} />}
+          {activeSection === "members" && <MembersPanel onLeave={onClose} />}
           {activeSection === "skills" && <SkillsPanel />}
-          <button type="button" className={styles.close} aria-label="설정 닫기" onClick={onClose}>
+          <button type="button" className={styles.close} aria-label="설정 닫기" disabled={mfaNavigationLocked} onClick={onClose}>
             <SvgIcon src={plusIcon} className={styles["close-icon"]} />
           </button>
         </div>
