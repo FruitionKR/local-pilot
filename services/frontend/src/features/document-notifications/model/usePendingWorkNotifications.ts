@@ -151,7 +151,7 @@ export function usePendingWorkNotifications(documents: DocumentItemResponse[]) {
         const targets = documentsRef.current.filter(
           (document) => queuedIds.has(document.id) && document.status === "uploaded"
         );
-        publishIngestPrompt(targets, "새 문서가 업로드되었습니다");
+        publishIngestPrompt(targets, "새 문서가 추가되었습니다");
       }, INGEST_PROMPT_DEBOUNCE_MS);
     }
   }, [documents]);

@@ -35,7 +35,7 @@ class ChatWikiMarkdownSerializerTest {
 
         ChatWikiMarkdownSerializer.ChatWikiSource source = serializer.serialize(session, messages);
 
-        assertThat(source.markdown()).startsWith("# Chat Export");
+        assertThat(source.markdown()).startsWith("Q : LangSmith 연결은 어디서 봐?");
         assertThat(source.markdown()).contains("Q : LangSmith 연결은 어디서 봐?");
         assertThat(source.markdown()).contains("A : traces 화면에서 확인합니다.");
         assertThat(source.markdown()).doesNotContain("session_1").doesNotContain("pair_1");

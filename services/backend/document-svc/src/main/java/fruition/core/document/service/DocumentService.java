@@ -731,7 +731,7 @@ public class DocumentService {
 
     /**
      * 채팅 export 문서는 읽기 전용이다. 본문을 사람이 고치면 문답 경계를 다시 알아낼 수 없어
-     * source block provenance가 끊긴다. 재처리는 채팅 세션의 재-export 경로만 쓴다.
+     * source block provenance가 끊긴다. Ingest는 저장된 문답과 출처 블록을 사용한다.
      */
     private void requireNotChatExport(Document document, String message) {
         if ("chat_export".equals(document.getOrigin())) {
@@ -758,7 +758,7 @@ public class DocumentService {
     private static final String CHAT_EXPORT_SELECTION_MODE = "partial";
 
     /**
-     * 채팅 export Markdown을 문서로 저장하고 처리 큐에 등록한다. (권한 검증은 호출부에서 이미 수행)
+     * 채팅 export Markdown을 원문 문서로 저장한다. Ingest는 별도로 요청한다. (권한 검증은 호출부에서 이미 수행)
      * contentHash로 중복을 확인해, 이미 있으면 기존 문서 id로 skipped 결과를 반환한다.
      */
     @Transactional
@@ -774,8 +774,6 @@ public class DocumentService {
             return new ExportDocumentResult(existing.get().getId(), true);
         }
 
-        String exportRunId = UUID.randomUUID().toString();
-        taskWriter.begin(exportRunId, workspaceId, userId, "document");
         String documentId = "chatdoc_" + UUID.randomUUID().toString().replace("-", "");
         String objectPath = "sources/documents/" + documentId + "/original";
         byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
@@ -784,6 +782,7 @@ public class DocumentService {
                 documentId, workspaceId, userId, uniqueChatExportFilename(workspaceId, displayName, null),
                 "text/markdown", bytes.length, objectPath, contentHash, "chat_export");
         candidate.assignSelectionMode(CHAT_EXPORT_SELECTION_MODE);
+        candidate.updateStatus(DocumentStatus.uploaded, null, null, null);
         if (documentRepository.reserveChatExport(
                 candidate.getId(), candidate.getWorkspaceId(), candidate.getUserId(),
                 candidate.getFilename(), candidate.getDisplayName(), candidate.getNormalizedFilename(),
@@ -819,8 +818,6 @@ public class DocumentService {
         log.info("[채팅 export 문서 DB 저장 완료] documentId={} workspaceId={} userId={} filename={} selectionMode={} status={} sourceUri={}",
                 document.getId(), document.getWorkspaceId(), document.getUserId(), document.getFilename(),
                 document.getSelectionMode(), document.getStatus(), document.getSourceUri());
-
-        enqueueIngest(document, exportRunId);
 
         return new ExportDocumentResult(documentId, false);
     }
@@ -1572,11 +1569,19 @@ public class DocumentService {
                 .filter(value -> value.getDeletedAt() == null)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         verifyDocumentOwner(document, userId);
+        if ("chat_export".equals(document.getOrigin())) {
+            if (document.getStatus() == DocumentStatus.processing) {
+                throw new DocumentAlreadyProcessingException("이미 처리 중인 문서입니다.");
+            }
+            // 저장한 문답과 provenance를 그대로 사용한다. 편집본 승격은 필요하지 않다.
+            document.updateStatus(DocumentStatus.processing, document.getExtractedTextUri(), null, null);
+            document.markReconciled(null);
+            String runId = enqueueIngest(document);
+            return new DocumentIngestResponse(documentId, runId, document.getStatus());
+        }
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 재처리할 수 있습니다.");
         }
-        requireNotChatExport(document,
-                "채팅 Wiki page화 문서는 채팅 세션의 재-export로만 재처리할 수 있습니다.");
         editLockService.requireWritable(documentId, userId);
         if (document.getStatus() == DocumentStatus.processing) {
             throw new DocumentAlreadyProcessingException("이미 처리 중인 문서입니다.");

@@ -400,32 +400,42 @@
 }
 
 .agent-body.is-pair-selecting {
-  padding-inline: 0;
-  background: rgba(65, 65, 65, 0.6);
+  padding-inline: 12px;
 }
 
 .is-pair-selecting .chat-pair {
-  padding-inline: 24px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
 }
 
 .is-pair-selecting .chat-pair.is-selection-candidate {
+  border-color: #777;
   cursor: pointer;
 }
 
-.is-pair-selecting .chat-pair.is-dimmed {
-  opacity: 0.4;
-  background: rgba(65, 65, 65, 0.6);
+.is-pair-selecting .chat-pair.is-selection-candidate:hover {
+  border-color: var(--yellow, #ffc117);
+}
+
+.chat-pair-selection-label {
+  margin-bottom: 10px;
+  color: #c4c4c4;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.is-selected .chat-pair-selection-label {
+  color: var(--yellow, #ffc117);
 }
 
 .is-pair-selecting .chat-pair.is-excluded {
-  opacity: 1;
-  background: #000;
+  background: rgba(65, 65, 65, 0.3);
   cursor: not-allowed;
 }
 
-.is-pair-selecting .chat-pair.is-excluded .question-bubble {
-  color: #8f8f8f;
-  background: #000;
+.is-pair-selecting .chat-pair.is-excluded .chat-pair-content {
+  opacity: 0.35;
 }
 
 .is-pair-selecting .chat-pair.is-selected {
