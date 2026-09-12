@@ -90,9 +90,12 @@ export function AgentPanel({
     animatedMessageId,
     activeTurn,
     isLoading,
+    isCancelling,
+    queryStatusMessage,
     queryStages,
     refreshMessages,
-    submitQuery
+    submitQuery,
+    cancelQuery
   } = useChatThread(activeSessionId);
   const isSubmitting = isLoading || isAgentTurnLoading || isCreatingMarkdown;
   const { selectablePairIds: exportPairIds, excludedPairIds } = useMemo(
@@ -329,9 +332,40 @@ export function AgentPanel({
     }
   }
 
+  // 문서 명령 제안은 대화 흐름 안에 이어 붙인다. 편입 선택 모드에서는 대화가 선택 UI로 바뀌므로 내보내지 않는다.
+  const hasDocumentCommandPreview = !isPairSelectionMode && Boolean(
+    (agentTurnResponse?.result.action === "markdown_create" && agentTurnResponse.result.generated_markdown)
+    || editPreviewState?.preview
+  );
+  const documentCommandPreview = hasDocumentCommandPreview ? (
+    <>
+      {agentTurnResponse?.result.action === "markdown_create" && agentTurnResponse.result.generated_markdown && (
+        <MarkdownCreatePreview
+          draft={agentTurnResponse.result.generated_markdown}
+          isSubmitting={isCreatingMarkdown}
+          errorMessage={markdownCreateErrorMessage}
+          onCancel={dismissAgentTurnResult}
+          onRegenerate={regenerateAgentTurn}
+          onCreate={createMarkdownDocument}
+        />
+      )}
+      {editPreviewState?.preview && (
+        <MarkdownEditPreview
+          preview={editPreviewState.preview}
+          validationError={editPreviewState.validationError}
+          isLoading={isAgentTurnLoading || isCreatingMarkdown}
+          onApply={applyMarkdownEdit}
+          onCancel={dismissAgentTurnResult}
+          onOpenAsNewDocument={openMarkdownEditAsNewDocument}
+          onRegenerate={regenerateAgentTurn}
+        />
+      )}
+    </>
+  ) : null;
+
   return (
     <aside
-      className={`agent-panel${editPreviewState?.preview ? " is-markdown-reviewing" : ""}${isPairSelectionMode ? " is-chat-selecting" : ""}`}
+      className={`agent-panel${isPairSelectionMode ? " is-chat-selecting" : ""}`}
       onClick={(event) => event.stopPropagation()}
     >
       <AgentHeader
@@ -352,6 +386,7 @@ export function AgentPanel({
       <AgentBody
         messages={messages}
         isLoading={isLoading}
+        isCancelling={isCancelling}
         isDocumentCommandLoading={isAgentTurnLoading}
         documentCommandQuestion={isAgentTurnLoading ? agentTurnRequest?.message ?? null : null}
         activeSessionId={activeSessionId}
@@ -373,6 +408,7 @@ export function AgentPanel({
         selectedPairIds={selectedPairIds}
         onSelectPair={selectPair}
         nodes={nodes}
+        documentCommandPreview={documentCommandPreview}
       />
       {isPairSelectionMode ? (
         <div className={styles["chat-selection-actions"]}>
@@ -401,31 +437,7 @@ export function AgentPanel({
           </div>
           {exportErrorMessage && <p className={styles["chat-selection-error"]} role="alert">{exportErrorMessage}</p>}
         </div>
-      ) : (
-        <>
-          {agentTurnResponse?.result.action === "markdown_create" && agentTurnResponse.result.generated_markdown && (
-            <MarkdownCreatePreview
-              draft={agentTurnResponse.result.generated_markdown}
-              isSubmitting={isCreatingMarkdown}
-              errorMessage={markdownCreateErrorMessage}
-              onCancel={dismissAgentTurnResult}
-              onRegenerate={regenerateAgentTurn}
-              onCreate={createMarkdownDocument}
-            />
-          )}
-          {editPreviewState?.preview && (
-            <MarkdownEditPreview
-              preview={editPreviewState.preview}
-              validationError={editPreviewState.validationError}
-              isLoading={isAgentTurnLoading || isCreatingMarkdown}
-              onApply={applyMarkdownEdit}
-              onCancel={dismissAgentTurnResult}
-              onOpenAsNewDocument={openMarkdownEditAsNewDocument}
-              onRegenerate={regenerateAgentTurn}
-            />
-          )}
-        </>
-      )}
+      ) : null}
       <div className={styles["composer-region"]}>
         <AgentComposer
           value={composerValue}
@@ -438,6 +450,9 @@ export function AgentPanel({
           onModelChange={handleModelChange}
           onChange={setComposerValue}
           onSubmit={handleSubmit}
+          onCancel={isLoading ? cancelQuery : undefined}
+          isCancelling={isCancelling}
+          statusMessage={queryStatusMessage}
         />
       </div>
     </aside>

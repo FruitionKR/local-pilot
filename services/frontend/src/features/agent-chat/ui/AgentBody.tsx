@@ -1,7 +1,9 @@
 import { ChevronDown } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
 import { AgentResultCard } from "./AgentResultCard";
+import { AgentPlanPreview } from "./AgentPlanPreview";
+import { isWorkspacePlanAction } from "../lib/agentPlan";
 import { StatusList } from "./StatusList";
 import { buildDocumentCommandSteps, type StatusStep } from "../lib/agentData";
 import { resolveChatTurnPresentation } from "../lib/markdownAgent";
@@ -105,6 +107,7 @@ function groupMessagesByPair(messages: ChatMessageResponse[]): ChatMessageGroup[
 export function AgentBody({
   messages,
   isLoading,
+  isCancelling = false,
   isDocumentCommandLoading,
   documentCommandQuestion,
   activeSessionId,
@@ -120,10 +123,12 @@ export function AgentBody({
   excludedPairIds,
   selectedPairIds,
   onSelectPair,
-  nodes
+  nodes,
+  documentCommandPreview
 }: {
   messages: ChatMessageResponse[];
   isLoading: boolean;
+  isCancelling?: boolean;
   isDocumentCommandLoading: boolean;
   documentCommandQuestion: string | null;
   activeSessionId: string | null;
@@ -140,8 +145,11 @@ export function AgentBody({
   selectedPairIds: string[];
   onSelectPair: (pairId: string) => void;
   nodes?: GraphNode[];
+  /** 문서 명령 제안 카드. 대화 흐름의 마지막에 이어 붙는다. */
+  documentCommandPreview?: ReactNode;
 }) {
   const showAgentStatus = isLoading && activeTurn === null;
+  const hasDocumentCommandPreview = documentCommandPreview != null;
   const [visibleAnswerStage, setVisibleAnswerStage] = useState(STAGE_ANSWER);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const hasScrolledInitialMessagesRef = useRef(false);
@@ -179,6 +187,14 @@ export function AgentBody({
     return () => window.cancelAnimationFrame(frameId);
   }, [animatedMessageId, visibleAnswerStage, isLoading, activeTurn, queryErrorMessage, scrollToLatestMessage]);
 
+  // 실제 제안 카드가 나타날 때만 내린다. 출처 열기 등으로 JSX가 다시 만들어져도 위치를 유지한다.
+  useLayoutEffect(() => {
+    if (!hasDocumentCommandPreview) return;
+
+    const frameId = window.requestAnimationFrame(() => scrollToLatestMessage());
+    return () => window.cancelAnimationFrame(frameId);
+  }, [hasDocumentCommandPreview, scrollToLatestMessage]);
+
   // 전송 직후 추가된 질문·진행 UI가 화면 아래에 가려지지 않도록 한 번만 즉시 내린다.
   // 이후 단계 갱신에는 반응하지 않아 사용자가 직접 올린 스크롤 위치를 방해하지 않는다.
   useLayoutEffect(() => {
@@ -215,10 +231,10 @@ export function AgentBody({
   const pendingStatusThread = (
     <div className={styles["agent-thread"]}>
       <StatusList
-        title={SEARCH_STATUS_TITLE}
+        title={isCancelling ? "질의 취소 중" : SEARCH_STATUS_TITLE}
         isLoading={isLoading}
         hasResponse={false}
-        steps={stageSteps.length > 0 ? stageSteps : undefined}
+        steps={isCancelling ? [["변경 복구 확인", "active"]] : stageSteps.length > 0 ? stageSteps : undefined}
       />
     </div>
   );
@@ -304,9 +320,11 @@ export function AgentBody({
         </>
       )}
 
+      {documentCommandPreview}
+
       {queryErrorMessage && <p className={styles["query-error"]}>{queryErrorMessage}</p>}
       {chatLoadErrorMessage && <p className={styles["query-error"]}>{chatLoadErrorMessage}</p>}
-      {isLoading && <div className={styles.typing}><i /><i /><i /> 답변을 작성하고 있어요…</div>}
+      {isLoading && !queryErrorMessage && <div className={styles.typing}><i /><i /><i /> {isCancelling ? "질의 취소를 확인하고 있어요…" : "답변을 작성하고 있어요…"}</div>}
     </div>
   );
 }
@@ -328,6 +346,8 @@ function AssistantThread({
   onOpenSourceBlocks: (documentId: string, title: string, highlights: SourceBlockHighlight[]) => void;
 }) {
   const presentation = resolveChatTurnPresentation(message.action);
+  const isWorkspacePlan = isWorkspacePlanAction(message.action);
+  const [isAnswerExpanded, setIsAnswerExpanded] = useState(true);
   const documentCommandAction = presentation.kind === "document-command" ? presentation.action : null;
   const isSearchAnswer = presentation.kind === "query" && presentation.grounded;
   const resultCards = buildRelatedPageCards(message, nodes);
@@ -347,7 +367,7 @@ function AssistantThread({
 
   return (
     <div className={cx(styles["agent-thread"], documentCommandAction && styles["is-document-command"])}>
-      {(documentCommandAction || isSearchAnswer) && (!isAnimated || visibleAnswerStage >= STAGE_STATUS) && (
+      {!isWorkspacePlan && (documentCommandAction || isSearchAnswer) && (!isAnimated || visibleAnswerStage >= STAGE_STATUS) && (
         <div className={isAnimated ? styles["agent-stage"] : undefined}>
           <StatusList
             title={documentCommandAction ? "문서 명령 실행 완료" : SEARCH_STATUS_TITLE}
@@ -384,16 +404,21 @@ function AssistantThread({
           aria-label={isSearchAnswer ? "실행 중 발견 사항" : "답변"}
         >
           {isSearchAnswer && (
-            <div className={styles["answer-section-title"]}>
+            <button
+              type="button"
+              className={styles["answer-section-title"]}
+              aria-expanded={isAnswerExpanded}
+              onClick={() => setIsAnswerExpanded((current) => !current)}
+            >
               <span>실행 중 발견 사항</span>
-              <ChevronDown size={8} />
-            </div>
+              <ChevronDown size={8} className={isAnswerExpanded ? undefined : styles["is-collapsed"]} />
+            </button>
           )}
-          <MarkdownViewer
+          {isWorkspacePlan ? <AgentPlanPreview turnId={message.run_id} action={message.action!} /> : (!isSearchAnswer || isAnswerExpanded) && <MarkdownViewer
             markdown={formatAnswerMarkdown(message.content)}
             onCitationClick={openCitation}
             canClickCitation={canOpenCitation}
-          />
+          />}
         </section>
       )}
     </div>

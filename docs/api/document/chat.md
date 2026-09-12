@@ -500,6 +500,16 @@ Agent turn이 만든 메시지는 `run_id`와 `action`이 함께 온다. 질의 
 화면은 `action`으로 편집 미리보기와 일반 답변을 나누고, 승인 상태와 미리보기 본문은 `run_id`가
 가리키는 run에서 읽는다.
 
+`folder_organize`·`workspace_workflow`는 채팅 답변 안에 작업 계획을 표시한다. 메시지의
+`run_id`로 `GET /agent/turn/{run_id}`를 조회한 뒤, 결과의 `run_id`로
+`GET /agent/runs/{run_id}`를 조회한다(모두 워크스페이스 API 경로 기준).
+계획의 생성 폴더와 문서 이동 위치를 보여주고 `awaiting_approval`에서 승인·거절 버튼을 제공한다.
+미리보기는 변경 관련 폴더 구조를 접고 펼칠 수 있는 트리로 표시하며, 상단에 생성·이동 개수를 요약한다.
+분류 이유와 기존 위치는 상세 보기에서 확인한다. 파일명은 화면에서만 NFC 정규화한다.
+승인은 표시한 계획의 `plan_version`과 `operation_hash`를 전달한다. 계획 생성 완료를
+실행 완료로 표시하지 않으며, 승인 후 실제 실행 상태를 조회한다. 채팅을 다시 열어도
+메시지의 실행 ID로 미리보기와 승인 상태를 복구한다.
+
 ```json
 {
   "messages": [
