@@ -12,6 +12,7 @@ import { useDevelopmentVerificationCode } from "@/views/auth/lib/useDevelopmentV
 import { useExpiryCountdown } from "@/views/auth/lib/useExpiryCountdown";
 import { useVerificationResend } from "@/views/auth/lib/useVerificationResend";
 import { ResendCodePrompt } from "@/views/auth/ui/ResendCodePrompt";
+import { MfaLoginForm } from "./MfaLoginForm";
 
 export default function SignupVerificationPage() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function SignupVerificationPage() {
   const [verificationCode, setVerificationCode] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
   const countdown = useExpiryCountdown(signupDraft?.expiresAt ?? 0);
   const draft = signupDraft;
   const isRequestingVerification = Boolean(draft && !draft.verificationId && !draft.verificationRequestError);
@@ -65,6 +67,10 @@ export default function SignupVerificationPage() {
         confirmation.verification_token
       );
       const tokens = await loginWithEmail(draft.email, draft.password);
+      if (tokens.mfa_required) {
+        setMfaToken(tokens.mfa_token);
+        return;
+      }
       saveAccessToken(tokens.access_token);
       router.replace("/workspaces");
     } catch (error: unknown) {
@@ -82,6 +88,12 @@ export default function SignupVerificationPage() {
     if (!draft) return;
     await resend();
   }
+
+  if (mfaToken) return (
+    <AuthScreen shellModifier="verification" title="다단계 인증">
+      <MfaLoginForm token={mfaToken} onCancel={() => router.replace("/login")} />
+    </AuthScreen>
+  );
 
   return (
     <AuthScreen shellModifier="verification" title="회원가입">

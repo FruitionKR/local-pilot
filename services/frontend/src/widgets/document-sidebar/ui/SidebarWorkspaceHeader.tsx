@@ -1,7 +1,8 @@
 import { Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SvgIcon, toggleIcon } from "@/shared/ui/SvgIcon";
-import { useWorkspaceName } from "@/entities/workspace/model/useWorkspaceName";
+import { useSelectedWorkspace } from "@/entities/workspace/model/useWorkspaceName";
+import { WorkspaceIcon } from "@/entities/workspace/ui/WorkspaceIcon";
 import { createWorkspace, fetchWorkspaces } from "@/entities/workspace";
 import { setSelectedWorkspaceId } from "@/shared/lib/auth";
 import { useDismissOnOutside } from "@/shared/lib/useDismissOnOutside";
@@ -19,8 +20,8 @@ function switchWorkspace(workspaceId: string) {
 
 /** 사이드바 상단 워크스페이스 헤더: 클릭하면 워크스페이스 전환 메뉴를 연다. */
 export function SidebarWorkspaceHeader() {
-  const workspaceName = useWorkspaceName();
-  const name = workspaceName ?? "워크스페이스";
+  const selectedWorkspace = useSelectedWorkspace();
+  const name = selectedWorkspace?.name ?? "워크스페이스";
   const [isOpen, setIsOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
@@ -70,7 +71,7 @@ export function SidebarWorkspaceHeader() {
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
       >
-        <span className={styles["sidebar-workspace-mark"]} aria-hidden>{name.charAt(0)}</span>
+        <WorkspaceIcon workspace={selectedWorkspace} className={styles["sidebar-workspace-mark"]} />
         <span className={styles["sidebar-workspace-name"]}>
           <span>{name}</span>
           <SvgIcon src={toggleIcon} className={cx(styles["sidebar-workspace-toggle"], isOpen && styles["is-open"])} />
@@ -93,7 +94,7 @@ export function SidebarWorkspaceHeader() {
                     switchWorkspace(workspace.id);
                   }}
                 >
-                  <span className={styles["workspace-dropdown-avatar"]} aria-hidden>{workspace.name.charAt(0)}</span>
+                  <WorkspaceIcon workspace={workspace} className={styles["workspace-dropdown-avatar"]} />
                   <span className={styles["workspace-dropdown-label"]}>{workspace.name}</span>
                 </button>
               ))}

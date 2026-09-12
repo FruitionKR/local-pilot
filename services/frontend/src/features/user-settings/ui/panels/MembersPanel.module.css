@@ -1,4 +1,21 @@
-/* 멤버 관리 패널 (Figma 987:10705). 백엔드 멤버 API 미지원이라 컨트롤은 전부 disabled 상태다. */
+/* 멤버 관리 패널 (Figma 987:10705). */
+
+.search-input {
+  min-width: 0;
+  width: 180px;
+  padding: 6px 8px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.invite-form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
 
 /* --- 툴바 --- */
 .toolbar {
