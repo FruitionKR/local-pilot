@@ -1297,13 +1297,14 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("채팅 export 문서는 저장한 문답과 출처 블록으로 수동 ingest한다")
+    @DisplayName("완료된 채팅 export를 다시 ingest하면 출처 블록을 유지하고 후처리 상태를 초기화한다")
     void ingest_chatExport_preservesSourceBlocks() {
         stubOwnedWorkspace();
         Document chatDoc = new Document(
                 "chatdoc_ro2", WORKSPACE_ID, USER_ID, "대화.md", "text/markdown", 4,
                 "sources/documents/chatdoc_ro2/original", "chat-hash", "chat_export");
-        chatDoc.updateStatus(fruition.core.document.domain.DocumentStatus.uploaded, null, null, null);
+        chatDoc.updateStatus(fruition.core.document.domain.DocumentStatus.completed, null, Instant.now(), null);
+        chatDoc.markReconciled(Instant.now());
         chatDoc.assignSelectionMode("full");
         chatDoc.assignPipelineInput("Q : 질문\nA : 답변", "[{\"block_id\":\"session_1:pair_1\",\"text\":\"문답\"}]");
         when(documentRepository.findByIdAndWorkspaceIdForUpdate(chatDoc.getId(), WORKSPACE_ID))
@@ -1313,6 +1314,7 @@ class DocumentServiceBlocksTest {
 
         assertThat(chatDoc.getStatus()).isEqualTo(fruition.core.document.domain.DocumentStatus.processing);
         assertThat(chatDoc.getPipelineInputBlocks()).contains("session_1:pair_1");
+        assertThat(chatDoc.getReconciledAt()).isNull();
         verify(ingestCommandOutbox).enqueue(
                 anyString(), eq(chatDoc.getId()), eq(USER_ID), eq(WORKSPACE_ID), eq("full"),
                 eq(chatDoc.getPipelineInputMarkdown()), eq(chatDoc.getPipelineInputBlocks()),

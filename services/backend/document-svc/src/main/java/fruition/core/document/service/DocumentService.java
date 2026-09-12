@@ -1576,6 +1576,7 @@ public class DocumentService {
             }
             // 저장한 문답과 provenance를 그대로 사용한다. 편집본 승격은 필요하지 않다.
             document.updateStatus(DocumentStatus.processing, document.getExtractedTextUri(), null, null);
+            document.markReconciled(null);
             String runId = enqueueIngest(document);
             return new DocumentIngestResponse(documentId, runId, document.getStatus());
         }
