@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { acceptInvitation, fetchInvitation } from "@/entities/workspace/api/invitations";
-import { setSelectedWorkspaceId } from "@/shared/lib/auth";
+import { clearAuth, setSelectedWorkspaceId } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
 import styles from "@/views/workspaces/ui/WorkspacesPage.module.css";
 
 export default function InvitationPage({ token }: { token: string }) {
+  const queryClient = useQueryClient();
   const { data: invitation, error: loadError, isPending } = useQuery({
     queryKey: ["invitation", token],
     queryFn: () => fetchInvitation(token),
@@ -21,6 +22,9 @@ export default function InvitationPage({ token }: { token: string }) {
     setBusy(true);
     setError(null);
     try {
+      // 다른 탭에서 로그인한 계정을 현재 refresh 쿠키로 다시 확인한다.
+      clearAuth();
+      queryClient.clear();
       const accepted = await acceptInvitation(token);
       setSelectedWorkspaceId(accepted.workspace_id);
       window.location.assign("/home");

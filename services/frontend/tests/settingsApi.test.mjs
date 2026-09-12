@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
+import { QueryClient } from "@tanstack/react-query";
 
 // Node 테스트에서도 앱의 TypeScript 경로 별칭을 같은 소스로 해석한다.
 registerHooks({
@@ -103,6 +107,61 @@ test("초대 확인은 공개 조회, 수락은 인증 요청으로 처리한다
   assert.deepEqual(calls, [
     ["/api/invitations/test%2Ftoken", "GET", undefined],
     ["/api/invitations/test%2Ftoken/accept", "POST", "Bearer invitation-test-access"]
+  ]);
+});
+
+test("초대 화면의 수락은 다른 탭에서 로그인한 현재 쿠키의 계정을 사용한다", async (t) => {
+  const auth = await import("../src/shared/lib/auth.ts");
+  const originalWindow = globalThis.window;
+  const selected = [];
+  const navigated = [];
+  globalThis.window = { localStorage: { removeItem() {}, setItem: (...args) => selected.push(args) }, location: { assign: (path) => navigated.push(path) } };
+  t.after(() => { if (originalWindow === undefined) delete globalThis.window; else globalThis.window = originalWindow; });
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(["me"], { id: "previous-user" });
+  saveAccessToken("previous-user-access");
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (path, init) => {
+    const bearer = init.headers?.get("Authorization") ?? null;
+    requests.push([path, bearer]);
+    if (path === "/api/auth/refresh") return Response.json({ access_token: "invited-user-access" });
+    if (bearer === "Bearer previous-user-access") return Response.json({ error: { message: "초대 이메일 불일치" } }, { status: 403 });
+    if (!bearer) return new Response(null, { status: 401 });
+    return Response.json({ workspace_id: "invited-workspace" });
+  });
+  await assert.rejects(acceptInvitation("invite-token"), /초대 이메일 불일치/);
+
+  // 실제 화면의 수락 버튼을 실행하고 인증 API까지 연결한다.
+  const source = readFileSync(new URL("../src/views/invitation/ui/InvitationPage.tsx", import.meta.url), "utf8");
+  const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
+  const exports = {};
+  const element = (type, props) => ({ type, props });
+  const modules = {
+    react: { useState: (initial) => [initial, () => {}] },
+    "react/jsx-runtime": { jsx: element, jsxs: element },
+    "@tanstack/react-query": { useQuery: () => ({ data: { email: "invited@example.test" } }), useQueryClient: () => queryClient },
+    "@/shared/lib/auth": auth,
+    "@/entities/workspace/api/invitations": { acceptInvitation, fetchInvitation },
+    "@/shared/lib/errors": {},
+    "@/views/workspaces/ui/WorkspacesPage.module.css": { default: {} }
+  };
+  runInNewContext(outputText, { exports, require: (name) => modules[name], window: globalThis.window });
+  function findButton(node) {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "button") return node;
+    return [node.props?.children].flat(Infinity).map(findButton).find(Boolean);
+  }
+  findButton(exports.default({ token: "invite-token" })).props.onClick();
+  await new Promise(setImmediate);
+  assert.equal(auth.getAccessToken(), "invited-user-access");
+  assert.equal(queryClient.getQueryCache().getAll().length, 0);
+  assert.deepEqual(selected, [["fruition.workspace_id", "invited-workspace"]]);
+  assert.deepEqual(navigated, ["/home"]);
+  assert.deepEqual(requests, [
+    ["/api/invitations/invite-token/accept", "Bearer previous-user-access"],
+    ["/api/invitations/invite-token/accept", null],
+    ["/api/auth/refresh", null],
+    ["/api/invitations/invite-token/accept", "Bearer invited-user-access"]
   ]);
 });
 
