@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any, ContextManager
 
 from app.modules.wiki_ingestion.application.models import PipelineRunCommand
@@ -7,6 +6,7 @@ from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_ingestion_repository as database,
 )
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
+from minio.error import S3Error
 from run_lab import run_pipeline
 
 
@@ -105,9 +105,11 @@ class ObjectStoragePipelineSourceReader:
         return read_text_object(object_uri)
 
 
-class LocalPipelineLogReader:
+class ObjectStoragePipelineLogReader:
     def read_text(self, path: str) -> str:
-        log_path = Path(path)
-        if not log_path.exists():
-            return ""
-        return log_path.read_text(encoding="utf-8")
+        try:
+            return read_text_object(path)
+        except S3Error as exc:
+            if exc.code == "NoSuchKey":
+                return ""
+            raise

@@ -21,7 +21,7 @@ resource "aws_iam_role" "github_deploy" {
         Condition = {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:${var.github_deploy_ref}"
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:environment:${var.github_deploy_environment}"
           }
         }
       }
@@ -30,9 +30,24 @@ resource "aws_iam_role" "github_deploy" {
 }
 
 # ECR push + EKS describe (kubeconfig 발급). cluster 내부 권한은 eks.tf의 access_entries가 부여.
-resource "aws_iam_role_policy_attachment" "github_deploy_ecr" {
-  role       = aws_iam_role.github_deploy.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
+resource "aws_iam_role_policy" "github_deploy_ecr" {
+  name = "application-images"
+  role = aws_iam_role.github_deploy.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ecr:ListImages", "ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage"]
+        Resource = [for repository in aws_ecr_repository.services : repository.arn]
+      }
+    ]
+  })
 }
 
 resource "aws_iam_role_policy" "github_deploy_eks" {

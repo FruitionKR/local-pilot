@@ -1,5 +1,5 @@
 # 앱 시크릿 원본 (k8s/base/secret.yaml 평문 대체).
-# ExternalSecrets Operator가 이 secret을 읽어 fruition namespace의 fruition-secret으로 동기화한다.
+# ExternalSecrets Operator가 서비스별 허용 키만 개별 Kubernetes Secret으로 투영한다.
 # 초기값만 Terraform이 넣고 이후 값 관리는 콘솔/CLI — ignore_changes로 덮어쓰지 않는다.
 # DB 계정 비밀번호는 init-db-isolation.sh 실행 시 여기 값과 동일하게 넣어야 한다 (README 절차).
 resource "aws_secretsmanager_secret" "app" {
@@ -21,6 +21,10 @@ resource "random_password" "agent_internal_token" {
   special = false
 }
 
+resource "random_id" "mfa_encryption_key" {
+  byte_length = 32
+}
+
 resource "aws_secretsmanager_secret_version" "app" {
   secret_id = aws_secretsmanager_secret.app.id
 
@@ -36,9 +40,15 @@ resource "aws_secretsmanager_secret_version" "app" {
     AI_DATABASE_URL     = "postgresql://ai_runtime:${random_password.db_role["ai_runtime"].result}@${aws_db_instance.core.address}:5432/ai_db"
     AI_DB_MIGRATION_URL = "postgresql://ai_migration:${random_password.db_role["ai_migration"].result}@${aws_db_instance.core.address}:5432/ai_db"
     # --- 스토리지·인증 ---
-    S3_ACCESS_KEY           = aws_iam_access_key.app.id
-    S3_SECRET_KEY           = aws_iam_access_key.app.secret
+    ACCESS_REDIS_PASSWORD   = random_password.redis["access"].result
+    DOCUMENT_REDIS_PASSWORD = random_password.redis["document"].result
+    PIPELINE_REDIS_PASSWORD = random_password.redis["pipeline"].result
     JWT_SECRET              = random_password.jwt_secret.result
+    MFA_ENCRYPTION_KEY      = random_id.mfa_encryption_key.b64_std
+    SPRING_MAIL_HOST        = var.smtp_host
+    SPRING_MAIL_USERNAME    = var.smtp_username
+    SPRING_MAIL_PASSWORD    = var.smtp_password
+    MAIL_FROM               = var.mail_from
     INTERNAL_CALLBACK_TOKEN = random_password.internal_callback_token.result
     AGENT_INTERNAL_TOKEN    = random_password.agent_internal_token.result
     OPENAI_API_KEY          = ""

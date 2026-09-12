@@ -1,85 +1,30 @@
-# AWS 전환 Terraform
+# AWS feedback IaC
 
-`docs/backlog/Fruition_AWS_MSA_Architecture.md` §8 소규모 사용자 피드백 profile의 IaC.
-Kafka는 MSK가 아니라 EKS 안 Strimzi(§8.3)를 그대로 쓴다 — `k8s/base/kafka.yaml`.
+현행 절차는 [docs/script.md의 IaC·플랫폼 운영](../../docs/script.md#aws-iac플랫폼-운영-절차)을 따른다. 이 root는 project=fruition, 서울 region, EKS 1.35/AL2023, feedback Environment를 검증한다. 실제 AWS 조회·plan/apply·설치·복구는 이번 로컬 작업에서 수행하지 않았다.
 
-## 만드는 것
-
-| 파일 | 리소스 |
+| 구성 | 책임 |
 |---|---|
-| `vpc.tf` | VPC, 2 AZ, public 2(ALB)·private 2(EKS·RDS·Redis), NAT 1개 |
-| `eks.tf` | EKS + General node(2/2/3, t3.large, On-Demand) + AI Worker(0/0/2, Spot, taint) + IRSA 4종 |
-| `rds.tf` | RDS PostgreSQL 16 **2대** (access/core, db.t4g.small, Single-AZ, backup 7일) |
-| `elasticache.tf` | Redis 7, cache.t4g.micro, single node |
-| `s3.tf` | 저장 버킷(versioning + tmp/ lifecycle) + 앱용 IAM user 정적 키 |
-| `ecr.tf` | document-svc·access-svc·pipeline·converter 레포 |
-| `github-oidc.tf` | GitHub Actions OIDC deploy role (ECR push + EKS 배포) |
-| `secrets.tf` | Secrets Manager `fruition/app` (DB URL·S3 키·JWT/내부 토큰 자동 생성) |
-| `budgets.tf` | 월 USD 500·700 알림 (`budget_email` 설정 시) |
+| VPC / EKS | 2 AZ, General 2대, AI Worker 0–2대 Spot, 명시적 API CIDR·addon build |
+| RDS | Access/Core PostgreSQL 16 인스턴스 2대, core/ai는 Core RDS 내 별도 DB·role |
+| Redis | 7.1 single primary replication group, TLS·서비스별 ACL |
+| S3 | versioning, Document/AI IRSA prefix 권한, 정적 앱 key 없음 |
+| ECR / GitHub | 네 repository immutable SHA, 제한된 ECR/DescribeCluster role, namespace RBAC 그룹 |
+| Secrets Manager | DB·Redis·내부 token·MFA/SMTP 원본, 서비스별 ExternalSecret 투영 |
+| Budget | 필수 수신 이메일로 $500/$700 알림 |
+| State | 별도 bootstrap bucket의 S3 encrypted backend/native lockfile |
 
-## 적용 절차
+로컬 검증:
 
-```bash
-cd infra/terraform
-terraform init
-terraform plan -var budget_email=<알림 이메일>
-terraform apply -var budget_email=<알림 이메일>
-```
+    bash scripts/aws-iac-validate.sh
 
-apply 후 수동 단계:
+Terraform >=1.10,<2.0과 두 root의 lockfile을 유지한다. module pin은 EKS 20.37.2, IAM 5.60.0, VPC 5.21.0이다. init -backend=false와 validate는 실제 AWS 가용성 검증이 아니다.
 
-0. **DB 계정·database 생성** — EKS 내부(또는 bastion)에서 각 RDS endpoint에
-   `infra/postgres/init-db-isolation.sh`를 실행해 access_db/core_db/ai_db와
-   runtime/migration 계정을 만든다. 비밀번호는 Secrets Manager `fruition/app`의
-   `*_DB_*_PASSWORD` 값과 동일하게 넣을 것 (access 인스턴스는 access_db만,
-   core 인스턴스는 core_db·ai_db만 실제 사용 — 나머지는 무해).
-1. **Provider 키 채우기** — `fruition/app`의 선택 provider `OPENAI_API_KEY`·`GEMINI_API_KEY`·
-   `ANTHROPIC_API_KEY`를 live 호출이 필요할 때만 설정한다. `JWT_SECRET`,
-   `INTERNAL_CALLBACK_TOKEN`, `AGENT_INTERNAL_TOKEN`은 Terraform이 안전한 난수로 생성한다.
-   기존 stack이 과거 `CHANGE_ME` 초기값으로 생성됐다면 Terraform state를 확인한 뒤 세 값을
-   회전해야 한다. 이 resource는 운영자가 채운 provider 키를 덮어쓰지 않도록 `ignore_changes`를 유지한다.
-2. **ACM 인증서** — `api.<도메인>`, `access.<도메인>` 포함 인증서 발급, ARN을 overlay ingress에 기입.
-3. **Route 53** — ALB 생성 후 두 호스트 A(alias) 레코드 연결.
-4. **GitHub repo Variables** — `AWS_DEPLOY_ROLE_ARN` = `terraform output github_deploy_role_arn`.
-5. **Vercel env** — `NEXT_PUBLIC_BACKEND_URL=https://api.<도메인>`,
-   `NEXT_PUBLIC_ACCESS_URL=https://access.<도메인>`.
+승인된 운영 작업의 순서는 state bucket bootstrap/보관 → private backend 설정 → 계정별 addon build·CIDR·SMTP·예산 입력 → 저장된 plan 검토/승인/apply → 플랫폼 설치 → DB bootstrap → 앱 순차 배포다. state/plan에 비밀번호가 있으므로 공개 artifact로 게시하지 않는다. 구체 명령·locking·복구 경계는 현행 문서에만 유지한다.
 
-## 클러스터 addon (helm — Terraform 범위 밖)
+플랫폼 addon 설치는 버전이 고정된 scripts/aws-platform-up.sh를 사용한다. 출력의 계정·cluster ARN·endpoint와 실제 AWS/kubeconfig가 일치해야 시작한다. Namespace·gp3·SecretStore·RBAC는 k8s/platform/aws가 소유하며 앱 workflow가 생성하지 않는다. GitHub 배포는 별도 self-hosted/linux/x64/fruition-feedback runner, feedback required reviewers·branch 제한이 필요하다. 동적 hosted runner를 위해 EKS API 전체 인터넷을 열지 않는다.
 
-kubeconfig 발급(`aws eks update-kubeconfig --name fruition-eks`) 후 순서대로:
+DB bootstrap은 Access endpoint에 DB_ISOLATION_TARGET=access, Core endpoint에 core를 사용한다. 관리자 credential은 runtime과 migration Job에 주입하지 않는다. 각 대상의 PostgreSQL init/validate 절차와 RDS CA verify-full은 docs/script.md를 따른다.
 
-```bash
-# 1. AWS Load Balancer Controller (Ingress → ALB)
-helm repo add eks https://aws.github.io/eks-charts
-helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
-  -n kube-system \
-  --set clusterName=fruition-eks \
-  --set serviceAccount.name=aws-load-balancer-controller \
-  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$(terraform output -json irsa_role_arns | jq -r .alb_controller)"
+Secrets Manager는 ignore_changes로 운영 값을 보존한다. 기존 환경에 MFA/SMTP/Redis 키를 추가할 때 Terraform 재실행만으로 채워졌다고 가정하지 않는다. MFA 키를 재생성하면 기존 TOTP secret을 복호화하지 못한다. Redis 사용자 password와 서비스 Secret 값을 같은 보안 입력 경로로 맞춘다. 정적 S3 IAM key 제거·Redis 리소스 교체는 실제 plan에서 별도 검토한다.
 
-# 2. External Secrets Operator (Secrets Manager → k8s Secret)
-helm repo add external-secrets https://charts.external-secrets.io
-helm install external-secrets external-secrets/external-secrets \
-  -n external-secrets --create-namespace \
-  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$(terraform output -json irsa_role_arns | jq -r .external_secrets)"
-
-# 3. Cluster Autoscaler (AI Worker node 0→N)
-helm repo add autoscaler https://kubernetes.github.io/autoscaler
-helm install cluster-autoscaler autoscaler/cluster-autoscaler \
-  -n kube-system \
-  --set autoDiscovery.clusterName=fruition-eks \
-  --set awsRegion=ap-northeast-2 \
-  --set rbac.serviceAccount.name=cluster-autoscaler \
-  --set "rbac.serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$(terraform output -json irsa_role_arns | jq -r .cluster_autoscaler)"
-
-# 4. Strimzi + KEDA — k8s/README.md 3번 절차와 동일 (namespace는 fruition)
-```
-
-addon 완료 후 앱 배포는 `k8s/overlays/aws/README.md` 참조.
-
-## 한계 (의도된 것)
-
-- RDS Single-AZ·Redis single node·Kafka broker 1 — Production HA 아님 (§8 profile).
-- Access/Core 물리 DB 분할 미적용 — 단일 RDS instance, 후속 단계.
-- S3 접근이 IAM user 정적 키 — 앱이 endpoint+키 방식(MinIO 호환)이라 IRSA 전환은 코드 수정 후.
-- 원격 state(backend "s3") 미설정 — 팀 결정 후 활성화.
+S3의 Document/AI object 권한은 prefix로 제한하지만 신규 객체 404 판별에 필요한 bucket ListBucket metadata는 공유한다. RDS Single-AZ, Redis primary 1개, Kafka broker 1개는 사용자 피드백 profile의 단일 장애점이다. HA·관측성·provider 공정성·실측 부하와 복구는 별도 남은 범위다. ESO 2.9.0의 공식 테스트 표는 Kubernetes 1.36이며 EKS 1.35 실호환 검증을 아직 하지 않았다.

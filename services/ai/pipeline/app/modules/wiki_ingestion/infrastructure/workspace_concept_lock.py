@@ -14,11 +14,15 @@ INDEX_TTL_SECONDS = 300
 
 @lru_cache(maxsize=1)
 def _client() -> redis.Redis:
-    url = os.environ.get("REDIS_URL") or (
-        f"redis://{os.environ.get('REDIS_HOST', 'localhost')}:"
-        f"{os.environ.get('REDIS_PORT', '6379')}/0"
-    )
-    return redis.Redis.from_url(url, decode_responses=True)
+    url = os.environ.get("REDIS_URL")
+    if url:
+        return redis.Redis.from_url(url, decode_responses=True)
+    return redis.Redis(host=os.environ.get("REDIS_HOST", "localhost"),
+                       port=int(os.environ.get("REDIS_PORT", "6379")),
+                       username=os.environ.get("REDIS_USERNAME"),
+                       password=os.environ.get("REDIS_PASSWORD"),
+                       ssl=os.environ.get("REDIS_SSL", "false").lower() == "true",
+                       decode_responses=True)
 
 
 def _connect():
