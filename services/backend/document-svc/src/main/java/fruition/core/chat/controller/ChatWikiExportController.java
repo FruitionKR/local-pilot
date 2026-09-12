@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 채팅 Wiki page화 API. 세션을 Markdown 원문 문서로 직렬화한 뒤 기존 문서 ingestion 파이프라인에 넣는다.
+ * 채팅 Wiki page화 API. 세션을 Markdown 원문 문서로 저장한다. Ingest는 별도로 요청한다.
  * (docs/backlog/spec/chat-to-wiki-contract.md)
  */
 @RestController
@@ -34,9 +34,9 @@ public class ChatWikiExportController {
     }
 
     @Operation(summary = "채팅 Wiki page화",
-            description = "세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 "
-                    + "일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다.")
-    @ApiResponse(responseCode = "202", description = "Wiki 생성 작업이 대기열에 등록됨",
+            description = "세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 저장합니다. "
+                    + "Ingest는 문서에서 별도로 요청합니다.")
+    @ApiResponse(responseCode = "200", description = "채팅 원문 문서 저장 완료 또는 기존 문서 반환",
             content = @Content(schema = @Schema(implementation = ChatWikiExportResponse.class)))
     @PostMapping("/{session_id}/wiki")
     public ResponseEntity<ChatWikiExportResponse> exportToWiki(
@@ -45,7 +45,7 @@ public class ChatWikiExportController {
             @Parameter(description = "채팅 세션 ID", example = "session_abc12345")
             @PathVariable("session_id") String sessionId,
             @RequestBody ChatWikiExportRequest request) {
-        return ResponseEntity.accepted().body(chatWikiExportService.export(workspaceId, userId, sessionId, request));
+        return ResponseEntity.ok().body(chatWikiExportService.export(workspaceId, userId, sessionId, request));
     }
 
     @Operation(summary = "[임시] 채팅 Wiki page화 Markdown 미리보기",

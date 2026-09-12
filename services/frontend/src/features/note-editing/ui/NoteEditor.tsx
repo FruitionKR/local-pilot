@@ -9,6 +9,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { history } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
+import { TableNodeView } from "@milkdown/kit/component/table-block";
 import { editorViewCtx, keymapCtx, parserCtx } from "@milkdown/core";
 import type { KeymapItem } from "@milkdown/core";
 import { closeHistory, history as prosemirrorHistory } from "@milkdown/prose/history";
@@ -16,6 +17,7 @@ import { listItemSchema } from "@milkdown/kit/preset/commonmark";
 import { Slice } from "@milkdown/prose/model";
 import { liftListItem } from "@milkdown/prose/schema-list";
 import { TextSelection } from "@milkdown/prose/state";
+import { CellSelection } from "@milkdown/prose/tables";
 import { useUserPreferences } from "@/entities/user";
 import { buildMarkdownEditorSnapshot } from "@/features/agent-chat/lib/markdownEditContext";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
@@ -171,12 +173,14 @@ export function NoteEditor({
 
         const yHandle = block.querySelector<HTMLElement>('[data-role="y-line-drag-handle"]');
         if (yHandle?.dataset.show === "true"
+          && yHandle.dataset.displayType === "tool"
           && yHandle.getBoundingClientRect().left < tableRect.right - EDGE_TOLERANCE_PX) {
           yHandle.dataset.show = "false";
         }
 
         const xHandle = block.querySelector<HTMLElement>('[data-role="x-line-drag-handle"]');
         if (xHandle?.dataset.show === "true"
+          && xHandle.dataset.displayType === "tool"
           && xHandle.getBoundingClientRect().top < tableRect.bottom - EDGE_TOLERANCE_PX) {
           xHandle.dataset.show = "false";
         }
@@ -319,6 +323,18 @@ export function NoteEditor({
       if (isDisposed) return;
       crepe.editor.action((ctx) => {
         const view = ctx.get(editorViewCtx);
+        // 선택 장식만 바뀔 때 표 DOM을 재생성하면 누르고 있던 드래그 핸들이 사라진다.
+        view.setProps({
+          nodeViews: {
+            ...view.props.nodeViews,
+            table: (node, editorView, getPos) => {
+              const tableView = new TableNodeView(ctx, node, editorView, getPos);
+              const update = tableView.update.bind(tableView);
+              tableView.update = (nextNode) => nextNode.eq(tableView.node) || update(nextNode);
+              return tableView;
+            }
+          }
+        });
         const plugins = view.state.plugins.map((plugin) =>
           (plugin as unknown as { key?: string }).key?.startsWith("history$")
             ? prosemirrorHistory({ newGroupDelay: 1 })
@@ -389,7 +405,42 @@ export function NoteEditor({
           }}
         />
       ) : (
-        <div ref={wysiwygRootRef} className={styles["note-wysiwyg-editor"]} />
+        <div
+          ref={wysiwygRootRef}
+          className={styles["note-wysiwyg-editor"]}
+          onMouseDownCapture={(event) => {
+            if (event.target instanceof Element && event.target.closest(".milkdown-table-block .cell-handle")) {
+              // 본문 mousedown 처리가 방금 만든 셀 선택을 커서 선택으로 바꾸지 않게 한다.
+              event.stopPropagation();
+            }
+          }}
+          onPointerDownCapture={(event) => {
+            if (event.button !== 0 || !(event.target instanceof Element)) return;
+            if (event.target.closest("button")) return;
+            const handle = event.target.closest<HTMLElement>(
+              '.milkdown-table-block .cell-handle[data-role="row-drag-handle"], .milkdown-table-block .cell-handle[data-role="col-drag-handle"]'
+            );
+            const table = handle?.closest(".milkdown-table-block")?.querySelector<HTMLTableElement>("table.children");
+            if (!handle || !table) return;
+            const isRow = handle.dataset.role === "row-drag-handle";
+            const handleRect = handle.getBoundingClientRect();
+            const center = isRow ? (handleRect.top + handleRect.bottom) / 2 : (handleRect.left + handleRect.right) / 2;
+            const candidates = isRow ? Array.from(table.rows) : Array.from(table.rows[0]?.cells ?? []);
+            const target = candidates.find((element) => {
+              const rect = element.getBoundingClientRect();
+              return isRow ? rect.top <= center && center < rect.bottom : rect.left <= center && center < rect.right;
+            });
+            const cell = target instanceof HTMLTableRowElement ? target.cells[0] : target;
+            if (!cell) return;
+            // dragstart 전에 실제 셀 선택을 확정한다. 합성 click은 호출하지 않는다.
+            crepeRef.current?.editor.action((ctx) => {
+              const view = ctx.get(editorViewCtx);
+              const $cell = view.state.doc.resolve(view.posAtDOM(cell, 0) - 1);
+              const selection = isRow ? CellSelection.rowSelection($cell) : CellSelection.colSelection($cell);
+              view.dispatch(view.state.tr.setSelection(selection));
+            });
+          }}
+        />
       )}
     </div>
   );

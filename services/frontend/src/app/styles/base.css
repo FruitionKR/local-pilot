@@ -51,6 +51,19 @@ button {
   border: 0;
 }
 
+/* 개별 hover 효과가 있는 버튼은 이 값을 none으로 지정한다. */
+:where(button, [role="button"], [role="menuitem"], [role="tab"], input[type="button"], input[type="submit"], input[type="reset"]) {
+  --button-hover-overlay: linear-gradient(rgb(255 255 255 / 9%), rgb(255 255 255 / 9%));
+}
+
+/* 개별 효과가 없는 활성 버튼에만 공통 강조를 더한다. */
+@media (hover: hover) {
+  :where(button, [role="button"], [role="menuitem"], [role="tab"], input[type="button"], input[type="submit"], input[type="reset"]):not(:disabled):not([aria-disabled="true"]):hover {
+    cursor: pointer;
+    background-image: var(--button-hover-overlay);
+  }
+}
+
 html[data-reduce-motion="true"] *,
 html[data-reduce-motion="true"] *::before,
 html[data-reduce-motion="true"] *::after {

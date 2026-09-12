@@ -106,12 +106,24 @@ export async function deleteDocument(documentId: string): Promise<void> {
 /** 문서 표시명을 변경한다. */
 export async function renameDocument(documentId: string, filename: string): Promise<void> {
   const workspaceId = getWorkspaceId();
+  const detailResponse = await apiFetch(workspacePath(workspaceId, "documents", documentId), { cache: "no-store" });
+  const detail = await parseJsonOrThrow<{ current_version?: number; filename?: string } | null>(
+    detailResponse, ERROR_MESSAGES.documentRenameFailed
+  );
+  if (!detail || !Number.isInteger(detail.current_version) || !detail.current_version || !detail.filename) {
+    throw new Error(ERROR_MESSAGES.documentRenameFailed);
+  }
+  const extensionIndex = detail.filename.lastIndexOf(".");
+  const extension = extensionIndex > 0 ? detail.filename.slice(extensionIndex) : "";
+  const name = filename.trim().normalize("NFC");
+  const displayName = extension && name.toLowerCase().endsWith(extension.toLowerCase())
+    ? name.slice(0, -extension.length) : name;
   const response = await apiFetch(
     workspacePath(workspaceId, "documents", documentId, "rename"),
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename })
+      body: JSON.stringify({ display_name: displayName, base_version: detail.current_version })
     }
   );
   await throwIfNotOk(response, ERROR_MESSAGES.documentRenameFailed);

@@ -64,6 +64,7 @@
 
 .modal-close:hover,
 .modal-close:focus-visible {
+  --button-hover-overlay: none;
   color: var(--ink);
 }
 

@@ -9,6 +9,7 @@ import { getSelectedWorkspaceId } from "@/shared/lib/auth";
 import { claudeIcon, geminiIcon, gptIcon, SvgIcon, type SvgAsset } from "@/shared/ui/SvgIcon";
 import styles from "../SettingsModal.module.css";
 import panelStyles from "./WorkspacePanel.module.css";
+import { WorkspaceIconSettings } from "./WorkspaceIconSettings";
 
 // provider id → 표시 라벨·아이콘
 const providerMeta: Record<string, { label: string; icon: SvgAsset }> = {
@@ -124,13 +125,7 @@ export function WorkspacePanel({
           <span>워크스페이스 아이콘</span>
           <span className={styles["section-line"]} />
         </div>
-        <div className={styles.field}>
-          <span className={styles["field-label"]}>워크스페이스 아이콘</span>
-          <small>이미지를 업로드하거나 이모티콘을 선택하세요 (100*100 사이즈를 추천드립니다.)</small>
-          <div className={styles["ws-icon-outline"]}>
-            <span className={styles["ws-icon"]} aria-hidden>{wsName.charAt(0)}</span>
-          </div>
-        </div>
+        <WorkspaceIconSettings />
         <div className={styles.row}>
           <div className={styles["row-title"]}>
             <strong>자동 저장</strong>

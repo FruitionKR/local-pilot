@@ -456,7 +456,7 @@ public class DocumentController {
 
     @Operation(
         summary = "문서 재ingest",
-        description = "편집 가능 Markdown 문서를 최신 편집본으로 다시 Wiki 파이프라인에 넣습니다. 편집본을 원본으로 승격한 뒤 재처리합니다.")
+        description = "Markdown 문서를 Wiki 파이프라인에 넣습니다. 일반 문서는 최신 편집본을 원본으로 승격하고, 채팅 문서는 저장된 문답과 출처 블록을 그대로 사용합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "202", description = "재처리 큐 등록됨",
             content = @Content(schema = @Schema(implementation = DocumentIngestResponse.class))),

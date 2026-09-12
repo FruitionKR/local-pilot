@@ -2,10 +2,12 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { exchangeOAuthCode, loginWithEmail } from "@/entities/user";
 import { saveAccessToken } from "@/shared/lib/auth";
 import { AuthError, AuthField, AuthSubmitButton, SocialLoginButtons } from "@/shared/ui/AuthControls";
 import { AuthScreen, AuthScreenBlank } from "@/shared/ui/AuthScreen";
+import { MfaLoginForm } from "@/views/auth/ui/MfaLoginForm";
 
 const INVALID_CREDENTIALS_MESSAGE = "가입하지 않은 아이디거나, 잘못된 비밀번호입니다.";
 
@@ -26,6 +28,7 @@ export default function LoginPage() {
 
 function LoginPageContent() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const hasHandledOAuth = useRef(false);
   const isLoginRequestInFlight = useRef(false);
@@ -33,6 +36,7 @@ function LoginPageContent() {
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
 
   useEffect(() => {
     const legacyRoute = LEGACY_AUTH_ROUTES[searchParams.get("view") ?? ""];
@@ -58,14 +62,20 @@ function LoginPageContent() {
     setIsSubmitting(true);
     exchangeOAuthCode(code as string)
       .then((tokens) => {
+        if (tokens.mfa_required) {
+          setMfaToken(tokens.mfa_token);
+          setIsSubmitting(false);
+          return;
+        }
         saveAccessToken(tokens.access_token);
+        queryClient.clear();
         router.replace("/workspaces");
       })
       .catch(() => {
         setErrorMessage("간편 로그인에 실패했습니다.");
         setIsSubmitting(false);
       });
-  }, [router, searchParams]);
+  }, [queryClient, router, searchParams]);
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -77,7 +87,15 @@ function LoginPageContent() {
 
     try {
       const tokens = await loginWithEmail(email, password);
+      if (tokens.mfa_required) {
+        setMfaToken(tokens.mfa_token);
+        setPassword("");
+        setIsSubmitting(false);
+        isLoginRequestInFlight.current = false;
+        return;
+      }
       saveAccessToken(tokens.access_token);
+      queryClient.clear();
       router.replace("/workspaces");
     } catch {
       isLoginRequestInFlight.current = false;
@@ -85,6 +103,12 @@ function LoginPageContent() {
       setIsSubmitting(false);
     }
   }
+
+  if (mfaToken) return (
+    <AuthScreen shellModifier="login" title="다단계 인증">
+      <MfaLoginForm token={mfaToken} onCancel={() => { setMfaToken(null); setErrorMessage(null); }} />
+    </AuthScreen>
+  );
 
   return (
     <AuthScreen extra={<SocialLoginButtons />} shellModifier="login" title="로그인">

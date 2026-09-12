@@ -139,6 +139,12 @@ public abstract class BaseExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception e) {
+        String duplicateNameMessage = DuplicateResourceName.message(e);
+        if (duplicateNameMessage != null) {
+            logHandled(e, HttpStatus.CONFLICT, "DUPLICATE_NAME");
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("DUPLICATE_NAME", duplicateNameMessage));
+        }
         if (e instanceof org.springframework.web.ErrorResponse springError) {
             int status = springError.getStatusCode().value();
             logHandled(e, status, "REQUEST_FAILED");

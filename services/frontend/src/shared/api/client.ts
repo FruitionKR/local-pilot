@@ -86,13 +86,24 @@ function fetchWithToken(path: string, init?: RequestInit): Promise<Response> {
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetchWithToken(path, init);
   if (response.status !== 401) return response;
+  // 비밀번호·MFA 코드 불일치는 인증 만료가 아니므로 재시도하지 않는다.
+  if (await isCredentialRejection(path, response)) return response;
   // 로그인·회원가입 등 인증 요청 자체의 401은 재발급 대상이 아니지만, /me는 보호된 요청이다.
-  const canRefresh = path === "/api/auth/me" || !path.startsWith("/api/auth/");
+  const canRefresh = path === "/api/auth/me" || path.startsWith("/api/auth/me/") || !path.startsWith("/api/auth/");
   if (canRefresh && await tryRefreshTokens()) {
     const retried = await fetchWithToken(path, init);
     if (retried.status !== 401) return retried;
+    if (await isCredentialRejection(path, retried)) return retried;
   }
   throw new Error(ERROR_MESSAGES.loginRequired);
+}
+
+async function isCredentialRejection(path: string, response: Response): Promise<boolean> {
+  const expectedCode = path === "/api/auth/me/password" ? "INVALID_CREDENTIALS"
+    : path === "/api/auth/me/mfa" || path === "/api/auth/me/mfa/activate" ? "INVALID_MFA_CODE" : null;
+  if (!expectedCode) return false;
+  const body = await response.clone().json().catch(() => null) as { error?: { code?: string } } | null;
+  return body?.error?.code === expectedCode;
 }
 
 /** 응답이 실패(!ok)면 에러 메시지를 추출해 던진다. 본문이 필요 없는 요청에서 사용한다. */

@@ -10,7 +10,7 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | **access_db** (PostgreSQL) | access-svc | 사용자·OAuth·refresh token·워크스페이스·멤버 (자체 Flyway) |
 | **core_db** (PostgreSQL) | document-svc | 문서 metadata·폴더·채팅·operation·본문·편집 revision·write receipt·content version·asset/reference·Agent 적용 projection·감사·편집 outbox |
 | **ai_db** (PostgreSQL) | ai-svc | Wiki 현재 상태·pipeline run·embedding·schema·문서 파생물 stale 추적·Agent·Skill·checkpoint (`ai_schema.sql`) |
-| **Redis** | access-svc / document-svc / ai-svc | 권한 projection·OAuth 교환 코드 / query run·SSE / user+workspace Concept index·ingest short lock |
+| **Redis** | access-svc / document-svc / ai-svc | 권한 projection·OAuth 교환 코드 / query run·SSE / user+workspace Concept index (write lock은 ai_db advisory lock) |
 | **S3/MinIO** | document-svc | 문서 원본·snapshot, Wiki markdown 본문 |
 
 **object key 표기 규약**: `documents.source_uri`는 항상 평문 키(`sources/documents/{document_id}/original`)다. document-svc가 문서를 만들 때 조립해 넣고 이후 바뀌지 않으며, `s3://` 형식은 `Document` 생성자가 거부한다. `s3://<bucket>/<key>` 형식이 들어오는 컬럼은 파이프라인이 콜백으로 채우는 `documents.extracted_text_uri` 뿐이다. 두 표기가 섞이면 쓰기와 읽기가 서로 다른 키를 가리켜도 오류 없이 어긋나므로, 읽기·쓰기 양쪽 모두 `normalizeObjectKey`를 거친다.
@@ -30,9 +30,12 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | workspaces | access-svc | 격리 단위 | 문서·Wiki·채팅의 소속 기준, 아이콘 `icon_emoji`·`icon_image_hash`·`icon_image_content_type`(이모지와 이미지는 CHECK 제약으로 배타), workspace 설정 snapshot인 `ingest_lint_provider`·`ingest_lint_model`(새 workspace 기본값 `gemini/gemini-3.1-flash-lite`) |
 | workspace_icons | access-svc | 아이콘 이미지 바이너리 | PK/FK `workspace_id` → `workspaces(id)`(삭제 cascade), `image bytea`. 목록 조회가 바이너리를 함께 읽지 않도록 workspaces에서 분리했다. 1MB 상한이라 object storage를 쓰지 않는다 |
 | workspace_members | access-svc | 멤버십(N:M 대비) | 복합 PK `(workspace_id, user_id)`, `role`(owner/member) |
+| workspace_name_reservations | access-svc | 소유자별 활성 워크스페이스 이름 점유 | PK `(workspace_id, user_id)`, unique `(user_id, normalized_name)`. V19 트리거가 이름·삭제 상태·멤버십 변경과 같은 트랜잭션에서 모든 OWNER의 점유를 갱신한다 |
 | workspace_invitations | access-svc | 이메일 초대(수락 전 상태) | `token_hash`(SHA-256, 원문 미저장), `expires_at`, `accepted_at`/`accepted_by`/`revoked_at`. 대기 중 초대는 `(workspace_id, email)` partial unique라 재초대는 새 행이 아니라 재발송이다. 계정이 `(email, provider)`로 분리돼 있어 어느 계정이 멤버가 될지는 수락 시점에 정해진다 |
 
 ### core_db (document-svc)
+
+- 활성 문서의 전체 파일명(확장자 포함)과 폴더명은 각각 워크스페이스 전체에서 고유하다. 폴더 위치가 달라도 중복을 허용하지 않는다. 앞뒤 공백 제거·Unicode NFC·소문자 변환 후 DB expression unique index로 비교한다(V48). 휴지통 항목은 이름을 점유하지 않으며, 복구 시 활성 이름과 충돌하면 전체 트랜잭션을 거절한다. 기존 중복은 적용 전에 별도로 검토해 정리해야 한다.
 
 - `chat_messages.web_search_enabled`: 질의 요청의 `allow_web_search` 실행 시점 snapshot
 

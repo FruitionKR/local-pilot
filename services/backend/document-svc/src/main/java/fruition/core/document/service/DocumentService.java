@@ -353,9 +353,8 @@ public class DocumentService {
             return replay.get();
         }
 
-        Set<String> existingNames = siblings.stream()
-                .map(Document::getNormalizedFilename)
-                .collect(Collectors.toSet());
+        Set<String> existingNames = new java.util.HashSet<>(
+                documentRepository.findActiveNormalizedFilenames(workspaceId));
         DocumentEditingRules.Filename duplicateFilename =
                 DocumentEditingRules.duplicateFilename(source.getDisplayName(), existingNames);
         long sortOrder = siblings.stream()
@@ -711,20 +710,20 @@ public class DocumentService {
     }
 
     /**
-     * 채팅 export 문서 이름을 만든다. 채팅에서 온 문서임을 알리는 접두사를 붙이고, root의 기존 문서와
+     * 채팅 export 문서 이름을 만든다. 채팅에서 온 문서임을 알리는 접두사를 붙이고, 워크스페이스의 기존 문서와
      * 겹치면 {@code (2)}를 더한다. export 시점과 이름 확정 시점이 모두 이 경로를 지나 접두사가 유지된다.
      *
      * <p>이름은 세션 제목이나 AI가 만든 페이지 제목에서 오므로 파일명에 못 쓰는 문자가 섞일 수 있어
      * 여기서 정제한다. 접두사가 늘 남으므로 정제 결과가 비는 일은 없다.
      *
-     * <p>유일성은 best-effort다. 잠금 없이 읽으므로 동시에 두 export가 같은 이름을 뽑을 수 있고,
-     * 그러면 같은 이름의 문서가 둘 생긴다. {@code normalized_filename}에 unique 제약이 없어 저장은 되며,
-     * 이름 확정 단계에서 다시 정리된다. 배경 폴링이 사용자 쓰기를 막지 않는 쪽을 택한 결과다.
+     * <p>동시에 같은 이름을 선택하는 경합은 DB 고유 제약으로 거절한다.
      */
     private String uniqueChatExportFilename(String workspaceId, String displayName,
                                             String excludedNormalizedFilename) {
-        Set<String> existingNames = documentRepository.findRootPageNormalizedFilenames(workspaceId).stream()
-                .filter(name -> !name.equals(excludedNormalizedFilename))
+        Set<String> existingNames = documentRepository.findActiveNormalizedFilenames(workspaceId).stream()
+                .filter(name -> excludedNormalizedFilename == null || !name.equals(
+                        java.text.Normalizer.normalize(excludedNormalizedFilename.trim(), java.text.Normalizer.Form.NFC)
+                                .toLowerCase(java.util.Locale.ROOT)))
                 .collect(Collectors.toSet());
         String candidate = DocumentEditingRules.sanitizeDisplayName(CHAT_EXPORT_NAME_PREFIX + displayName);
         return DocumentEditingRules.uniqueFilename(candidate, existingNames).filename();
@@ -732,7 +731,7 @@ public class DocumentService {
 
     /**
      * 채팅 export 문서는 읽기 전용이다. 본문을 사람이 고치면 문답 경계를 다시 알아낼 수 없어
-     * source block provenance가 끊긴다. 재처리는 채팅 세션의 재-export 경로만 쓴다.
+     * source block provenance가 끊긴다. Ingest는 저장된 문답과 출처 블록을 사용한다.
      */
     private void requireNotChatExport(Document document, String message) {
         if ("chat_export".equals(document.getOrigin())) {
@@ -759,7 +758,7 @@ public class DocumentService {
     private static final String CHAT_EXPORT_SELECTION_MODE = "partial";
 
     /**
-     * 채팅 export Markdown을 문서로 저장하고 처리 큐에 등록한다. (권한 검증은 호출부에서 이미 수행)
+     * 채팅 export Markdown을 원문 문서로 저장한다. Ingest는 별도로 요청한다. (권한 검증은 호출부에서 이미 수행)
      * contentHash로 중복을 확인해, 이미 있으면 기존 문서 id로 skipped 결과를 반환한다.
      */
     @Transactional
@@ -775,8 +774,6 @@ public class DocumentService {
             return new ExportDocumentResult(existing.get().getId(), true);
         }
 
-        String exportRunId = UUID.randomUUID().toString();
-        taskWriter.begin(exportRunId, workspaceId, userId, "document");
         String documentId = "chatdoc_" + UUID.randomUUID().toString().replace("-", "");
         String objectPath = "sources/documents/" + documentId + "/original";
         byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
@@ -785,6 +782,7 @@ public class DocumentService {
                 documentId, workspaceId, userId, uniqueChatExportFilename(workspaceId, displayName, null),
                 "text/markdown", bytes.length, objectPath, contentHash, "chat_export");
         candidate.assignSelectionMode(CHAT_EXPORT_SELECTION_MODE);
+        candidate.updateStatus(DocumentStatus.uploaded, null, null, null);
         if (documentRepository.reserveChatExport(
                 candidate.getId(), candidate.getWorkspaceId(), candidate.getUserId(),
                 candidate.getFilename(), candidate.getDisplayName(), candidate.getNormalizedFilename(),
@@ -820,8 +818,6 @@ public class DocumentService {
         log.info("[채팅 export 문서 DB 저장 완료] documentId={} workspaceId={} userId={} filename={} selectionMode={} status={} sourceUri={}",
                 document.getId(), document.getWorkspaceId(), document.getUserId(), document.getFilename(),
                 document.getSelectionMode(), document.getStatus(), document.getSourceUri());
-
-        enqueueIngest(document, exportRunId);
 
         return new ExportDocumentResult(documentId, false);
     }
@@ -1573,11 +1569,19 @@ public class DocumentService {
                 .filter(value -> value.getDeletedAt() == null)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         verifyDocumentOwner(document, userId);
+        if ("chat_export".equals(document.getOrigin())) {
+            if (document.getStatus() == DocumentStatus.processing) {
+                throw new DocumentAlreadyProcessingException("이미 처리 중인 문서입니다.");
+            }
+            // 저장한 문답과 provenance를 그대로 사용한다. 편집본 승격은 필요하지 않다.
+            document.updateStatus(DocumentStatus.processing, document.getExtractedTextUri(), null, null);
+            document.markReconciled(null);
+            String runId = enqueueIngest(document);
+            return new DocumentIngestResponse(documentId, runId, document.getStatus());
+        }
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 재처리할 수 있습니다.");
         }
-        requireNotChatExport(document,
-                "채팅 Wiki page화 문서는 채팅 세션의 재-export로만 재처리할 수 있습니다.");
         editLockService.requireWritable(documentId, userId);
         if (document.getStatus() == DocumentStatus.processing) {
             throw new DocumentAlreadyProcessingException("이미 처리 중인 문서입니다.");

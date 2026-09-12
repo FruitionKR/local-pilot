@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -61,18 +62,21 @@ class FolderServiceIntegrationTest {
     }
 
     @Test
-    void create_allowsSameNameSiblingsAndAppendsOrder() {
+    void create_rejectsSameNameSiblingsAndAppendsOrder() {
         FolderResponse first = folderService.create(workspaceId, userId, "k1",
                 new FolderCreateRequest("자료", null));
+        assertThatThrownBy(() -> folderService.create(workspaceId, userId, "duplicate",
+                new FolderCreateRequest("자료", null)))
+                .isInstanceOf(DataIntegrityViolationException.class);
         FolderResponse second = folderService.create(workspaceId, userId, "k2",
-                new FolderCreateRequest("자료", null));
+                new FolderCreateRequest("추가 자료", null));
 
         assertThat(first.sortOrder()).isEqualTo(0);
         assertThat(second.sortOrder()).isEqualTo(1);
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM folders WHERE workspace_id = ? AND name = ?",
                 Integer.class, workspaceId, "자료");
-        assertThat(count).isEqualTo(2);
+        assertThat(count).isEqualTo(1);
     }
 
     @Test

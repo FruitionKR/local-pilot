@@ -79,6 +79,7 @@
 }
 
 .history-item:hover {
+  --button-hover-overlay: none;
   background: #2f2f2f;
 }
 

@@ -111,24 +111,6 @@
   background: #3a1f1d;
 }
 
-.target-document-button {
-  flex: 0 1 auto;
-  overflow: hidden;
-  padding: 4px 8px;
-  color: var(--ink);
-  background: var(--soft);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.target-document-button:hover {
-  border-color: var(--subdued);
-}
-
 .rollback-button {
   flex: 0 0 auto;
   display: inline-flex;
@@ -148,6 +130,7 @@
 
 .rollback-button:hover:not(:disabled),
 .rollback-button:focus-visible {
+  --button-hover-overlay: none;
   background: #3f3f3f;
 }
 
@@ -218,16 +201,16 @@
   display: grid;
   grid-template-columns: var(--log-gutter) minmax(0, 1fr);
   align-items: stretch;
-  min-height: 33px;
+  min-height: 22px;
   font-size: 14px;
-  line-height: 1.2;
+  line-height: 18px;
   letter-spacing: -0.28px;
 }
 
 .diff-gutter {
   display: flex;
   align-items: center;
-  padding: 8px 12px 8px var(--log-pad-x);
+  padding: 2px 12px 2px var(--log-pad-x);
   color: var(--subdued);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -239,7 +222,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px var(--log-pad-x) 8px 8px;
+  padding: 2px var(--log-pad-x) 2px 8px;
   color: var(--ink);
   font-weight: 600;
   white-space: pre-wrap;
