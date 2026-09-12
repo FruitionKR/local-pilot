@@ -1205,7 +1205,7 @@ class DocumentServiceBlocksTest {
         Document chatDoc = new Document(
                 "chatdoc_slash", WORKSPACE_ID, USER_ID, "[채팅] 첫 질문.md", "text/markdown", 10L,
                 "sources/documents/chatdoc_slash/original", "h", "chat_export");
-        when(documentRepository.findRootPageNormalizedFilenames(WORKSPACE_ID)).thenReturn(List.of());
+        when(documentRepository.findActiveNormalizedFilenames(WORKSPACE_ID)).thenReturn(List.of());
 
         // 예외가 나면 reconciler 트랜잭션 전체가 롤백돼 채팅 후처리가 영구히 막힌다.
         documentService.confirmChatExportName(chatDoc, "CI/CD 파이프라인");
@@ -1220,7 +1220,7 @@ class DocumentServiceBlocksTest {
                 "chatdoc_name", WORKSPACE_ID, USER_ID, "[채팅] 첫 질문.md", "text/markdown", 10L,
                 "sources/documents/chatdoc_name/original", "h", "chat_export");
         // 확정 후에는 문서 자신의 이름이 root 목록에 들어 있다.
-        when(documentRepository.findRootPageNormalizedFilenames(WORKSPACE_ID))
+        when(documentRepository.findActiveNormalizedFilenames(WORKSPACE_ID))
                 .thenReturn(List.of("[채팅] 첫 질문.md"), List.of("[채팅] 검색 인덱싱.md"));
 
         documentService.confirmChatExportName(chatDoc, "검색 인덱싱");
@@ -1251,7 +1251,7 @@ class DocumentServiceBlocksTest {
     void createChatExportDocument_prefixesName() {
         when(documentRepository.findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
                 any(), any(), any(), any())).thenReturn(Optional.empty());
-        when(documentRepository.findRootPageNormalizedFilenames(WORKSPACE_ID)).thenReturn(List.of());
+        when(documentRepository.findActiveNormalizedFilenames(WORKSPACE_ID)).thenReturn(List.of());
         when(documentRepository.reserveChatExport(
                 anyString(), anyString(), anyString(), anyString(), anyString(), anyString(),
                 anyString(), anyLong(), anyString(), anyString(), anyString(), anyString(),
@@ -1515,6 +1515,8 @@ class DocumentServiceBlocksTest {
                 .thenReturn(Optional.of(source));
         when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, folderId))
                 .thenReturn(List.of(source, existingCopy));
+        when(documentRepository.findActiveNormalizedFilenames(WORKSPACE_ID))
+                .thenReturn(List.of(source.getNormalizedFilename(), existingCopy.getNormalizedFilename()));
         when(editStateRepository.findById(source.getId())).thenReturn(Optional.of(sourceEditState));
 
         DocumentDuplicateResponse response = documentService.duplicate(

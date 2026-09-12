@@ -10,6 +10,7 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.text.Normalizer;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Objects;
@@ -126,7 +127,7 @@ final class DocumentEditingRules {
         if (displayName == null) {
             throw new InvalidDocumentFilenameException("문서 이름은 필수입니다.");
         }
-        String normalized = displayName.trim();
+        String normalized = Normalizer.normalize(displayName.trim(), Normalizer.Form.NFC);
         if (normalized.isEmpty() || normalized.equals(".") || normalized.equals("..")) {
             throw new InvalidDocumentFilenameException("문서 이름으로 빈 이름, '.', '..'을 사용할 수 없습니다.");
         }

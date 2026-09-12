@@ -2,8 +2,12 @@ import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { convertDocumentToMarkdown, deleteDocument, renameDocument } from "@/entities/document";
 import { getSelectedWorkspaceId } from "@/shared/lib/auth";
+import { publishNotice } from "@/features/document-notifications";
 import {
   findTreeItem,
+  availableFolderName,
+  folderNames,
+  normalizeTreeName,
   findTreeItemByDocumentId,
   initialProjects,
   isFileItem,
@@ -117,17 +121,18 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
 
   function addProject() {
     const projectId = `project-${Date.now()}`;
+    const title = availableFolderName(projects, "새 폴더");
     setProjects((current) => [
       ...current,
       {
         id: projectId,
-        title: `새 폴더 ${current.length + 1}`,
+        title,
         items: []
       }
     ]);
     editingCancelRef.current = false;
     setContextMenu(null);
-    setEditing({ projectId, itemId: null, label: `새 폴더 ${projects.length + 1}` });
+    setEditing({ projectId, itemId: null, label: title });
   }
 
   function moveTreeEntry(target: DropTarget) {
@@ -265,8 +270,16 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
       return;
     }
     if (!editing) return;
-    const nextLabel = editing.label.trim();
+    const nextLabel = editing.label.trim().normalize("NFC");
     if (nextLabel) {
+      const project = projects.find((project) => project.id === editing.projectId);
+      const target = editing.itemId && project ? findTreeItem(project.items, editing.itemId) : null;
+      const isFolder = editing.itemId === null || (target && !isFileItem(target) && !isWikiItem(target));
+      if (isFolder && folderNames(projects, editing.itemId ?? editing.projectId).has(normalizeTreeName(nextLabel))) {
+        publishNotice({ kind: "failed", title: "폴더 이름 변경 실패", message: "같은 워크스페이스에 같은 폴더명이 이미 있습니다. 다른 이름을 사용해 주세요." });
+        setEditing(null);
+        return;
+      }
       if (editing.itemId === null) {
         updateProjectTitle(editing.projectId, nextLabel);
       } else {
@@ -284,7 +297,8 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
         if (documentId) {
           void renameDocument(documentId, nextLabel)
             .then(() => refreshRef.current())
-            .catch(() => {
+            .catch((error: unknown) => {
+              publishNotice({ kind: "failed", title: "문서 이름 변경 실패", message: error instanceof Error ? error.message : "이름 변경에 실패했습니다." });
               setProjects((current) => current.map((project) => {
                 if (project.id !== projectId) return project;
                 return { ...project, items: updateTreeItemLabel(project.items, itemId, previousLabel) };
