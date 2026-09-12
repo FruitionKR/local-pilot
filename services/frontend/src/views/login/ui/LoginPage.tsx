@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { exchangeOAuthCode, loginWithEmail } from "@/entities/user";
 import { saveAccessToken } from "@/shared/lib/auth";
 import { AuthError, AuthField, AuthSubmitButton, SocialLoginButtons } from "@/shared/ui/AuthControls";
@@ -27,6 +28,7 @@ export default function LoginPage() {
 
 function LoginPageContent() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const hasHandledOAuth = useRef(false);
   const isLoginRequestInFlight = useRef(false);
@@ -66,13 +68,14 @@ function LoginPageContent() {
           return;
         }
         saveAccessToken(tokens.access_token);
+        queryClient.clear();
         router.replace("/workspaces");
       })
       .catch(() => {
         setErrorMessage("간편 로그인에 실패했습니다.");
         setIsSubmitting(false);
       });
-  }, [router, searchParams]);
+  }, [queryClient, router, searchParams]);
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -92,6 +95,7 @@ function LoginPageContent() {
         return;
       }
       saveAccessToken(tokens.access_token);
+      queryClient.clear();
       router.replace("/workspaces");
     } catch {
       isLoginRequestInFlight.current = false;

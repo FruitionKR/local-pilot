@@ -55,7 +55,7 @@ export function SessionsPanel() {
         <div className={styles["row-title"]}>
           <strong>{session.current ? "현재 기기" : "로그인 기기"}</strong>
           <small className={panelStyles["user-agent"]}>{session.user_agent || "알 수 없는 기기"}</small>
-          <small>최근 갱신: {new Date(session.created_at).toLocaleString("ko-KR")}</small>
+          <small>로그인 시각: {new Date(session.created_at).toLocaleString("ko-KR")}</small>
         </div>
         <button type="button" className={styles.btn} disabled={busy} onClick={() => void remove(session)}>로그아웃</button>
       </div>)}

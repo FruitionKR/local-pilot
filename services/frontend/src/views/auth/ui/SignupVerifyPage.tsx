@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { confirmEmailVerification, loginWithEmail, signupWithEmail } from "@/entities/user";
 import { saveAccessToken } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
@@ -16,6 +17,7 @@ import { MfaLoginForm } from "./MfaLoginForm";
 
 export default function SignupVerificationPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { signupDraft, setSignupDraft } = useAuthFlow();
   const [verificationCode, setVerificationCode] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -72,6 +74,7 @@ export default function SignupVerificationPage() {
         return;
       }
       saveAccessToken(tokens.access_token);
+      queryClient.clear();
       router.replace("/workspaces");
     } catch (error: unknown) {
       setErrorMessage(getErrorMessage(error, "회원가입에 실패했습니다."));

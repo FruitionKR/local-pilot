@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { loginWithMfa } from "@/entities/user";
 import { saveAccessToken } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
@@ -9,6 +10,7 @@ import { AuthError, AuthField, AuthSubmitButton } from "@/shared/ui/AuthControls
 
 export function MfaLoginForm({ token, onCancel }: { token: string; onCancel: () => void }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +23,7 @@ export function MfaLoginForm({ token, onCancel }: { token: string; onCancel: () 
     try {
       const tokens = await loginWithMfa(token, code.trim());
       saveAccessToken(tokens.access_token);
+      queryClient.clear();
       setCode("");
       router.replace("/workspaces");
     } catch (cause: unknown) {

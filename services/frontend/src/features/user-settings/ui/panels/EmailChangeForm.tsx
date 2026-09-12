@@ -21,7 +21,11 @@ export function EmailChangeForm({ onSaved }: { onSaved: () => void }) {
 
   useEffect(() => {
     if (!retryAt) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(() => {
+      const current = Date.now();
+      setNow(current);
+      if (current >= retryAt) window.clearInterval(timer);
+    }, 1000);
     return () => window.clearInterval(timer);
   }, [retryAt]);
 
