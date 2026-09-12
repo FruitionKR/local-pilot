@@ -95,6 +95,7 @@ ORDER BY outcome_label, action;
 | `scripts/front-up.sh` / `front-down.sh` | 프론트엔드만 시작하거나 종료한다. | 백엔드와 Compose 서비스는 유지한다. |
 | `scripts/back-up.sh` / `back-down.sh` | 공용 인프라와 호스트 백엔드를 시작하거나 백엔드만 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
 | `scripts/back-test.sh` | Java 21을 찾아 백엔드 Gradle 테스트를 실행한다. 인자가 없으면 CI와 같은 세 모듈 테스트를 실행한다. | 서비스를 시작하거나 종료하지 않는다. |
+| `scripts/sql/preview-duplicate-document-names.sql` | `psql -Xq -f`로 실행해 V48 적용 전 중복 문서 이름 변경안을 CSV로 출력한다. 먼저 업로드된 문서를 유지하고 기존 이름과 충돌하지 않는 번호를 붙인다. | 실제 문서 행은 변경하지 않으며 임시 테이블도 롤백한다. |
 | `scripts/ai-up.sh` / `ai-down.sh` | 백엔드 기동 후 AI image 하나로 Pipeline API와 워커 전체를 시작하거나 종료한다. | 종료 후 공용 인프라와 볼륨은 유지한다. |
 | `scripts/ai-e2e.sh` | 배포용 Compose 조합을 빌드하고 converter·ingest·query·agent·lint를 Gemini로 실제 실행한다. | 전체 컨테이너와 DB 볼륨을 유지해 결과를 재확인할 수 있다. |
 

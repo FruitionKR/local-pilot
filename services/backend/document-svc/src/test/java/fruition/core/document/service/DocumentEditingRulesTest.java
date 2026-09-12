@@ -14,6 +14,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DocumentEditingRulesTest {
 
+    @org.junit.jupiter.api.Test
+    void generatedFilenameUsesCanonicalKoreanToAvoidHiddenDuplicates() {
+        assertThat(DocumentEditingRules.uniqueFilename("보고서", Set.of("보고서.md")).filename())
+                .isEqualTo("보고서 (2).md");
+        assertThat(DocumentEditingRules.rename("보고서", "old.md").filename()).isEqualTo("보고서.md");
+    }
+
     @Test
     @DisplayName("복제 이름은 기존 복사본 번호를 이어가고 255자 안에서 본체를 줄인다")
     void duplicateFilename_selectsNextNumberAndTruncatesBase() {

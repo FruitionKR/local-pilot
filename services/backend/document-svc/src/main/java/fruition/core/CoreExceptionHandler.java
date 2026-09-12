@@ -419,6 +419,9 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(DocumentUploadException.class)
     public ResponseEntity<ErrorResponse> handleDocumentUpload(DocumentUploadException e) {
+        if (fruition.shared.util.DuplicateResourceName.message(e) != null) {
+            return handleUnexpected(e);
+        }
         logHandled(e, HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_SERVER_ERROR");
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)

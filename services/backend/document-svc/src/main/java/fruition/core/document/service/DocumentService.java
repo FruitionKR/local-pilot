@@ -353,9 +353,8 @@ public class DocumentService {
             return replay.get();
         }
 
-        Set<String> existingNames = siblings.stream()
-                .map(Document::getNormalizedFilename)
-                .collect(Collectors.toSet());
+        Set<String> existingNames = new java.util.HashSet<>(
+                documentRepository.findActiveNormalizedFilenames(workspaceId));
         DocumentEditingRules.Filename duplicateFilename =
                 DocumentEditingRules.duplicateFilename(source.getDisplayName(), existingNames);
         long sortOrder = siblings.stream()
@@ -711,20 +710,20 @@ public class DocumentService {
     }
 
     /**
-     * 채팅 export 문서 이름을 만든다. 채팅에서 온 문서임을 알리는 접두사를 붙이고, root의 기존 문서와
+     * 채팅 export 문서 이름을 만든다. 채팅에서 온 문서임을 알리는 접두사를 붙이고, 워크스페이스의 기존 문서와
      * 겹치면 {@code (2)}를 더한다. export 시점과 이름 확정 시점이 모두 이 경로를 지나 접두사가 유지된다.
      *
      * <p>이름은 세션 제목이나 AI가 만든 페이지 제목에서 오므로 파일명에 못 쓰는 문자가 섞일 수 있어
      * 여기서 정제한다. 접두사가 늘 남으므로 정제 결과가 비는 일은 없다.
      *
-     * <p>유일성은 best-effort다. 잠금 없이 읽으므로 동시에 두 export가 같은 이름을 뽑을 수 있고,
-     * 그러면 같은 이름의 문서가 둘 생긴다. {@code normalized_filename}에 unique 제약이 없어 저장은 되며,
-     * 이름 확정 단계에서 다시 정리된다. 배경 폴링이 사용자 쓰기를 막지 않는 쪽을 택한 결과다.
+     * <p>동시에 같은 이름을 선택하는 경합은 DB 고유 제약으로 거절한다.
      */
     private String uniqueChatExportFilename(String workspaceId, String displayName,
                                             String excludedNormalizedFilename) {
-        Set<String> existingNames = documentRepository.findRootPageNormalizedFilenames(workspaceId).stream()
-                .filter(name -> !name.equals(excludedNormalizedFilename))
+        Set<String> existingNames = documentRepository.findActiveNormalizedFilenames(workspaceId).stream()
+                .filter(name -> excludedNormalizedFilename == null || !name.equals(
+                        java.text.Normalizer.normalize(excludedNormalizedFilename.trim(), java.text.Normalizer.Form.NFC)
+                                .toLowerCase(java.util.Locale.ROOT)))
                 .collect(Collectors.toSet());
         String candidate = DocumentEditingRules.sanitizeDisplayName(CHAT_EXPORT_NAME_PREFIX + displayName);
         return DocumentEditingRules.uniqueFilename(candidate, existingNames).filename();
