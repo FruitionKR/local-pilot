@@ -110,6 +110,7 @@
 
 .notice-cancel:hover,
 .notice-cancel:focus-visible {
+  --button-hover-overlay: none;
   background: #3f3f3f;
   border-color: #3f3f3f;
 }
@@ -128,6 +129,7 @@
 
 .notice-confirm:hover,
 .notice-confirm:focus-visible {
+  --button-hover-overlay: none;
   background: var(--yellow);
   border-color: var(--yellow);
 }

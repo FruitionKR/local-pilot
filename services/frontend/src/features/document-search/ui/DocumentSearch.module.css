@@ -28,6 +28,7 @@
 
 .search-result:hover,
 .search-result:focus-visible {
+  --button-hover-overlay: none;
   background: var(--soft);
 }
 

@@ -111,6 +111,7 @@
 
 .source-preview-actions button:hover,
 .source-preview-actions button:focus-visible {
+  --button-hover-overlay: none;
   color: #f0f0f0;
   background: #1e1e1e;
 }

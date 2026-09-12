@@ -57,6 +57,7 @@
 
 .agent-header-menu-list button:hover,
 .agent-header-menu-list button:focus-visible {
+  --button-hover-overlay: none;
   background: var(--soft, #2a2a2a);
 }
 
@@ -94,6 +95,10 @@
   padding: 3px;
   color: #a7a7a7;
   border-radius: 4px;
+}
+
+.agent-session-title:hover {
+  --button-hover-overlay: none;
 }
 
 .agent-session-title:hover svg,
@@ -167,6 +172,7 @@
 }
 
 .chat-session-new:hover {
+  --button-hover-overlay: none;
   background: var(--soft);
 }
 
@@ -216,6 +222,7 @@
 .chat-session-item:hover,
 .chat-session-item:focus-visible,
 .chat-session-item.is-active {
+  --button-hover-overlay: none;
   background: var(--soft);
 }
 
@@ -266,6 +273,7 @@
 
 .chat-session-more:hover,
 .chat-session-more:focus-visible {
+  --button-hover-overlay: none;
   background: var(--line-soft);
 }
 
@@ -294,6 +302,7 @@
 
 .chat-session-menu-list button:hover,
 .chat-session-menu-list button:focus-visible {
+  --button-hover-overlay: none;
   background: var(--soft);
 }
 
@@ -341,6 +350,7 @@
 }
 
 .panel-action:hover {
+  --button-hover-overlay: none;
   background: #323232;
 }
 
@@ -1047,6 +1057,7 @@
 
 .composer-model-trigger:hover,
 .composer-model-trigger:focus-visible {
+  --button-hover-overlay: none;
   color: var(--ink);
   background: var(--soft);
 }
@@ -1094,6 +1105,7 @@
 .composer-model-list button:hover,
 .composer-model-list button:focus-visible,
 .composer-model-list button.is-selected {
+  --button-hover-overlay: none;
   background: var(--soft);
 }
 
@@ -1114,6 +1126,7 @@
 
 .composer-send:hover:not(:disabled),
 .composer-send:focus-visible {
+  --button-hover-overlay: none;
   background: #e2e2e2;
 }
 
@@ -1260,6 +1273,7 @@
 
 .markdown-edit-preview footer button:hover:not(:disabled),
 .markdown-create-preview footer button:hover:not(:disabled) {
+  --button-hover-overlay: none;
   background: var(--line-soft);
 }
 
@@ -1273,6 +1287,7 @@
 
 .markdown-edit-preview footer button.is-primary:hover:not(:disabled),
 .markdown-create-preview footer button.is-primary:hover:not(:disabled) {
+  --button-hover-overlay: none;
   background: var(--yellow);
   filter: brightness(1.05);
 }

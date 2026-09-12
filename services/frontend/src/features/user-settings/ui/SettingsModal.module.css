@@ -66,6 +66,7 @@
 
 button.nav-row:hover,
 button.nav-row:focus-visible {
+  --button-hover-overlay: none;
   background: var(--soft);
 }
 
@@ -403,6 +404,7 @@ button.nav-row:disabled {
 .provider-button:hover,
 .provider-button:focus-visible,
 .provider-button.is-selected {
+  --button-hover-overlay: none;
   border-color: var(--yellow);
   background: var(--soft);
 }
@@ -445,6 +447,7 @@ button.nav-row:disabled {
 
 .close:hover,
 .close:focus-visible {
+  --button-hover-overlay: none;
   color: var(--ink);
 }
 

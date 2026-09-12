@@ -52,7 +52,7 @@ export function SidebarMenuRow({
         >
           <SvgIcon
             src={activeView === item.id ? item.selectIcon : item.icon}
-            className={styles["sidebar-menu-icon"]}
+            className={cx(styles["sidebar-menu-icon"], item.id === "home" && styles["sidebar-home-icon"])}
           />
           {activeView === item.id && <span>{item.label}</span>}
         </button>

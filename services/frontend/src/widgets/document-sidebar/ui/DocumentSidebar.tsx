@@ -130,6 +130,7 @@ export function DocumentSidebar({
   };
 
   return (
+    <>
     <aside
       className={cx(styles.sidebar, isSidebarFileDropTarget && styles["is-file-drop-target"])}
       onDragOver={onlyProject ? handleDragOver : undefined}
@@ -215,12 +216,13 @@ export function DocumentSidebar({
         채팅 시작
       </button>
       <SidebarProfile />
+    </aside>
       <button
         type="button"
         className={styles["sidebar-resize-handle"]}
         aria-label="자료 관리 사이드바 폭 조절"
         onPointerDown={onResizeStart}
       />
-    </aside>
+    </>
   );
 }
