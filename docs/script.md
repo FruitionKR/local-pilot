@@ -153,6 +153,12 @@ docker compose --env-file infra/.env \
 ./scripts/back-test.sh :document-svc:test --tests 'fruition.core.aihistory.*'
 ```
 
+백엔드 통합 테스트에는 실행 중인 Docker가 필요하다. 테스트용 MinIO는 공개
+`minio/minio:latest`를 내려받지 않고 `document-svc/src/test/resources/minio/Dockerfile`의
+고정 소스 커밋으로 빌드한다. 첫 실행에는 Go 빌더·Alpine 이미지와 Go 모듈을 내려받고
+컴파일하는 시간이 추가되며, 같은 테스트 JVM의 Spring 컨텍스트들은 빌드 결과를 공유한다.
+이 설정은 백엔드 테스트에만 적용한다. 개발 Compose와 Kubernetes의 MinIO 이미지는 별도 설정이다.
+
 스크립트 사용(인프라 기동 포함, Flyway 소유자인 document-svc를 먼저 시작).
 
 ```sh
