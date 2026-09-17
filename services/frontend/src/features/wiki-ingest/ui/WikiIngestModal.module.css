@@ -23,6 +23,7 @@
 
 .ingest-result:hover,
 .ingest-result:focus-within {
+  --button-hover-overlay: none;
   background: var(--soft);
 }
 
@@ -99,6 +100,7 @@
 
 .ingest-submit:hover:not(:disabled),
 .ingest-submit:focus-visible:not(:disabled) {
+  --button-hover-overlay: none;
   background: #3f3f3f;
   border-color: #5a5a5a;
 }

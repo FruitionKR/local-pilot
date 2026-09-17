@@ -8,7 +8,7 @@ export type ChatWikiExportResponse = {
 };
 
 /**
- * 미리보기를 수락하면 채팅 내용을 위키 문서로 내보낸다.
+ * 선택한 채팅 내용을 원문 문서로 저장한다. Ingest는 별도로 요청한다.
  * pairIds가 비어 있으면 세션 전체(full), 있으면 선택 문답만(partial) 편입한다.
  */
 export async function exportChatWiki(pairIds: string[] = []): Promise<ChatWikiExportResponse> {

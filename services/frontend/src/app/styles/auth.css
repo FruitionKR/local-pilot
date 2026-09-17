@@ -444,6 +444,7 @@
 }
 
 .workspace-item:hover {
+  --button-hover-overlay: none;
   border-color: var(--yellow);
 }
 

@@ -73,4 +73,12 @@ services/ai/pipeline/.langgraph_api/
 /*.png
 
 # Terraform 로컬 캐시 (lock 파일은 커밋 대상)
-infra/terraform/.terraform/
+**/.terraform/
+*.tfstate*
+*.tfvars
+*.tfvars.json
+*.tfbackend
+*.tfplan
+*.plan
+!*.tfvars.example
+!*.tfbackend.example

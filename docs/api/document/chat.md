@@ -16,7 +16,7 @@
 | [`PATCH /api/workspaces/{workspace_id}/chat/sessions/{session_id}`](#summary-patch-api-workspaces-workspace-id-chat-sessions-session-id) | 지정한 채팅 세션의 제목을 변경합니다. 목록 정렬 기준인 last_message_at은 바뀌지 않습니다. |
 | [`DELETE /api/workspaces/{workspace_id}/chat/sessions/{session_id}`](#summary-delete-api-workspaces-workspace-id-chat-sessions-session-id) | 워크스페이스에서 지정한 채팅 세션과 해당 세션의 메시지 기록을 삭제합니다. |
 | [`GET /api/workspaces/{workspace_id}/chat/sessions/{session_id}/messages`](#summary-get-api-workspaces-workspace-id-chat-sessions-session-id-messages) | 세션 내 채팅 메시지를 생성 순서대로 반환합니다. |
-| [`POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki`](#summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki) | 세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다. |
+| [`POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki`](#summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki) | 세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 저장합니다. Ingest는 문서에서 별도로 요청합니다. |
 | [`POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki/preview`](#summary-post-api-workspaces-workspace-id-chat-sessions-session-id-wiki-preview) | 세션을 llmPipeline 입력용 Markdown으로 직렬화해 결과만 반환합니다. 저장/파이프라인 호출은 하지 않습니다. |
 
 ## 한눈에 보기
@@ -500,6 +500,16 @@ Agent turn이 만든 메시지는 `run_id`와 `action`이 함께 온다. 질의 
 화면은 `action`으로 편집 미리보기와 일반 답변을 나누고, 승인 상태와 미리보기 본문은 `run_id`가
 가리키는 run에서 읽는다.
 
+`folder_organize`·`workspace_workflow`는 채팅 답변 안에 작업 계획을 표시한다. 메시지의
+`run_id`로 `GET /agent/turn/{run_id}`를 조회한 뒤, 결과의 `run_id`로
+`GET /agent/runs/{run_id}`를 조회한다(모두 워크스페이스 API 경로 기준).
+계획의 생성 폴더와 문서 이동 위치를 보여주고 `awaiting_approval`에서 승인·거절 버튼을 제공한다.
+미리보기는 변경 관련 폴더 구조를 접고 펼칠 수 있는 트리로 표시하며, 상단에 생성·이동 개수를 요약한다.
+분류 이유와 기존 위치는 상세 보기에서 확인한다. 파일명은 화면에서만 NFC 정규화한다.
+승인은 표시한 계획의 `plan_version`과 `operation_hash`를 전달한다. 계획 생성 완료를
+실행 완료로 표시하지 않으며, 승인 후 실제 실행 상태를 조회한다. 채팅을 다시 열어도
+메시지의 실행 ID로 미리보기와 승인 상태를 복구한다.
+
 ```json
 {
   "messages": [
@@ -648,9 +658,9 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 
 | 항목 | 내용 |
 |---|---|
-| 목적 | 세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다. |
+| 목적 | 세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 저장합니다. Ingest는 문서에서 별도로 요청합니다. |
 | 입력 | **Path** — `workspace_id`: `string`, `session_id`: `string`<br>**Body** — `ChatWikiExportRequest` |
-| 출력 | `202` Wiki 생성 작업 등록 — `ChatWikiExportResponse` |
+| 출력 | `200` 원문 문서 저장 완료 — `ChatWikiExportResponse` |
 | 조건 | 인증 필요<br>`Authorization: Bearer <access_token>`을 검증한다.<br>인증된 사용자만 호출할 수 있다.<br>path의 `workspace_id`에 대한 활성 멤버십을 검증한다. |
 | 주요 오류 | 공통 오류 계약 적용 |
 
@@ -666,20 +676,25 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 
 #### 2. 목적
 
-세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 먼저 저장한 뒤 일반 문서 Ingest를 요청합니다. Wiki 생성은 파이프라인이 비동기로 수행합니다.
+세션(full) 또는 선택 문답(partial)을 Markdown 원문 문서로 저장합니다. Ingest는 문서에서 별도로 요청합니다.
 
 저장되는 Markdown 본문에는 `session_id`·`pair_id`가 들어가지 않아 사용자에게 그대로 보여줄 수 있다. 원본을
 특정하는 provenance는 export 시점에 `documents.pipeline_input_blocks`(문답 단위 블록, `block_id =
 session_id:pair_id`)로 저장하고, 완료 후처리가 이 값을 읽는다. 일반 문서 Ingest는 block ID를 새로 부여하므로
 파이프라인이 돌려준 값은 provenance로 쓰지 않는다.
 
-문서 이름은 채팅에서 왔음을 알리는 `[채팅] ` 접두사로 시작하고, 뒤쪽이 두 단계로 정해진다. 처리 중에는
+문서 이름은 채팅에서 왔음을 알리는 `[채팅] ` 접두사로 시작하고, 뒤쪽이 두 단계로 정해진다. 저장할 때는
 발췌한 첫 질문을 20자로 줄인 임시 이름을 쓰고, 파이프라인이 끝나면 만들어진 Wiki 페이지 제목으로 확정한다. 페이지 제목이 비었거나 폴백값(`Chat Export`)이면 임시 이름을
 그대로 둔다. 같은 이름이 이미 있으면 `(2)`처럼 번호를 붙인다. 세션 ID는 본문에도 이름에도 넣지 않는다.
 
+새 export의 Markdown 첫 제목도 마스킹된 첫 질문을 20자로 줄여 사용한다. 예를 들어 문서 이름은
+`[채팅] 검색 인덱싱은 어떻게 동작하나요?`, 본문 제목은 `# 검색 인덱싱은 어떻게 동작하나요?`가 된다.
+고정된 `Chat Export` 제목 대신 선택한 문답의 내용을 식별할 수 있으며, 그 아래에는 선택한 질문·답변 원문을 유지한다.
+
 만들어진 `chat_export` 문서는 문서 목록에 보이지만 **읽기 전용**이다(`editable: false`). 본문을 사람이 고치면
-문답 경계를 다시 알아낼 수 없어 provenance가 끊기므로, 편집 잠금·본문 저장·버전 복원·재처리를 모두 거절한다.
-재처리는 이 API로 다시 export하는 경로만 쓴다.
+문답 경계를 다시 알아낼 수 없어 provenance가 끊기므로, 편집 잠금·본문 저장·버전 복원을 거절한다.
+저장 직후 문서 상태는 `uploaded`이며 ingest 작업은 생성하지 않는다. 응답 상태는 새 저장이면 `saved`, 중복이면 `skipped`다.
+Ingest에서 문서를 선택하면 기존 문서 ingest API가 저장된 문답과 출처 블록을 사용해 위키에 반영한다.
 
 #### 3. Auth 필요 여부
 
@@ -705,13 +720,13 @@ session_id:pair_id`)로 저장하고, 완료 후처리가 이 값을 읽는다. 
 
 #### 5. Response body
 
-- HTTP `202`: Wiki 생성 작업이 대기열에 등록됨
+- HTTP `200`: 채팅 원문 문서 저장 완료 또는 기존 문서 반환
 - Content-Type: `*/*` (`ChatWikiExportResponse`)
 
 ```json
 {
   "exportDocumentId": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
-  "status": "processing"
+  "status": "saved"
 }
 ```
 
@@ -741,7 +756,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/
 ```json
 {
   "exportDocumentId": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
-  "status": "processing"
+  "status": "saved"
 }
 ```
 

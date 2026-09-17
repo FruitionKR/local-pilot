@@ -94,6 +94,9 @@ jobs:
       - name: Run auth storage tests
         run: npm run test:auth-storage
 
+      - name: Run settings API tests
+        run: npm run test:settings-api
+
       - name: Run error helper tests
         run: npm run test:errors
 

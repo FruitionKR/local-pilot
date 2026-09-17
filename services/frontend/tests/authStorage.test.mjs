@@ -47,6 +47,8 @@ test("인증 화면과 랜딩 화면은 공개 경로로 판별한다", () => {
   assert.equal(isPublicAuthPath("/"), true);
   assert.equal(isPublicAuthPath("/login"), true);
   assert.equal(isPublicAuthPath("/signup/verify"), true);
+  assert.equal(isPublicAuthPath("/invitations/test-token"), true);
+  assert.equal(isPublicAuthPath("/invitations/test-token/accept"), false);
   assert.equal(isPublicAuthPath("/home"), false);
   assert.equal(isPublicAuthPath("/workspaces"), false);
 });

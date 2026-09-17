@@ -228,15 +228,10 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
             @Param("updatedAt") Instant updatedAt
     );
 
-    /**
-     * root 문서 이름만 읽는다. 이름 중복 회피용이라 행 잠금이 필요 없고, 폴링 작업이 사용자 쓰기를
-     * 막지 않도록 {@code findSiblingPagesForUpdate}와 달리 잠금을 걸지 않는다.
-     */
-    @Query("SELECT d.normalizedFilename FROM Document d WHERE d.workspaceId = :workspaceId "
-            + "AND d.documentRole = fruition.core.document.domain.DocumentRole.EDITABLE "
-            + "AND d.folderId IS NULL "
-            + "AND d.deletedAt IS NULL")
-    List<String> findRootPageNormalizedFilenames(@Param("workspaceId") String workspaceId);
+    /** 폴더 위치·문서 종류와 무관하게 활성 파일명을 읽는다. 최종 경합은 DB 고유 제약이 막는다. */
+    @Query(value = "SELECT lower(normalize(btrim(filename), NFC)) FROM documents "
+            + "WHERE workspace_id = :workspaceId AND deleted_at IS NULL", nativeQuery = true)
+    List<String> findActiveNormalizedFilenames(@Param("workspaceId") String workspaceId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "

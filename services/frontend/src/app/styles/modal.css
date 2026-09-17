@@ -53,6 +53,7 @@
 }
 
 .modal-confirm-button:hover {
+  --button-hover-overlay: none;
   background: var(--line-soft);
 }
 
@@ -78,6 +79,7 @@
 }
 
 .modal-cancel-button:hover {
+  --button-hover-overlay: none;
   background: var(--line-soft);
 }
 
@@ -93,5 +95,6 @@
 }
 
 .modal-delete-button:hover {
+  --button-hover-overlay: none;
   filter: brightness(1.05);
 }

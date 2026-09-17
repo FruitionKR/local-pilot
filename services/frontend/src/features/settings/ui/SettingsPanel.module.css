@@ -52,6 +52,7 @@
 }
 
 .settings-reset:hover {
+  --button-hover-overlay: none;
   color: var(--ink);
   background: var(--soft);
 }

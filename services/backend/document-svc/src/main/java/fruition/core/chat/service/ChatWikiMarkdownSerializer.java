@@ -48,7 +48,8 @@ public class ChatWikiMarkdownSerializer {
         }
 
         List<ChatSourceBlock> blocks = new ArrayList<>();
-        StringBuilder sb = new StringBuilder("# Chat Export\n\n");
+        // 제목은 export 서비스가 마스킹된 첫 질문에서 만들고, 여기서는 문답 원문만 조립한다.
+        StringBuilder sb = new StringBuilder();
         for (Map.Entry<String, String[]> entry : pairs.entrySet()) {
             String user = entry.getValue()[0];
             String assistant = entry.getValue()[1];

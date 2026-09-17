@@ -1,6 +1,6 @@
-# §8.6: 월 USD 500·700에 budget alarm. budget_email 미설정 시 생성하지 않는다.
+# §8.6: 필수 수신 이메일로 월 USD 500·700 budget alarm을 항상 생성한다.
 resource "aws_budgets_budget" "monthly" {
-  for_each = var.budget_email == "" ? {} : { warn = "500", high = "700" }
+  for_each = { warn = "500", high = "700" }
 
   name         = "${var.project}-monthly-${each.value}"
   budget_type  = "COST"

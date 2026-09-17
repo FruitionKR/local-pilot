@@ -50,6 +50,7 @@
 .rail-item.is-active,
 .rail-item:hover,
 .rail-item:focus-visible {
+  --button-hover-overlay: none;
   color: #f0f0f0;
   background: #323232;
 }

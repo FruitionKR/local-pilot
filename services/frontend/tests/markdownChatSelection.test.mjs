@@ -95,5 +95,5 @@ test("채팅 Export 결과가 skipped면 기존 문서를 열었다고 안내한
     getChatExportSuccessMessage("skipped"),
     "동일한 내용의 원문 문서가 있어 기존 문서를 열었습니다."
   );
-  assert.match(getChatExportSuccessMessage("processing"), /AI 처리 파이프라인/);
+  assert.match(getChatExportSuccessMessage("saved"), /원문 문서로 저장했습니다/);
 });

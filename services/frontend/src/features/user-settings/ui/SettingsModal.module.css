@@ -66,6 +66,7 @@
 
 button.nav-row:hover,
 button.nav-row:focus-visible {
+  --button-hover-overlay: none;
   background: var(--soft);
 }
 
@@ -117,6 +118,20 @@ button.nav-row:disabled {
   flex-direction: column;
   gap: 32px;
   padding: 24px clamp(24px, 6vw, 116px) 24px 0;
+}
+
+/* 알림은 여백 때문에 스크롤되지 않도록 하고, 내용이 넘칠 때만 스크롤한다. */
+.content[data-section="notifications"] {
+  padding-block: 24px;
+}
+
+.content[data-section="notifications"] .detail {
+  padding-block: 0;
+  gap: 24px;
+}
+
+.content[data-section="notifications"] .section {
+  gap: 8px;
 }
 
 .title {
@@ -280,12 +295,19 @@ button.nav-row:disabled {
 .ws-icon-outline {
   width: 80px;
   height: 80px;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 2px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
+}
+
+.ws-icon-outline:disabled {
+  cursor: default;
 }
 
 .ws-icon {
@@ -302,15 +324,17 @@ button.nav-row:disabled {
   font-weight: 500;
 }
 
-/* 자동 저장·알림 토글: 공(ball)을 transform으로 밀어 자연스럽게 전환 */
+/* 스위치는 누를 때 손잡이가 살짝 늘어나고, 이동 끝에서 부드럽게 감속한다. */
 .switch {
   width: 32px;
+  height: 19px;
   flex: 0 0 auto;
   display: flex;
   padding: 1.5px;
   background: #e2e2e2;
   border-radius: 100px;
-  transition: background-color 160ms ease;
+  cursor: pointer;
+  transition: background-color 240ms ease-out;
 }
 
 .switch.is-on {
@@ -320,14 +344,27 @@ button.nav-row:disabled {
 .switch-ball {
   width: 16px;
   height: 16px;
+  flex: 0 0 auto;
   background: #fff;
   border-radius: 50%;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  transition: transform 160ms ease;
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), width 160ms ease-out;
 }
 
 .switch.is-on .switch-ball {
   transform: translateX(13px);
+}
+
+.switch:active:not(:disabled) .switch-ball {
+  width: 19px;
+}
+
+.switch.is-on:active:not(:disabled) .switch-ball {
+  transform: translateX(10px);
+}
+
+.switch:disabled {
+  cursor: default;
 }
 
 :global([data-reduce-motion="true"]) .switch,
@@ -367,6 +404,7 @@ button.nav-row:disabled {
 .provider-button:hover,
 .provider-button:focus-visible,
 .provider-button.is-selected {
+  --button-hover-overlay: none;
   border-color: var(--yellow);
   background: var(--soft);
 }
@@ -409,6 +447,7 @@ button.nav-row:disabled {
 
 .close:hover,
 .close:focus-visible {
+  --button-hover-overlay: none;
   color: var(--ink);
 }
 

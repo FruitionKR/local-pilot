@@ -1,79 +1,89 @@
-# EKS 배포 (docs/backlog/Fruition_AWS_MSA_Architecture.md §9.1).
-# OIDC로 deploy role assume — 장기 access key 없음. 수동 트리거만 허용한다.
-# 사전 준비: repo Variables에 AWS_DEPLOY_ROLE_ARN 설정 (terraform output github_deploy_role_arn).
+# Environment의 required reviewers와 배포 branch 제한은 GitHub 관리자가 별도로 설정한다.
 name: Deploy (EKS)
 
 on:
   workflow_dispatch:
+    inputs:
+      action:
+        description: "deploy 또는 동일 schema의 성공 SHA 재배포"
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      rollback_sha:
+        description: "rollback일 때 기존 성공 release의 40자리 SHA"
+        type: string
+        default: ""
 
 permissions:
   id-token: write
   contents: read
 
-env:
-  AWS_REGION: ap-northeast-2
-  EKS_CLUSTER: fruition-eks
-
 concurrency:
-  group: deploy-eks
+  group: deploy-eks-feedback
   cancel-in-progress: false
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    environment: feedback
+    # 고정 egress 또는 VPC 안에서 운영하는 전용 runner. PR 검증 runner와 분리한다.
+    runs-on: [self-hosted, linux, x64, fruition-feedback]
+    timeout-minutes: 90
+    env:
+      AWS_REGION: ap-northeast-2
+      EKS_CLUSTER: fruition-eks
+      DEPLOY_CONFIG: ${{ vars.AWS_DEPLOY_CONFIG_JSON }}
+      ACTION: ${{ inputs.action }}
+      ROLLBACK_SHA: ${{ inputs.rollback_sha }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install render dependency
+        run: pip install PyYAML==6.0.2
+      - name: Validate and render before AWS mutation
+        run: |
+          set -euo pipefail
+          SHA="$GITHUB_SHA"
+          if [ "$ACTION" = rollback ]; then SHA="$ROLLBACK_SHA"; fi
+          printf '%s' "$DEPLOY_CONFIG" > "$RUNNER_TEMP/deploy-config.json"
+          python scripts/aws_deploy.py render --config "$RUNNER_TEMP/deploy-config.json" --sha "$SHA" > "$RUNNER_TEMP/rendered.yaml"
+          echo "IMAGE_SHA=$SHA" >> "$GITHUB_ENV"
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-
+      - name: Verify target account
+        run: |
+          set -euo pipefail
+          ACTUAL=$(aws sts get-caller-identity --query Account --output text)
+          EXPECTED=$(python -c 'import json,os; print(json.loads(os.environ["DEPLOY_CONFIG"])["account_id"])')
+          test "$ACTUAL" = "$EXPECTED"
       - name: Login to ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
-
-      # 이미지 빌드·push (java 서비스는 빌드 컨텍스트가 services/ 루트 — k8s/README.md와 동일)
-      - name: Build and push images
+      - name: Build missing immutable images or reuse existing SHA
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
-          TAG: ${{ github.sha }}
         run: |
-          docker build -t "$REGISTRY/fruition-document-svc:$TAG" -f services/backend/document-svc/Dockerfile services/backend
-          docker build -t "$REGISTRY/fruition-access-svc:$TAG" -f services/backend/access-svc/Dockerfile services/backend
-          docker build -t "$REGISTRY/fruition-pipeline:$TAG" services/ai/pipeline
-          docker build -t "$REGISTRY/fruition-converter:$TAG" -f services/ai/converter/Dockerfile services/ai
-          docker push "$REGISTRY/fruition-document-svc:$TAG"
-          docker push "$REGISTRY/fruition-access-svc:$TAG"
-          docker push "$REGISTRY/fruition-pipeline:$TAG"
-          docker push "$REGISTRY/fruition-converter:$TAG"
-
+          set -euo pipefail
+          for service in document-svc access-svc pipeline converter; do
+            REPO="fruition-$service"
+            # listing 자체가 실패하면 image 부재로 처리하지 않고 중단한다.
+            EXISTING=$(aws ecr list-images --repository-name "$REPO" --filter tagStatus=TAGGED --query 'imageIds[].imageTag' --output json)
+            if IMAGE_TAGS="$EXISTING" python -c 'import json,os,sys; sys.exit(0 if os.environ["IMAGE_SHA"] in json.loads(os.environ["IMAGE_TAGS"]) else 1)'; then
+              continue
+            fi
+            if [ "$ACTION" = rollback ]; then echo "기존 rollback image 없음: $REPO"; exit 1; fi
+            case "$service" in
+              document-svc|access-svc) docker build -t "$REGISTRY/$REPO:$IMAGE_SHA" -f "services/backend/$service/Dockerfile" services/backend ;;
+              pipeline) docker build -t "$REGISTRY/$REPO:$IMAGE_SHA" services/ai/pipeline ;;
+              converter) docker build -t "$REGISTRY/$REPO:$IMAGE_SHA" -f services/ai/converter/Dockerfile services/ai ;;
+            esac
+            docker push "$REGISTRY/$REPO:$IMAGE_SHA"
+          done
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
-
-      - name: Deploy
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          TAG: ${{ github.sha }}
-        working-directory: k8s/overlays/aws
-        run: |
-          kustomize edit set image \
-            fruition-document-svc="$REGISTRY/fruition-document-svc:$TAG" \
-            fruition-access-svc="$REGISTRY/fruition-access-svc:$TAG" \
-            fruition-mvp-dev-pipeline-api="$REGISTRY/fruition-pipeline:$TAG" \
-            fruition-mvp-dev-ingest-worker="$REGISTRY/fruition-pipeline:$TAG" \
-            fruition-converter="$REGISTRY/fruition-converter:$TAG"
-          kubectl apply -k .
-
-      - name: Wait for rollout
-        run: |
-          for d in document-svc access-svc pipeline-api ingest-worker edit-event-consumer converter; do
-            kubectl -n fruition rollout status deploy/"$d" --timeout=600s
-          done
-
-      # smoke test — ALB 통과 확인 (도메인 연결 후 활성화)
-      # actuator는 관리 포트로 분리돼 ALB로 오지 않는다 — 업무 경로로 확인한다.
-      # - run: curl -fsS https://api.<domain>/v3/api-docs
+      - name: Deploy with DB, migration, rollout and smoke gates
+        run: python scripts/aws_deploy.py "$ACTION" --config "$RUNNER_TEMP/deploy-config.json" --sha "$IMAGE_SHA"

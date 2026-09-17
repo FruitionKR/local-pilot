@@ -94,7 +94,7 @@ class ChatWikiExportServiceTest {
         ChatWikiExportResponse response = service.export(
                 WS, USER, SESSION, new ChatWikiExportRequest(List.of("p1")));
 
-        assertThat(response.status()).isEqualTo("processing");
+        assertThat(response.status()).isEqualTo("saved");
         assertThat(response.exportDocumentId()).isEqualTo("chatdoc_1");
         assertThat(blockIds(blocks.getValue())).containsExactly("session_1:p1");
     }
@@ -110,6 +110,47 @@ class ChatWikiExportServiceTest {
         service.export(WS, USER, SESSION, new ChatWikiExportRequest(List.of("p1", "p2")));
 
         assertThat(blockIds(blocks.getValue())).containsExactly("session_1:p1", "session_1:p2");
+    }
+
+    @Test
+    @DisplayName("본문 제목도 세션 전체가 아닌 발췌한 첫 질문을 사용한다")
+    void markdownTitleDescribesSelectedPairs() {
+        ChatSession s = session();
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
+        ArgumentCaptor<String> markdown = ArgumentCaptor.forClass(String.class);
+        when(documentService.createChatExportDocument(
+                eq(WS), eq(USER), eq("질문2"), markdown.capture(), anyString(), any()))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_1", false));
+
+        service.export(WS, USER, SESSION, new ChatWikiExportRequest(List.of("p2")));
+
+        assertThat(markdown.getValue()).startsWith("# 질문2\n\nQ : 질문2")
+                .contains("A : 답변2").doesNotContain("Chat Export", "질문1", "답변1");
+    }
+
+    @Test
+    @DisplayName("본문 제목은 비밀값을 마스킹한 질문에서 만든다")
+    void markdownTitleUsesMaskedQuestion() {
+        ChatSession s = session();
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(List.of(
+                msg(s, "u1", "p1", "user", "sk-abcdefghijklmnop 연결 방법", "completed"),
+                msg(s, "a1", "p1", "assistant", "설정을 확인하세요.", "completed")));
+
+        assertThat(service.previewMarkdown(WS, USER, SESSION))
+                .startsWith("# [REDACTED] 연결 방법\n\n")
+                .doesNotContain("sk-abcdefghijklmnop");
+    }
+
+    @Test
+    @DisplayName("완료된 문답이 없는 미리보기도 기본 제목으로 반환한다")
+    void emptyPreviewHasSessionTitle() {
+        ChatSession s = session();
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(List.of());
+
+        assertThat(service.previewMarkdown(WS, USER, SESSION)).isEqualTo("# 제목\n\n");
     }
 
     @Test
@@ -289,7 +330,7 @@ class ChatWikiExportServiceTest {
         ChatWikiExportResponse replay = service.export(
                 WS, USER, SESSION, new ChatWikiExportRequest(List.of("p1")));
 
-        assertThat(first).isEqualTo(new ChatWikiExportResponse("chatdoc_1", "processing"));
+        assertThat(first).isEqualTo(new ChatWikiExportResponse("chatdoc_1", "saved"));
         assertThat(replay).isEqualTo(new ChatWikiExportResponse("chatdoc_1", "skipped"));
         ArgumentCaptor<String> hashes = ArgumentCaptor.forClass(String.class);
         verify(documentService, times(2)).createChatExportDocument(

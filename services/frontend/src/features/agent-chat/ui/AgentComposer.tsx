@@ -22,7 +22,10 @@ export function AgentComposer({
   canSubmit,
   onModelChange,
   onChange,
-  onSubmit
+  onSubmit,
+  onCancel,
+  isCancelling = false,
+  statusMessage
 }: {
   value: string;
   isLoading: boolean;
@@ -34,6 +37,9 @@ export function AgentComposer({
   onModelChange: (model: AiModel) => void;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onCancel?: () => void;
+  isCancelling?: boolean;
+  statusMessage?: string | null;
 }) {
   const [isModelListOpen, setIsModelListOpen] = useState(false);
   const modelListRef = useRef<HTMLDivElement | null>(null);
@@ -52,9 +58,15 @@ export function AgentComposer({
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Escape" && onCancel && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat && !isCancelling) onCancel();
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      if (!canSubmit) return;
+      if (isLoading || !canSubmit) return;
       onSubmit();
     }
   }
@@ -70,11 +82,19 @@ export function AgentComposer({
       <textarea
         value={value}
         placeholder={placeholder}
-        disabled={isLoading}
+        disabled={isLoading && !onCancel}
+        readOnly={isLoading}
+        aria-label="Query 질문 입력"
+        aria-keyshortcuts={onCancel ? "Escape" : undefined}
         rows={3}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={handleKeyDown}
       />
+      {(statusMessage || onCancel) && (
+        <p className={cx(styles["composer-status"], !isLoading && statusMessage && styles["composer-cancelled"])} role="status">
+          {statusMessage ?? "입력창에서 Esc를 누르면 질문을 취소합니다."}
+        </p>
+      )}
       <div className={styles["composer-actions"]}>
         <div className={styles["composer-model"]} ref={modelListRef}>
           <button

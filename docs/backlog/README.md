@@ -13,7 +13,7 @@
 
 ## 진행 예정 계획
 
-- `aws-msa-deployment-readiness-plan.md` — 현재 MSA를 AWS에 실제 배포하고 장시간 AI 작업의 다중 사용자 처리·확장·보안·관측·복구를 검증하기 위한 우선순위별 보완 계획.
+- `aws-msa-deployment-readiness-plan.md` — AWS MSA 보완 계획. DB 격리 → Secret·migration → 배포 자동화 → AI artifact → 저장소·네트워크 → IaC 순서로 구현하고, 단계마다 독립 검증 에이전트의 통과를 확인하는 실행 절차와 진행 기록.
 - `mongodb-to-postgresql-migration-plan.md` — 문서 본문·revision·write receipt·edit outbox를 PostgreSQL 단일 transaction으로 통합하고 MongoDB를 제거하는 검증·이관 계획.
 
 ## 2026-08-10 검토 기록

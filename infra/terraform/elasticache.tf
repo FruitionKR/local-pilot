@@ -25,14 +25,56 @@ resource "aws_security_group" "redis" {
   }
 }
 
-resource "aws_elasticache_cluster" "main" {
-  cluster_id      = "${var.project}-redis"
-  engine          = "redis"
-  engine_version  = "7.1"
-  node_type       = "cache.t4g.micro"
-  num_cache_nodes = 1
-  port            = 6379
+# Redis 7 selectors로 Access projection은 삭제만 허용한다.
+locals {
+  redis_acl = {
+    access   = "on -@all resetkeys resetchannels +ping +hello +client|setname (+eval +evalsha +incr +expire +ttl ~auth:mfa:attempts:* ~auth:email-availability:*) (+set +getdel ~oauth:exchange:*) (+scan +del ~authz:role:*)"
+    document = "on -@all resetkeys resetchannels +ping +hello +client|setname (+get +set ~authz:role:*) (+get +set +incr +expire +pexpire +del +exists +lrange +rpush +ltrim +eval +evalsha +publish +subscribe +unsubscribe ~query:* &query-events)"
+    pipeline = "on -@all resetkeys resetchannels +ping +hello +client|setname +get +setex +del ~wiki:concept-index:*"
+  }
+}
 
-  subnet_group_name  = aws_elasticache_subnet_group.main.name
-  security_group_ids = [aws_security_group.redis.id]
+resource "random_password" "redis" {
+  for_each = local.redis_acl
+  length   = 48
+  special  = false
+}
+
+resource "aws_elasticache_user" "service" {
+  for_each      = local.redis_acl
+  user_id       = "${var.project}-${each.key}"
+  user_name     = each.key
+  engine        = "REDIS"
+  access_string = each.value
+  passwords     = [random_password.redis[each.key].result]
+}
+
+resource "aws_elasticache_user" "disabled_default" {
+  user_id       = "${var.project}-default-disabled"
+  user_name     = "default"
+  engine        = "REDIS"
+  access_string = "off -@all"
+  authentication_mode { type = "no-password-required" }
+}
+
+resource "aws_elasticache_user_group" "services" {
+  engine        = "REDIS"
+  user_group_id = "${var.project}-services"
+  user_ids      = concat([aws_elasticache_user.disabled_default.user_id], [for u in aws_elasticache_user.service : u.user_id])
+}
+
+resource "aws_elasticache_replication_group" "main" {
+  replication_group_id       = "${var.project}-redis"
+  description                = "서비스별 ACL을 사용하는 feedback Redis"
+  engine                     = "redis"
+  engine_version             = "7.1"
+  node_type                  = "cache.t4g.micro"
+  num_cache_clusters         = 1
+  port                       = 6379
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
+  transit_encryption_mode    = "required"
+  user_group_ids             = [aws_elasticache_user_group.services.user_group_id]
+  subnet_group_name          = aws_elasticache_subnet_group.main.name
+  security_group_ids         = [aws_security_group.redis.id]
 }

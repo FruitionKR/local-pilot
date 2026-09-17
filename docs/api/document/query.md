@@ -762,13 +762,14 @@ curl -X GET "$DOCUMENT/api/query/runs/<value>" \
 string
 ```
 
-전달하는 이벤트는 세 가지다.
+전달하는 이벤트는 네 가지다.
 
 | event | 의미 | payload |
 |---|---|---|
 | `query.log` | AI worker가 단계마다 발행한 진행 상황을 중계 | `request_id`, `sequence`, `received_at`, `stage`, `message`, `data` |
 | `query.completed` | 최종 결과 반영 완료 | `request_id`, `status` |
 | `query.failed` | 실패 확정 | `request_id`, `status`, `error` |
+| `query.cancelled` | 취소 및 변경 복구 완료 | `request_id`, `status` |
 
 - 구독 시점 이전 이벤트는 Redis buffer에서 최대 200건까지 재생한다. `sequence`가 뒤로 가는 이벤트는 전달하지 않는다.
 - `query.log`는 화면 피드백 용도라 유실을 허용한다. 중계가 실패해도 로그만 남기고 최종 결과 처리를 막지 않는다.

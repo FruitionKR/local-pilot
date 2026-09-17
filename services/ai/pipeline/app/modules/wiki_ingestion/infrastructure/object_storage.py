@@ -5,6 +5,7 @@ import os
 from urllib.parse import urlparse
 
 from minio import Minio
+from minio.credentials.providers import ChainedProvider, EnvAWSProvider, IamAwsProvider
 
 from app.core.pipeline_control import task_run_id
 
@@ -25,6 +26,15 @@ def bucket_name() -> str:
 
 
 def client() -> Minio:
+    mode = os.environ.get("S3_CREDENTIALS_MODE", "local")
+    if mode == "aws":
+        region = os.environ.get("AWS_REGION")
+        if not region:
+            raise ValueError("AWS S3 region이 필요합니다.")
+        return Minio(_endpoint(), secure=_secure(), region=region,
+                     credentials=ChainedProvider([EnvAWSProvider(), IamAwsProvider()]))
+    if mode != "local":
+        raise ValueError("지원하지 않는 S3 credentials mode입니다.")
     return Minio(
         _endpoint(),
         access_key=os.environ.get("S3_ACCESS_KEY") or "fruition",
@@ -62,7 +72,7 @@ def write_text_object(
     bucket, key = split_storage_uri(object_name)
     data = text.encode("utf-8")
     minio_client = client()
-    if not minio_client.bucket_exists(bucket):
+    if os.environ.get("S3_CREDENTIALS_MODE", "local") == "local" and not minio_client.bucket_exists(bucket):
         minio_client.make_bucket(bucket)
     if task_run_id.get() is not None:
         from app.modules.task_cancellation.infrastructure.object_change_journal import change_object
@@ -85,3 +95,20 @@ def delete_object(object_name: str) -> None:
         change_object(task_run_id.get(), client(), bucket, key, None)
         return
     client().remove_object(bucket, key)
+
+
+def pipeline_log_uri(run_id: str) -> str:
+    return storage_uri(f"pipeline-runs/{run_id}/pipeline.log")
+
+
+def write_pipeline_log(uri: str, text: str) -> None:
+    """실행 진단 로그는 업무 변경 rollback 대상에 포함하지 않는다."""
+    bucket, key = split_storage_uri(uri)
+    data = text.encode("utf-8")
+    client().put_object(
+        bucket,
+        key,
+        BytesIO(data),
+        length=len(data),
+        content_type="text/plain; charset=utf-8",
+    )

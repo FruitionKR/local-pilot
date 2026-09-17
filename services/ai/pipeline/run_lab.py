@@ -58,6 +58,7 @@ from app.modules.wiki_generation.infrastructure.concept_resolution import (
 from app.modules.wiki_generation.infrastructure.normalize import SemanticNormalizer
 from app.modules.wiki_generation.infrastructure.packet import SemanticPacketBuilder
 from app.modules.wiki_generation.infrastructure.pipeline_log import PipelineLog
+from app.modules.wiki_ingestion.infrastructure.object_storage import pipeline_log_uri
 from app.modules.wiki_generation.infrastructure.prompt_io import collect_concept_source_blocks
 from app.modules.wiki_generation.infrastructure.source_context_merge import (
     active_source_artifact,
@@ -1032,7 +1033,9 @@ def run_pipeline(
         shutil.rmtree(out)
     ensure_dir(out)
     log = PipelineLog(
-        getattr(args, "log_path", None) or out / "pipeline.log",
+        pipeline_log_uri(args.run_id)
+        if args.run_id
+        else (getattr(args, "log_path", None) or out / "pipeline.log"),
         callback_url=getattr(args, "log_callback_url", None),
         run_id=getattr(args, "run_id", None),
         progress_callback=progress_callback,

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { confirmEmailVerification, loginWithEmail, signupWithEmail } from "@/entities/user";
 import { saveAccessToken } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
@@ -12,13 +13,16 @@ import { useDevelopmentVerificationCode } from "@/views/auth/lib/useDevelopmentV
 import { useExpiryCountdown } from "@/views/auth/lib/useExpiryCountdown";
 import { useVerificationResend } from "@/views/auth/lib/useVerificationResend";
 import { ResendCodePrompt } from "@/views/auth/ui/ResendCodePrompt";
+import { MfaLoginForm } from "./MfaLoginForm";
 
 export default function SignupVerificationPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { signupDraft, setSignupDraft } = useAuthFlow();
   const [verificationCode, setVerificationCode] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
   const countdown = useExpiryCountdown(signupDraft?.expiresAt ?? 0);
   const draft = signupDraft;
   const isRequestingVerification = Boolean(draft && !draft.verificationId && !draft.verificationRequestError);
@@ -65,7 +69,12 @@ export default function SignupVerificationPage() {
         confirmation.verification_token
       );
       const tokens = await loginWithEmail(draft.email, draft.password);
+      if (tokens.mfa_required) {
+        setMfaToken(tokens.mfa_token);
+        return;
+      }
       saveAccessToken(tokens.access_token);
+      queryClient.clear();
       router.replace("/workspaces");
     } catch (error: unknown) {
       setErrorMessage(getErrorMessage(error, "회원가입에 실패했습니다."));
@@ -82,6 +91,12 @@ export default function SignupVerificationPage() {
     if (!draft) return;
     await resend();
   }
+
+  if (mfaToken) return (
+    <AuthScreen shellModifier="verification" title="다단계 인증">
+      <MfaLoginForm token={mfaToken} onCancel={() => router.replace("/login")} />
+    </AuthScreen>
+  );
 
   return (
     <AuthScreen shellModifier="verification" title="회원가입">

@@ -17,7 +17,7 @@ from app.modules.wiki_ingestion.application.restore_wiki_pages import (
     RestoreWikiPagesUseCase,
 )
 from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
-    LocalPipelineLogReader,
+    ObjectStoragePipelineLogReader,
     ObjectStoragePipelineSourceReader,
     PostgresPipelineRunRepository,
     RunLabPipelineRunner,
@@ -26,6 +26,7 @@ from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repositor
     apply_restored_wiki_state_and_cleanup,
 )
 from app.modules.wiki_ingestion.infrastructure.object_storage import (
+    pipeline_log_uri,
     read_text_object,
     write_text_object,
 )
@@ -85,7 +86,7 @@ def get_restore_wiki_pages_use_case() -> RestoreWikiPagesUseCase:
 
 @lru_cache(maxsize=1)
 def get_pipeline_log_reader() -> PipelineLogReaderPort:
-    return LocalPipelineLogReader()
+    return ObjectStoragePipelineLogReader()
 
 
 @lru_cache(maxsize=1)

@@ -25,6 +25,10 @@ const nextConfig = {
         destination: `${accessUrl}/api/workspaces/:wid/restore`
       },
       {
+        source: "/api/workspaces/:wid/icon/:path*",
+        destination: `${accessUrl}/api/workspaces/:wid/icon/:path*`
+      },
+      {
         // 멤버 관리와 초대는 멤버십을 소유한 access-svc가 받는다.
         source: "/api/workspaces/:wid/members",
         destination: `${accessUrl}/api/workspaces/:wid/members`

@@ -38,7 +38,7 @@ export function clearAuth() {
 }
 
 export function isPublicAuthPath(pathname: string): boolean {
-  return PUBLIC_AUTH_PATHS.has(pathname);
+  return PUBLIC_AUTH_PATHS.has(pathname) || /^\/invitations\/[^/]+$/.test(pathname);
 }
 
 /** 같은 origin의 여러 탭이 refresh 쿠키를 동시에 회전하지 않도록 직렬화한다. */

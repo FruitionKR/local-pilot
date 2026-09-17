@@ -44,6 +44,26 @@ class BaseExceptionHandlerTest {
         return appender.list.get(0);
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "uq_documents_active_name", "uq_folders_active_name", "uq_workspaces_owner_active_name"})
+    void duplicateNamesReturnConflictWithActionableMessage(String constraint) {
+        var violation = new org.hibernate.exception.ConstraintViolationException(
+                "duplicate", new java.sql.SQLException("duplicate", "23505"), constraint);
+        var response = handler.handleUnexpected(new org.springframework.dao.DataIntegrityViolationException("write failed", violation));
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().error().code()).isEqualTo("DUPLICATE_NAME");
+        assertThat(response.getBody().error().message()).contains("다른 이름을 사용");
+        assertThat(onlyEvent().getLevel()).isEqualTo(Level.WARN);
+    }
+
+    @Test
+    void unrelatedConstraintIsNotReportedAsDuplicateName() {
+        var violation = new org.hibernate.exception.ConstraintViolationException(
+                "foreign key", new java.sql.SQLException("foreign key", "23503"), "fk_document");
+        assertThat(handler.handleUnexpected(violation).getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
     @Test
     void clientError_isLoggedAsWarnWithoutStackTrace() {
         var response = handler.handleMultipartException(new MultipartException("파일 없음"));

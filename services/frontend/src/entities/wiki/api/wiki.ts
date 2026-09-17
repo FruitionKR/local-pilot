@@ -19,6 +19,31 @@ export async function fetchBackendData(): Promise<BackendData> {
 // SSE로 전달되는 질의 진행 단계 이벤트.
 export type QueryStageEvent = { stage: string; message: string; sequence: number };
 
+export type QueryRun = { workspaceId: string; requestId: string };
+
+export class QueryCancelledError extends Error {
+  constructor() {
+    super("질의를 취소했습니다.");
+    this.name = "QueryCancelledError";
+  }
+}
+
+/** 서버의 변경 복구가 끝난 cancelled 상태까지 확인한다. */
+export async function cancelQueryRun(run: QueryRun, signal: AbortSignal): Promise<void> {
+  const path = workspacePath(run.workspaceId, "ai", "tasks", run.requestId);
+  let response = await apiFetch(`${path}/cancel`, { method: "POST", signal });
+  while (true) {
+    const task = await parseJsonOrThrow<{ status: string; error_code: string }>(response, "질의 취소 상태를 확인하지 못했습니다.");
+    if (task.status === "cancelled") return;
+    if (task.status === "rollback_failed") {
+      throw new Error("질의 변경을 복구하지 못했습니다. 입력창에서 Esc를 눌러 취소를 다시 시도해주세요.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    signal.throwIfAborted();
+    response = await apiFetch(path, { cache: "no-store", signal });
+  }
+}
+
 /** SSE 프레임(event/data 줄) 한 개를 파싱한다. heartbeat(':' 주석)는 무시한다. */
 function parseSseFrame(raw: string): { event: string; data: unknown } | null {
   let event = "message";
@@ -44,7 +69,11 @@ function parseSseFrame(raw: string): { event: string; data: unknown } | null {
 export async function runQueryStream(
   question: string,
   selection: AiModelSelection,
-  handlers: { onStage: (event: QueryStageEvent) => void }
+  handlers: {
+    onStage: (event: QueryStageEvent) => void;
+    onStarted?: (run: QueryRun) => void;
+    signal?: AbortSignal;
+  }
 ): Promise<QueryResponse> {
   const { workspaceId, sessionId } = await getSessionContext();
 
@@ -52,6 +81,7 @@ export async function runQueryStream(
     workspacePath(workspaceId, "chat", "sessions", sessionId, "query", "runs"),
     {
       method: "POST",
+      signal: handlers.signal,
       headers: { "Content-Type": "application/json" },
       // provider/model은 백엔드 카탈로그 검증 대상이라 쌍으로 보내야 한다.
       // allow_web_search는 @NotNull 필수 필드이며, 웹 검색 토글 UI가 없으므로 안전 기본값 false를 명시한다.
@@ -65,9 +95,11 @@ export async function runQueryStream(
   );
   const created = await parseJsonOrThrow<{ request_id: string; status: string }>(createResponse, ERROR_MESSAGES.queryFailed);
   const requestId = created.request_id;
+  handlers.onStarted?.({ workspaceId, requestId });
 
   const eventsResponse = await apiFetch(`/api/query/runs/${encodeURIComponent(requestId)}/events`, {
     headers: { Accept: "text/event-stream" },
+    signal: handlers.signal,
     cache: "no-store"
   });
   if (!eventsResponse.ok || !eventsResponse.body) {
@@ -96,9 +128,11 @@ export async function runQueryStream(
           completed = true;
           break;
         } else if (frame?.event === "query.failed") {
-          failedError = (frame.data as { error?: string }).error ?? null;
+          failedError = (frame.data as { error?: string }).error || ERROR_MESSAGES.queryFailed;
           completed = true;
           break;
+        } else if (frame?.event === "query.cancelled") {
+          throw new QueryCancelledError();
         }
         separatorIndex = buffer.indexOf("\n\n");
       }
@@ -109,8 +143,9 @@ export async function runQueryStream(
 
   if (failedError) throw new Error(failedError);
 
-  const statusResponse = await apiFetch(`/api/query/runs/${encodeURIComponent(requestId)}`, { cache: "no-store" });
-  const status = await parseJsonOrThrow<{ result: QueryResponse | null }>(statusResponse, ERROR_MESSAGES.queryFailed);
+  const statusResponse = await apiFetch(`/api/query/runs/${encodeURIComponent(requestId)}`, { cache: "no-store", signal: handlers.signal });
+  const status = await parseJsonOrThrow<{ status: string; result: QueryResponse | null }>(statusResponse, ERROR_MESSAGES.queryFailed);
+  if (status.status === "cancelled") throw new QueryCancelledError();
   if (!status.result) throw new Error(ERROR_MESSAGES.queryFailed);
   return status.result;
 }

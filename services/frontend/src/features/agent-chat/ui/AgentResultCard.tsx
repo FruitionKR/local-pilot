@@ -22,11 +22,15 @@ export function AgentResultCard({
     : "source";
   const label = capitalize(normalizedPageType);
 
-  return (
-    <button className={styles["result-card"]} type="button" onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}>
+  const content = <>
       <span className={cx(styles["file-box"], styles[normalizedPageType])}><SvgIcon src={fileIcon} /></span>
       <span><strong>{title}</strong><small>{meta}</small></span>
       <b>{label}</b>
+  </>;
+
+  return onClick ? (
+    <button className={styles["result-card"]} type="button" onClick={(event) => { event.stopPropagation(); onClick(); }}>
+      {content}
     </button>
-  );
+  ) : <div className={styles["result-card"]}>{content}</div>;
 }

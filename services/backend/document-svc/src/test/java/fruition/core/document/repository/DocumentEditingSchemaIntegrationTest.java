@@ -1013,7 +1013,9 @@ class DocumentEditingSchemaIntegrationTest {
         String workspaceId = "ws_" + suffix;
 
         insertDocument("doc_parent_" + suffix, workspaceId, userId, "parent.md", "same-hash", "EDITABLE");
-        insertDocument("doc_same_" + suffix, workspaceId, userId, "parent.md", "same-hash", "EDITABLE");
+        insertDocument("doc_same_" + suffix, workspaceId, userId, "copy.md", "same-hash", "EDITABLE");
+        assertThatThrownBy(() -> insertDocument("doc_duplicate_name_" + suffix, workspaceId, userId,
+                "parent.md", "different-hash", "EDITABLE")).isInstanceOf(DataIntegrityViolationException.class);
 
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM documents WHERE workspace_id = ? AND content_hash = ?",

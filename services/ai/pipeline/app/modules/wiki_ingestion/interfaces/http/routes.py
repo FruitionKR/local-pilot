@@ -26,6 +26,7 @@ from app.modules.wiki_ingestion.application.restore_wiki_pages import (
 )
 from app.modules.wiki_ingestion.interfaces.http.dependencies import (
     get_pipeline_log_reader,
+    pipeline_log_uri,
     get_pipeline_run_repository,
     get_pipeline_run_use_case,
     get_pipeline_source_reader,
@@ -248,11 +249,7 @@ def get_pipeline_logs(
     if not row:
         raise HTTPException(status_code=404, detail="Pipeline run not found")
 
-    manifest = row.get("manifest") or {}
-    log_path = manifest.get("pipeline_log") or str(
-        Path(row["output_dir"]) / "pipeline.log"
-    )
-    return log_reader.read_text(log_path)
+    return log_reader.read_text(pipeline_log_uri(run_id))
 
 
 def _run_pipeline_request(
@@ -266,7 +263,7 @@ def _run_pipeline_request(
     # Kafka worker는 backend가 command에 실어 보낸 run_id를 그대로 쓴다(문서의 runId 대조 유지).
     run_id = run_id or str(uuid.uuid4())
     out = Path(payload.out) if payload.out else Path("runs") / f"api_{run_id}"
-    log_path = out / "pipeline.log"
+    log_path = pipeline_log_uri(run_id)
     try:
         use_case.register(
             PipelineRunRegistration(
@@ -374,7 +371,7 @@ def _build_pipeline_command(
     input_markdown: str | None,
     input_name: str,
     out: Path,
-    log_path: Path,
+    log_path: str | Path,
     source_document_id: str | None,
     user_id: str,
     workspace_id: str,

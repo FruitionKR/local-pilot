@@ -114,13 +114,11 @@ export function LogView({
   operationId,
   restoredOperationIds,
   documentTitles,
-  onOpenTargetDocument,
   onRestoreComplete
 }: {
   operationId: string | null;
   restoredOperationIds: ReadonlySet<string>;
   documentTitles: ReadonlyMap<string, string>;
-  onOpenTargetDocument: (documentId: string, title: string) => void;
   onRestoreComplete: (operationId: string) => Promise<void>;
 }) {
   const [detail, setDetail] = useState<OperationLogDetail | null>(null);
@@ -264,17 +262,6 @@ export function LogView({
                   </span>
                 )}
               </p>
-              {detail.operation_type === "ingest"
-                && detail.target_document_id
-                && documentTitle && (
-                  <button
-                    type="button"
-                    className={styles["target-document-button"]}
-                    onClick={() => onOpenTargetDocument(detail.target_document_id!, documentTitle)}
-                  >
-                    원본 문서 · {documentTitle}
-                  </button>
-                )}
               {canRestore && (
                 <button
                   type="button"

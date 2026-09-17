@@ -253,6 +253,7 @@
 
 .filter-option:hover,
 .filter-option:focus-visible {
+  --button-hover-overlay: none;
   background: var(--soft);
 }
 

@@ -73,6 +73,24 @@ class DocumentControllerTest {
         return "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com");
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void duplicateUploadReturns409EvenWhenStorageWrapsTheFailure(boolean wrapped) throws Exception {
+        var violation = new org.hibernate.exception.ConstraintViolationException(
+                "duplicate", new java.sql.SQLException("duplicate", "23505"), "uq_documents_active_name");
+        RuntimeException failure = new org.springframework.dao.DataIntegrityViolationException("write failed", violation);
+        if (wrapped) failure = new fruition.core.document.exception.DocumentUploadException("upload failed", failure);
+        when(documentService.upload(eq(WORKSPACE_ID), eq(USER_ID), any(), any(), any())).thenThrow(failure);
+
+        mockMvc.perform(multipart("/api/workspaces/" + WORKSPACE_ID + "/documents")
+                        .file(new MockMultipartFile("file", "보고서.md", "text/markdown", "본문".getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "duplicate-test"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("DUPLICATE_NAME"))
+                .andExpect(jsonPath("$.error.message").value(containsString("다른 이름을 사용")));
+    }
+
     @Test
     void getBlocks_existingDocument_returnsDocumentIdAndBlocksInOrder() throws Exception {
         DocumentBlocksResponse response = new DocumentBlocksResponse("doc_1f9a74af", List.of(
